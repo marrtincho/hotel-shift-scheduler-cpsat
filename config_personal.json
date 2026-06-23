@@ -1,0 +1,488 @@
+{
+    "empleados": [
+        {
+            "nombre": "Pedro",
+            "categoria": "Auditor",
+            "dias_libres": [
+                3,
+                4
+            ],
+            "turno_fijo": "Noche",
+            "peticiones": {}
+        },
+        {
+            "nombre": "Ana",
+            "categoria": "Jefe",
+            "dias_libres": [
+                5,
+                6
+            ],
+            "turno_fijo": "Mañana",
+            "peticiones": {}
+        },
+        {
+            "nombre": "Luis",
+            "categoria": "Subjefe",
+            "dias_libres": [
+                0,
+                1
+            ],
+            "turno_fijo": null,
+            "peticiones": {}
+        },
+        {
+            "nombre": "Marta",
+            "categoria": "Empleado",
+            "dias_libres": [
+                1,
+                2
+            ],
+            "turno_fijo": null,
+            "peticiones": {}
+        },
+        {
+            "nombre": "Elena",
+            "categoria": "Empleado",
+            "dias_libres": [
+                2,
+                3
+            ],
+            "turno_fijo": null,
+            "peticiones": {}
+        },
+        {
+            "nombre": "Juan",
+            "categoria": "Empleado",
+            "dias_libres": [
+                4,
+                5
+            ],
+            "turno_fijo": null,
+            "peticiones": {}
+        },
+        {
+            "nombre": "Lucia",
+            "categoria": "Empleado",
+            "dias_libres": [
+                5,
+                6
+            ],
+            "turno_fijo": null,
+            "peticiones": {}
+        },
+        {
+            "nombre": "Raul",
+            "categoria": "Empleado",
+            "dias_libres": [
+                0,
+                6
+            ],
+            "turno_fijo": null,
+            "peticiones": {}
+        },
+        {
+            "nombre": "Sonia",
+            "categoria": "Empleado",
+            "dias_libres": [
+                3,
+                4
+            ],
+            "turno_fijo": null,
+            "peticiones": {}
+        }
+    ],
+    "historico": [
+        {
+            "fecha": "2026-03-09",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "LIBRE",
+                "Marta": "Tarde",
+                "Elena": "Tarde",
+                "Juan": "Tarde",
+                "Lucia": "Tarde",
+                "Raul": "Mañana",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-10",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "LIBRE",
+                "Marta": "LIBRE",
+                "Elena": "Tarde",
+                "Juan": "Tarde",
+                "Lucia": "Tarde",
+                "Raul": "Tarde",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-11",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "LIBRE",
+                "Elena": "LIBRE",
+                "Juan": "Tarde",
+                "Lucia": "Tarde",
+                "Raul": "Tarde",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-12",
+            "asignaciones": {
+                "Pedro": "LIBRE",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "LIBRE",
+                "Juan": "Tarde",
+                "Lucia": "Tarde",
+                "Raul": "Noche",
+                "Sonia": "LIBRE"
+            }
+        },
+        {
+            "fecha": "2026-03-13",
+            "asignaciones": {
+                "Pedro": "LIBRE",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "Mañana",
+                "Juan": "LIBRE",
+                "Lucia": "Tarde",
+                "Raul": "Noche",
+                "Sonia": "LIBRE"
+            }
+        },
+        {
+            "fecha": "2026-03-14",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "LIBRE",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "Mañana",
+                "Juan": "LIBRE",
+                "Lucia": "LIBRE",
+                "Raul": "LIBRE",
+                "Sonia": "Tarde"
+            }
+        },
+        {
+            "fecha": "2026-03-15",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "LIBRE",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "Mañana",
+                "Juan": "Mañana",
+                "Lucia": "LIBRE",
+                "Raul": "LIBRE",
+                "Sonia": "Tarde"
+            }
+        },
+        {
+            "fecha": "2026-03-16",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "LIBRE",
+                "Marta": "Tarde",
+                "Elena": "Tarde",
+                "Juan": "Mañana",
+                "Lucia": "Tarde",
+                "Raul": "LIBRE",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-17",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "LIBRE",
+                "Marta": "Tarde",
+                "Elena": "Tarde",
+                "Juan": "Mañana",
+                "Lucia": "Tarde",
+                "Raul": "Tarde",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-18",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "LIBRE",
+                "Juan": "Mañana",
+                "Lucia": "Tarde",
+                "Raul": "Tarde",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-19",
+            "asignaciones": {
+                "Pedro": "LIBRE",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "Noche",
+                "Elena": "LIBRE",
+                "Juan": "Tarde",
+                "Lucia": "Tarde",
+                "Raul": "Tarde",
+                "Sonia": "LIBRE"
+            }
+        },
+        {
+            "fecha": "2026-03-20",
+            "asignaciones": {
+                "Pedro": "LIBRE",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "Noche",
+                "Elena": "Mañana",
+                "Juan": "LIBRE",
+                "Lucia": "Tarde",
+                "Raul": "Tarde",
+                "Sonia": "LIBRE"
+            }
+        },
+        {
+            "fecha": "2026-03-21",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "LIBRE",
+                "Luis": "Tarde",
+                "Marta": "LIBRE",
+                "Elena": "Tarde",
+                "Juan": "LIBRE",
+                "Lucia": "LIBRE",
+                "Raul": "Tarde",
+                "Sonia": "Tarde"
+            }
+        },
+        {
+            "fecha": "2026-03-22",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "LIBRE",
+                "Luis": "Tarde",
+                "Marta": "LIBRE",
+                "Elena": "Tarde",
+                "Juan": "Tarde",
+                "Lucia": "LIBRE",
+                "Raul": "LIBRE",
+                "Sonia": "Tarde"
+            }
+        },
+        {
+            "fecha": "2026-03-23",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "LIBRE",
+                "Marta": "Tarde",
+                "Elena": "Mañana",
+                "Juan": "Mañana",
+                "Lucia": "Mañana",
+                "Raul": "LIBRE",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-24",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "LIBRE",
+                "Marta": "LIBRE",
+                "Elena": "Mañana",
+                "Juan": "Mañana",
+                "Lucia": "Mañana",
+                "Raul": "Mañana",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-25",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "LIBRE",
+                "Elena": "LIBRE",
+                "Juan": "Tarde",
+                "Lucia": "Mañana",
+                "Raul": "Tarde",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-26",
+            "asignaciones": {
+                "Pedro": "LIBRE",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "LIBRE",
+                "Juan": "Tarde",
+                "Lucia": "Noche",
+                "Raul": "Tarde",
+                "Sonia": "LIBRE"
+            }
+        },
+        {
+            "fecha": "2026-03-27",
+            "asignaciones": {
+                "Pedro": "LIBRE",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "Mañana",
+                "Juan": "LIBRE",
+                "Lucia": "Noche",
+                "Raul": "Tarde",
+                "Sonia": "LIBRE"
+            }
+        },
+        {
+            "fecha": "2026-03-28",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "LIBRE",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "Tarde",
+                "Juan": "LIBRE",
+                "Lucia": "LIBRE",
+                "Raul": "Tarde",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-29",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "LIBRE",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "Tarde",
+                "Juan": "Tarde",
+                "Lucia": "LIBRE",
+                "Raul": "LIBRE",
+                "Sonia": "Tarde"
+            }
+        },
+        {
+            "fecha": "2026-03-30",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "LIBRE",
+                "Marta": "Mañana",
+                "Elena": "Tarde",
+                "Juan": "Tarde",
+                "Lucia": "Mañana",
+                "Raul": "LIBRE",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-03-31",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "LIBRE",
+                "Marta": "LIBRE",
+                "Elena": "Tarde",
+                "Juan": "Tarde",
+                "Lucia": "Tarde",
+                "Raul": "Tarde",
+                "Sonia": "Tarde"
+            }
+        },
+        {
+            "fecha": "2026-04-01",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "LIBRE",
+                "Elena": "LIBRE",
+                "Juan": "Tarde",
+                "Lucia": "Tarde",
+                "Raul": "Tarde",
+                "Sonia": "Tarde"
+            }
+        },
+        {
+            "fecha": "2026-04-02",
+            "asignaciones": {
+                "Pedro": "LIBRE",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "Mañana",
+                "Elena": "LIBRE",
+                "Juan": "Tarde",
+                "Lucia": "Noche",
+                "Raul": "Tarde",
+                "Sonia": "LIBRE"
+            }
+        },
+        {
+            "fecha": "2026-04-03",
+            "asignaciones": {
+                "Pedro": "LIBRE",
+                "Ana": "Mañana",
+                "Luis": "Tarde",
+                "Marta": "Mañana",
+                "Elena": "Tarde",
+                "Juan": "LIBRE",
+                "Lucia": "Noche",
+                "Raul": "Tarde",
+                "Sonia": "LIBRE"
+            }
+        },
+        {
+            "fecha": "2026-04-04",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "LIBRE",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "Tarde",
+                "Juan": "LIBRE",
+                "Lucia": "LIBRE",
+                "Raul": "Tarde",
+                "Sonia": "Mañana"
+            }
+        },
+        {
+            "fecha": "2026-04-05",
+            "asignaciones": {
+                "Pedro": "Noche",
+                "Ana": "LIBRE",
+                "Luis": "Tarde",
+                "Marta": "Tarde",
+                "Elena": "Tarde",
+                "Juan": "Mañana",
+                "Lucia": "LIBRE",
+                "Raul": "LIBRE",
+                "Sonia": "Mañana"
+            }
+        }
+    ]
+}

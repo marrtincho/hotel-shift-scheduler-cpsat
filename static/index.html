@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Hotel Manager</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F7F6F2;--surface:#fff;--border:#E8E5DE;--border-strong:#C8C4BA;
+  --text:#1A1916;--text-2:#6B6860;--text-3:#9B9890;
+  --accent:#1A4A3A;--accent-light:#E8F0ED;--accent-mid:#2D7A5F;
+  --mañana:#FFF3B0;--mañana-t:#8A7A00;
+  --tarde:#B8F0D0;--tarde-t:#0A5C32;
+  --noche:#B8D4F8;--noche-t:#0A3A6E;
+  --partido:#FFD9A0;--partido-t:#7A4800;
+  --libre:#F5C6C6;--libre-t:#8B1A1A;
+  --festivo:#E8D5F8;--festivo-t:#5A1A8A;
+  --r:10px;--rs:6px;
+  font-family:'DM Sans',sans-serif;font-size:14px;color:var(--text);
+}
+body{background:var(--bg);min-height:100vh;display:flex}
+
+/* LOGIN PAGE */
+.login-page{display:none;width:100%;min-height:100vh;align-items:center;justify-content:center;background:var(--accent)}
+.login-page.active{display:flex}
+.login-box{background:var(--surface);border-radius:14px;padding:36px 40px;width:360px;box-shadow:0 12px 48px rgba(0,0,0,.2)}
+.login-logo{font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.login-title{font-size:22px;font-weight:600;margin-bottom:28px}
+.login-err{background:#FEF2F2;color:#B91C1C;border:1px solid #FECACA;padding:9px 12px;border-radius:var(--rs);font-size:12.5px;margin-bottom:14px;display:none}
+
+/* USER BADGE in topbar */
+.user-badge{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:var(--rs);border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:12.5px}
+.user-badge:hover{background:var(--bg)}
+.role-pill{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600}
+.role-pill.admin{background:#FEF3C7;color:#92400E}
+.role-pill.encargado{background:#DBEAFE;color:#1E40AF}
+.role-pill.empleado{background:#D1FAE5;color:#065F46}
+
+.app{display:flex;width:100%;min-height:100vh}
+
+/* SIDEBAR */
+.sidebar{width:220px;min-width:220px;background:var(--accent);display:flex;flex-direction:column;height:100vh;position:sticky;top:0;overflow-y:auto}
+.logo{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,.1)}
+.logo-sub{font-size:10px;font-weight:600;color:rgba(255,255,255,.4);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px}
+.logo-title{font-size:17px;font-weight:600;color:#fff;line-height:1.2}
+nav{padding:10px 0;flex:1}
+.nav-section{padding:14px 18px 4px;font-size:10px;font-weight:600;color:rgba(255,255,255,.35);letter-spacing:.1em;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 18px;cursor:pointer;font-size:13px;color:rgba(255,255,255,.7);border-left:3px solid transparent;transition:all .12s}
+.nav-item:hover{background:rgba(255,255,255,.08);color:#fff}
+.nav-item.active{background:rgba(255,255,255,.12);color:#fff;border-left-color:rgba(255,255,255,.5);font-weight:500}
+.nav-icon{font-size:14px;width:18px;text-align:center}
+
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:13px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.topbar-left .title{font-size:15px;font-weight:600}
+.topbar-left .sub{font-size:11px;color:var(--text-2);margin-top:1px}
+.topbar-right{display:flex;gap:8px;align-items:center}
+.content{padding:20px 24px;flex:1;overflow-y:auto}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:var(--rs);font-size:12.5px;font-weight:500;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);cursor:pointer;transition:all .13s;font-family:inherit}
+.btn:hover{background:var(--bg)}
+.btn.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.pri:hover{background:var(--accent-mid)}
+.btn.danger{background:#FEF2F2;color:#B91C1C;border-color:#FECACA}
+.btn.sm{padding:5px 10px;font-size:12px}
+.btn.ghost{border:none;background:transparent;color:var(--text-2)}
+.btn.ghost:hover{background:var(--bg)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* CARDS */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;margin-bottom:14px}
+.card0{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:14px}
+.card-hd{padding:11px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600}
+
+/* GRIDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+
+/* STATS */
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:13px 16px}
+.stat-lbl{font-size:11px;color:var(--text-2);margin-bottom:3px;font-weight:500}
+.stat-val{font-size:22px;font-weight:600;font-family:'DM Mono',monospace}
+.stat-sub{font-size:11px;color:var(--text-3);margin-top:1px}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{padding:8px 10px;text-align:center;font-weight:500;font-size:11px;color:var(--text-2);border-bottom:1px solid var(--border);background:var(--bg);white-space:nowrap}
+.tbl th.nl{text-align:left;min-width:130px}
+.tbl td{padding:6px 4px;text-align:center;border-bottom:1px solid var(--border)}
+.tbl td.nl{text-align:left;padding-left:12px}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--bg)}
+
+/* SHIFT CELLS */
+.sc{display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:500;min-width:62px}
+.sc.Mañana{background:var(--mañana);color:var(--mañana-t)}
+.sc.Tarde{background:var(--tarde);color:var(--tarde-t)}
+.sc.Noche{background:var(--noche);color:var(--noche-t)}
+.sc.Partido{background:var(--partido);color:var(--partido-t)}
+.sc.Libre{background:var(--libre);color:var(--libre-t)}
+.sc.fest{box-shadow:0 0 0 2px var(--festivo-t)}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+.badge.Mañana,.badge.mañana{background:var(--mañana);color:var(--mañana-t)}
+.badge.Tarde,.badge.tarde{background:var(--tarde);color:var(--tarde-t)}
+.badge.Noche,.badge.noche{background:var(--noche);color:var(--noche-t)}
+.badge.Partido,.badge.partido{background:var(--partido);color:var(--partido-t)}
+.badge.libre{background:var(--libre);color:var(--libre-t)}
+
+/* FORM */
+.fr{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.fr label{font-size:12px;font-weight:500;color:var(--text-2)}
+.fr input,.fr select,.fr textarea{padding:8px 10px;border:1px solid var(--border-strong);border-radius:var(--rs);font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);transition:border .15s}
+.fr input:focus,.fr select:focus{outline:none;border-color:var(--accent)}
+
+/* ALERT */
+.alert{padding:10px 14px;border-radius:var(--rs);font-size:12.5px;margin-bottom:12px;display:flex;align-items:flex-start;gap:8px;line-height:1.4}
+.alert.info{background:#EFF6FF;color:#1E40AF;border:1px solid #BFDBFE}
+.alert.warn{background:#FFFBEB;color:#92400E;border:1px solid #FDE68A}
+.alert.ok{background:#F0FDF4;color:#166534;border:1px solid #BBF7D0}
+.alert.err{background:#FEF2F2;color:#B91C1C;border:1px solid #FECACA}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:200}
+.modal{background:var(--surface);border-radius:12px;padding:24px;width:460px;max-width:95vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.15)}
+.modal-hd{font-size:15px;font-weight:600;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center}
+.hidden{display:none!important}
+.section{display:none}.section.active{display:block}
+
+/* MISC */
+.tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;border:1px solid var(--border);color:var(--text-2);background:var(--bg)}
+.pill-sel{display:flex;gap:6px;flex-wrap:wrap}
+.pill{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:500;border:1px solid var(--border-strong);cursor:pointer;transition:all .12s;color:var(--text-2);background:var(--surface)}
+.pill:hover{border-color:var(--accent);color:var(--accent)}
+.pill.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.emp-row{display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);gap:11px;cursor:pointer;transition:background .12s}
+.emp-row:last-child{border-bottom:none}
+.emp-row:hover{background:var(--bg)}
+.avatar{border-radius:50%;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0}
+.week-nav{display:flex;align-items:center;gap:8px}
+.week-lbl{font-size:13px;font-weight:500;min-width:160px;text-align:center}
+.festivo-row{display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);gap:10px}
+.festivo-row:last-child{border-bottom:none}
+.ftipo{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:500}
+.ftipo.nacional{background:#EEF2FF;color:#3730A3}
+.ftipo.autonómico{background:#F0FDF4;color:#166534}
+.ftipo.local{background:#FEF3C7;color:#92400E}
+.comp-card{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:8px}
+.comp-hd{display:flex;align-items:center;padding:10px 14px;gap:10px;cursor:pointer}
+.comp-hd:hover{background:var(--bg)}
+.comp-body{padding:14px;border-top:1px solid var(--border);background:var(--bg)}
+.la-ctr{display:flex;align-items:center;gap:6px}
+.la-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border-strong);background:var(--surface);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.la-btn:hover{background:var(--border)}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:20px;right:20px;z-index:300;padding:10px 16px;border-radius:var(--r);font-size:13px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.15);transition:opacity .3s;display:flex;align-items:center;gap:8px}
+.toast.ok{background:#166534;color:#fff}
+.toast.err{background:#B91C1C;color:#fff}
+</style>
+<script>
+// closeModal must be global and available before body renders
+function closeModal(id){
+  var el = document.getElementById(id);
+  if(el) el.classList.add('hidden');
+}
+</script>
+</head>
+<body>
+
+<!-- ═══ LOGIN PAGE ═══ -->
+<div class="login-page" id="login-page">
+  <div class="login-box">
+    <div class="login-logo">Hotel Manager</div>
+    <div class="login-title">Iniciar sesión</div>
+    <div class="login-err" id="login-err"></div>
+    <div class="fr"><label>Usuario</label><input id="l-user" type="text" placeholder="Nombre de usuario" autocomplete="username"></div>
+    <div class="fr" style="margin-bottom:20px"><label>Contraseña</label><input id="l-pass" type="password" placeholder="Contraseña" autocomplete="current-password"></div>
+    <button class="btn pri" id="btn-login" style="width:100%;justify-content:center;padding:10px">Entrar</button>
+  </div>
+</div>
+
+<div class="app" id="app" style="display:none">
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-sub">Sistema de turnos</div>
+    <div class="logo-title">Hotel Manager</div>
+  </div>
+  <nav>
+    <div class="nav-section">Principal</div>
+    <div class="nav-item active" data-sec="horario"><span class="nav-icon">▦</span>Horario semanal</div>
+    <div class="nav-item" data-sec="empleados"><span class="nav-icon">◎</span>Empleados</div>
+    <div class="nav-section">Gestión</div>
+    <div class="nav-item" data-sec="festivos"><span class="nav-icon">◈</span>Festivos 2026</div>
+    <div class="nav-item" data-sec="compensaciones"><span class="nav-icon">◐</span>Compensaciones (LA)</div>
+    <div class="nav-item" data-sec="peticiones"><span class="nav-icon">✉</span>Peticiones</div>
+    <div class="nav-item" data-sec="vacaciones"><span class="nav-icon">◇</span>Vacaciones</div>
+    <div class="nav-section">Análisis</div>
+    <div class="nav-item" data-sec="estadisticas"><span class="nav-icon">◫</span>Estadísticas</div>
+    <div class="nav-item" data-sec="historial"><span class="nav-icon">≡</span>Historial</div>
+    <div class="nav-item" data-sec="asistente"><span class="nav-icon">✦</span>Asistente IA</div>
+    <div class="nav-section admin-only">Administración</div>
+    <div class="nav-item admin-only" data-sec="usuarios"><span class="nav-icon">◉</span>Usuarios</div>
+    <div class="nav-item admin-only" data-sec="log"><span class="nav-icon">◎</span>Log actividad</div>
+  </nav>
+  <div style="padding:12px 14px;border-top:1px solid rgba(255,255,255,.1)">
+    <button class="btn sm" id="btn-logout" style="width:100%;justify-content:center;color:#fff;border-color:rgba(255,255,255,.35);background:rgba(255,255,255,.1);font-weight:500">⏻ Cerrar sesión</button>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="title" id="topbar-title">Horario semanal</div>
+      <div class="sub" id="topbar-sub"></div>
+    </div>
+    <div class="topbar-right" id="topbar-right">
+      <div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--rs);border:1px solid var(--border);background:var(--bg)">
+        <span style="font-size:11px;font-weight:500;color:var(--text-2)">Dept:</span>
+        <select id="dept-selector" style="border:none;background:transparent;font-size:12.5px;font-weight:600;color:var(--accent);cursor:pointer;font-family:inherit;outline:none;padding:0">
+          <option value="recepcion">Recepción</option>
+          <option value="mozos">Mozos</option>
+        </select>
+      </div>
+      <div class="week-nav">
+        <button class="btn sm ghost" id="btn-prev">← Ant</button>
+        <span class="week-lbl" id="week-lbl">—</span>
+        <button class="btn sm ghost" id="btn-next">Sig →</button>
+      </div>
+      <button class="btn pri sm" id="btn-generar">⟳ Generar</button>
+      <button class="btn sm" id="btn-exportar">↓ Excel</button>
+    </div>
+    <div id="user-badge-area" style="margin-left:12px;display:flex;align-items:center;gap:8px"></div>
+  </div>
+
+  <div class="content">
+
+    <!-- ═══ HORARIO ═══ -->
+    <div class="section active" id="sec-horario">
+      <div class="g4" style="margin-bottom:16px" id="horario-stats"></div>
+      <div id="horario-alert"></div>
+      <div class="card0">
+        <div class="card-hd">
+          <span>Horario generado</span>
+          <div style="display:flex;gap:5px">
+            <span class="badge Mañana">Mañana</span>
+            <span class="badge Tarde">Tarde</span>
+            <span class="badge Noche">Noche</span>
+            <span class="badge Partido">Partido</span>
+            <span class="badge libre">Libre</span>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="tbl" id="schedule-tbl">
+            <thead><tr id="schedule-head"></tr></thead>
+            <tbody id="schedule-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ EMPLEADOS ═══ -->
+    <div class="section" id="sec-empleados">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-size:13px;color:var(--text-2)" id="emp-count"></span>
+        <button class="btn pri sm" id="btn-add-emp">+ Añadir empleado</button>
+      </div>
+      <div class="card0" id="emp-list"></div>
+    </div>
+
+    <!-- ═══ FESTIVOS ═══ -->
+    <div class="section" id="sec-festivos">
+      <div class="alert info">ℹ Festivos oficiales Valencia ciudad 2026 — Decreto 100/2025 (DOGV). El hotel no cierra: se registra quién trabaja cada festivo.</div>
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px">
+        <div class="tab-btn active" data-tab="calendario" style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent)">Calendario</div>
+        <div class="tab-btn" data-tab="trabajados" style="padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-2)">Trabajados</div>
+      </div>
+      <div id="tab-calendario"><div class="card0" id="festivos-cal"></div></div>
+      <div id="tab-trabajados" class="hidden"><div class="card" id="festivos-trab"></div></div>
+    </div>
+
+    <!-- ═══ COMPENSACIONES ═══ -->
+    <div class="section" id="sec-compensaciones">
+      <div class="alert warn">⚠ La modalidad solo puede cambiarse en enero, una vez al año. Los LA se acumulan aquí y se asignan a semanas concretas.</div>
+      <div class="g2" style="margin-bottom:16px">
+        <div class="stat"><div class="stat-lbl">LA pendientes totales</div><div class="stat-val" id="total-la">—</div><div class="stat-sub">días libres acumulados</div></div>
+        <div class="stat"><div class="stat-lbl">Empleados que cobran</div><div class="stat-val" id="total-cobran">—</div><div class="stat-sub">plus económico</div></div>
+      </div>
+      <div id="comp-list"></div>
+    </div>
+
+    <!-- ═══ VACACIONES ═══ -->
+    <div class="section" id="sec-vacaciones">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-size:13px;color:var(--text-2)" id="vac-count"></span>
+        <button class="btn pri sm" id="btn-add-vac">+ Añadir periodo</button>
+      </div>
+      <div id="vac-list"></div>
+    </div>
+
+    <!-- ═══ PETICIONES ═══ -->
+    <div class="section" id="sec-peticiones">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div class="week-nav">
+          <button class="btn sm ghost" id="pet-prev">← Ant</button>
+          <span class="week-lbl" id="pet-week-lbl">—</span>
+          <button class="btn sm ghost" id="pet-next">Sig →</button>
+        </div>
+        <button class="btn pri sm" id="btn-add-pet">+ Nueva petición</button>
+      </div>
+      <div class="alert info" style="font-size:12px">ℹ Las peticiones de días libres se aplican al generar el horario de esa semana. Se pueden añadir o eliminar antes de generar.</div>
+      <div class="card0" id="pet-list"></div>
+    </div>
+
+    <!-- ═══ ESTADÍSTICAS ═══ -->
+    <div class="section" id="sec-estadisticas">
+      <div class="alert info" style="font-size:12px">ℹ Datos calculados exclusivamente desde el historial de semanas generadas.</div>
+      <div class="card0" style="overflow-x:auto">
+        <table class="tbl" id="stats-tbl" style="min-width:780px">
+          <thead>
+            <tr>
+              <th class="nl" style="min-width:120px">Empleado</th>
+              <th>Semanas</th>
+              <th style="background:#FFFDE7">Mañana</th>
+              <th style="background:#F1F8E9">Tarde</th>
+              <th style="background:#E3F2FD">Noche</th>
+              <th style="background:#FFF3E0">Partido</th>
+              <th style="background:#FFEBEE">Libre</th>
+              <th style="background:#F3E5F5">FDS libres</th>
+              <th>Peticiones ✓</th>
+              <th style="background:#EDE7F6">LA saldo</th>
+              <th>Modalidad</th>
+            </tr>
+          </thead>
+          <tbody id="stats-body">
+            <tr><td colspan="11" style="padding:20px;text-align:center;color:var(--text-2)">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="section" id="sec-historial">
+      <div class="g3" style="margin-bottom:16px" id="hist-stats"></div>
+      <div class="card0">
+        <div class="card-hd">Semanas registradas</div>
+        <div id="hist-list"></div>
+      </div>
+    </div>
+
+    <!-- ═══ ASISTENTE IA ═══ -->
+    <div class="section" id="sec-asistente">
+      <div class="card" style="margin-bottom:14px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">Preguntas rápidas</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px" id="quick-qs"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input id="ai-input" type="text" placeholder="Escribe tu consulta sobre el equipo..." style="flex:1;padding:9px 12px;border:1px solid var(--border-strong);border-radius:var(--rs);font-size:13px;font-family:inherit">
+          <button class="btn pri" id="btn-ask">Consultar ↗</button>
+        </div>
+        <div id="ai-out" style="font-size:13px;line-height:1.65;color:var(--text);white-space:pre-wrap;min-height:40px"></div>
+      </div>
+    </div>
+
+    <!-- ═══ USUARIOS ═══ -->
+    <div class="section" id="sec-usuarios">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-size:13px;color:var(--text-2)" id="usr-count"></span>
+        <button class="btn pri sm" id="btn-add-usr">+ Nuevo usuario</button>
+      </div>
+      <div class="alert info" style="font-size:12px">ℹ Los empleados con rol "Empleado" solo ven su propio horario y pueden enviar peticiones. Vincula cada usuario con su nombre en la plantilla.</div>
+      <div class="card0" id="usr-list"></div>
+    </div>
+
+    <!-- ═══ LOG ACTIVIDAD ═══ -->
+    <div class="section" id="sec-log">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-size:13px;color:var(--text-2)">Últimas 100 acciones registradas</span>
+        <button class="btn sm" onclick="loadLog()">↺ Actualizar</button>
+      </div>
+      <div class="card0" style="overflow-x:auto">
+        <table class="tbl" id="log-tbl" style="min-width:600px">
+          <thead><tr>
+            <th style="text-align:left;padding-left:12px;min-width:160px">Fecha/Hora</th>
+            <th style="text-align:left">Usuario</th>
+            <th style="text-align:left">Rol</th>
+            <th style="text-align:left">Acción</th>
+            <th style="text-align:left">Detalle</th>
+            <th style="text-align:left">IP</th>
+          </tr></thead>
+          <tbody id="log-body"><tr><td colspan="6" style="padding:16px;color:var(--text-2)">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- MODAL USUARIO -->
+<div class="overlay hidden" id="modal-usr">
+  <div class="modal">
+    <div class="modal-hd"><span id="m-usr-title">Usuario</span><button class="btn ghost" onclick="closeModal('modal-usr')">✕</button></div>
+    <div class="g2">
+      <div class="fr"><label>Nombre de usuario</label><input id="m-usr-username" type="text" placeholder="p.ej. juan.garcia"></div>
+      <div class="fr"><label>Nombre completo</label><input id="m-usr-nombre" type="text" placeholder="Juan García"></div>
+    </div>
+    <div class="fr"><label>Rol</label>
+      <select id="m-usr-rol">
+        <option value="admin">Administrador — acceso total</option>
+        <option value="encargado">Encargado — gestionar horarios</option>
+        <option value="empleado">Empleado — solo ver su horario</option>
+      </select>
+    </div>
+    <div class="fr"><label>Empleado vinculado en plantilla</label>
+      <select id="m-usr-vinc"><option value="">— Sin vincular —</option></select>
+      <span style="font-size:11px;color:var(--text-2);margin-top:3px">Necesario para rol Empleado (determina qué horario ve)</span>
+    </div>
+    <div class="fr"><label id="m-usr-pass-label">Contraseña</label><input id="m-usr-pass" type="password" placeholder="Mín. 6 caracteres"></div>
+    <div class="fr hidden" id="m-usr-pass2-row"><label>Activo</label>
+      <select id="m-usr-activo"><option value="true">Activo</option><option value="false">Desactivado</option></select>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px">
+      <button class="btn danger" id="btn-del-usr" style="display:none" onclick="deleteUsr()">Eliminar</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn" onclick="closeModal('modal-usr')">Cancelar</button>
+        <button class="btn pri" id="btn-save-usr">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CAMBIAR CONTRASEÑA PROPIA -->
+<div class="overlay hidden" id="modal-pass">
+  <div class="modal" style="width:360px">
+    <div class="modal-hd"><span>Cambiar contraseña</span><button class="btn ghost" onclick="closeModal('modal-pass')">✕</button></div>
+    <div class="fr"><label>Contraseña actual</label><input id="p-actual" type="password"></div>
+    <div class="fr"><label>Nueva contraseña</label><input id="p-nueva" type="password"></div>
+    <div class="fr"><label>Repetir nueva</label><input id="p-repite" type="password"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
+      <button class="btn" onclick="closeModal('modal-pass')">Cancelar</button>
+      <button class="btn pri" id="btn-save-pass">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EMPLEADO -->
+<div class="overlay hidden" id="modal-emp">
+  <div class="modal">
+    <div class="modal-hd"><span id="m-emp-title">Empleado</span><button class="btn ghost" onclick="closeModal('modal-emp')">✕</button></div>
+    <div class="fr"><label>Nombre</label><input id="m-name" type="text" placeholder="Nombre completo"></div>
+    <div class="fr"><label>Categoría / rol</label>
+      <select id="m-role">
+        <option value="normal">Empleado normal</option>
+        <option value="jefe">Jefe 👑 (Mañana fijo, libre Sáb+Dom)</option>
+        <option value="subjefe">Subjefe ⭐ (preferencia Tarde)</option>
+        <option value="night_fixed">Turno Noche fijo ★ (libre Jue+Vie)</option>
+        <option value="adjunto_recepcion">Adjunto Recepción ◉ (sin noches)</option>
+      </select>
+    </div>
+    <div class="fr"><label>Preferencias de turno</label>
+      <div class="pill-sel" id="m-prefs">
+        <div class="pill" data-v="Mañana">Mañana</div>
+        <div class="pill" data-v="Tarde">Tarde</div>
+        <div class="pill" data-v="Noche">Noche</div>
+        <div class="pill" data-v="Partido">Partido</div>
+      </div>
+    </div>
+    <div class="fr"><label>Compensación festivos</label>
+      <select id="m-comp">
+        <option value="cobrar">Cobrar el festivo (plus económico)</option>
+        <option value="librar_mismo_dia">Librar ese día exacto</option>
+        <option value="dia_libre_eleccion">Día libre a elección (acumula LA)</option>
+      </select>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px">
+      <button class="btn danger" id="btn-delete-emp" style="display:none" onclick="deleteEmp()">Eliminar empleado</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn" onclick="closeModal('modal-emp')">Cancelar</button>
+        <button class="btn pri" id="btn-save-emp">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VACACIONES -->
+<div class="overlay hidden" id="modal-vac">
+  <div class="modal">
+    <div class="modal-hd"><span>Añadir vacaciones</span><button class="btn ghost" onclick="closeModal('modal-vac')">✕</button></div>
+    <div class="fr"><label>Empleado</label><select id="m-vac-emp"></select></div>
+    <div class="g2"><div class="fr"><label>Inicio</label><input id="m-vac-ini" type="date"></div>
+    <div class="fr"><label>Fin</label><input id="m-vac-fin" type="date"></div></div>
+    <div class="fr"><label>Nota (opcional)</label><input id="m-vac-nota" type="text" placeholder="p.ej. Verano"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
+      <button class="btn" onclick="closeModal('modal-vac')">Cancelar</button>
+      <button class="btn pri" id="btn-save-vac">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL LA -->
+<div class="overlay hidden" id="modal-la">
+  <div class="modal">
+    <div class="modal-hd"><span id="m-la-title">Asignar LA</span><button class="btn ghost" onclick="closeModal('modal-la')">✕</button></div>
+    <div class="alert info" id="m-la-info"></div>
+    <div class="fr"><label>Semana (lunes de la semana)</label><input id="m-la-week" type="date"></div>
+    <div class="fr"><label>Día libre</label>
+      <select id="m-la-day">
+        <option>Lunes</option><option>Martes</option><option>Miércoles</option>
+        <option>Jueves</option><option>Viernes</option><option>Sábado</option><option>Domingo</option>
+      </select>
+    </div>
+    <div class="alert warn">ℹ El LA es un día libre <strong>extra</strong> — se añade a los 2 días libres normales de esa semana. Se descontará del saldo acumulado.</div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
+      <button class="btn" onclick="closeModal('modal-la')">Cancelar</button>
+      <button class="btn pri" id="btn-save-la">Confirmar LA</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PETICIÓN -->
+<div class="overlay hidden" id="modal-pet">
+  <div class="modal">
+    <div class="modal-hd"><span>Nueva petición de libre</span><button class="btn ghost" onclick="closeModal('modal-pet')">✕</button></div>
+    <div class="fr"><label>Empleado</label><select id="m-pet-emp"></select></div>
+    <div class="fr"><label>Semana (lunes)</label><input id="m-pet-week" type="date"></div>
+    <div class="fr"><label>Días solicitados</label>
+      <div class="pill-sel" id="m-pet-dias">
+        <div class="pill" data-v="Lunes">Lunes</div>
+        <div class="pill" data-v="Martes">Martes</div>
+        <div class="pill" data-v="Miércoles">Miércoles</div>
+        <div class="pill" data-v="Jueves">Jueves</div>
+        <div class="pill" data-v="Viernes">Viernes</div>
+        <div class="pill" data-v="Sábado">Sábado</div>
+        <div class="pill" data-v="Domingo">Domingo</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
+      <button class="btn" onclick="closeModal('modal-pet')">Cancelar</button>
+      <button class="btn pri" id="btn-save-pet">Guardar petición</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const ROLES = {
+  normal:'Empleado',jefe:'Jefe 👑',subjefe:'Subjefe ⭐',
+  night_fixed:'Noche fijo ★',adjunto_recepcion:'Adjunto Recepción ◉'
+};
+const ROLES_BY_DEPT = {
+  recepcion: [
+    {v:'normal',       l:'Empleado normal'},
+    {v:'jefe',         l:'Jefe 👑 (Mañana fijo, libre Sáb+Dom)'},
+    {v:'subjefe',      l:'Subjefe ⭐ (preferencia Tarde)'},
+    {v:'night_fixed',  l:'Turno Noche fijo ★ (libre Jue+Vie)'},
+    {v:'adjunto_recepcion', l:'Adjunto Recepción ◉ (sin noches)'},
+  ],
+  mozos: [
+    {v:'normal',      l:'Mozo normal'},
+    {v:'night_fixed', l:'Turno Noche fijo ★ (libre Vie+Sáb)'},
+  ],
+};
+const COMP  = {cobrar:'Cobra festivo',librar_mismo_dia:'Libra ese día',dia_libre_eleccion:'Acumula LA'};
+const DAYS  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+const SECS  = {horario:['Horario semanal',''],empleados:['Empleados','Gestión de plantilla'],festivos:['Festivos','Valencia ciudad 2026'],compensaciones:['Compensaciones (LA)','Libres adicionales y festivos trabajados'],peticiones:['Peticiones','Días libres solicitados por empleado'],vacaciones:['Vacaciones','Periodos registrados'],estadisticas:['Estadísticas','Acumulado histórico por empleado'],historial:['Historial','Semanas guardadas'],asistente:['Asistente IA','Consultas sobre el equipo']};
+
+let weekOffset = 0;
+let lastSchedule = null;
+let lastStaff = null;
+let editEmpIdx = null;
+let laNombre = null;
+let staffCache = [];
+
+// ── WEEK ──────────────────────────────────────────────────────────────────
+function getMonday(off=0){
+  const today = new Date();
+  const day = today.getDay();
+  const diff = today.getDate() - (day===0?6:day-1);
+  const mon = new Date(today.setDate(diff));
+  mon.setDate(mon.getDate() + off*7);
+  return mon;
+}
+function weekDates(off=0){
+  const mon = getMonday(off);
+  return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(d.getDate()+i);return d;});
+}
+function isoDate(d){ return d.toISOString().split('T')[0]; }
+function fmtDate(d){ return d.toLocaleDateString('es-ES',{day:'2-digit',month:'short'}); }
+function initials(name){ return name.trim().split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();}
+
+function updateWeekLabel(){
+  const dates = weekDates(weekOffset);
+  const mon = dates[0], sun = dates[6];
+  document.getElementById('week-lbl').textContent =
+    `${fmtDate(mon)} – ${fmtDate(sun)} ${sun.getFullYear()}`;
+  document.getElementById('topbar-sub').textContent =
+    `Semana del ${mon.toLocaleDateString('es-ES',{day:'2-digit',month:'long'})} al ${sun.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'})}`;
+}
+
+
+// ── TOAST ─────────────────────────────────────────────────────────────────
+function toast(msg, type='ok'){
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = (type==='ok'?'✓ ':'✕ ') + msg;
+  document.body.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300)},3000);
+}
+
+// ── NAVIGATION — handled in auth section below ────────────────────────────
+
+// ── HORARIO ───────────────────────────────────────────────────────────────
+document.getElementById('btn-prev').onclick = ()=>{ weekOffset--; updateWeekLabel(); };
+document.getElementById('btn-next').onclick = ()=>{ weekOffset++; updateWeekLabel(); };
+
+document.getElementById('btn-generar').onclick = async ()=>{
+  const btn = document.getElementById('btn-generar');
+  btn.innerHTML = '<span class="spinner"></span> Generando...';
+  btn.disabled = true;
+  const semana = isoDate(getMonday(weekOffset));
+  const r = await api('POST','/horario/generar',{semana, dept: currentDept});
+  btn.textContent = '⟳ Generar'; btn.disabled = false;
+  if(!r.ok){ showAlert('err',r.error); return; }
+  lastSchedule = r.data.schedule;
+  lastStaff = r.data.staff;
+  renderSchedule(r.data);
+  if(r.data.advertencias.length)
+    showAlert('warn','Advertencias: '+r.data.advertencias.join(' · '));
+  else
+    showAlert('ok','Horario generado correctamente — sin infracciones.');
+};
+
+document.getElementById('btn-exportar').onclick = async ()=>{
+  const btn = document.getElementById('btn-exportar');
+  btn.textContent = '↓ Exportando...'; btn.disabled=true;
+  const semana = isoDate(getMonday(weekOffset));
+  const r = await api('POST','/horario/exportar',{semana, dept: currentDept});
+  btn.textContent = '↓ Excel'; btn.disabled=false;
+  if(r.ok) toast('Excel guardado en la carpeta del proyecto');
+  else toast(r.error,'err');
+};
+
+function renderSchedule(data){
+  const dates = weekDates(weekOffset);
+  const festDates = new Set((data.festivos||[]).map(f=>f.fecha));
+
+  const head = document.getElementById('schedule-head');
+  head.innerHTML = '<th class="nl">Empleado</th>';
+  dates.forEach((d,i)=>{
+    const iso = isoDate(d);
+    const th = document.createElement('th');
+    th.innerHTML = `${DAYS[i].substring(0,3)} ${d.getDate()}${festDates.has(iso)?' 🎉':''}`;
+    if(festDates.has(iso)) th.style.background='#F5F0FF';
+    head.appendChild(th);
+  });
+
+  const tbody = document.getElementById('schedule-body');
+  tbody.innerHTML = '';
+  (data.staff||[]).forEach(p=>{
+    const shifts = data.schedule[p.name]||Array(7).fill('Libre');
+    const tr = document.createElement('tr');
+    let html = `<td class="nl"><div style="display:flex;align-items:center;gap:8px">
+      <div class="avatar" style="width:28px;height:28px;font-size:10px">${initials(p.name)}</div>
+      <div><div style="font-size:12.5px;font-weight:500">${p.name}</div>
+      <div style="font-size:10px;color:var(--text-2)">${ROLES[p.role]||p.role}</div></div></div></td>`;
+    shifts.forEach((s,i)=>{
+      const iso = isoDate(dates[i]);
+      const fest = festDates.has(iso) && s!=='Libre';
+      html += `<td><span class="sc ${s}${fest?' fest':''}">${s}</span></td>`;
+    });
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  });
+
+  const stats = document.getElementById('horario-stats');
+  const total = (data.staff||[]).length;
+  stats.innerHTML = `
+    <div class="stat"><div class="stat-lbl">Empleados</div><div class="stat-val">${total}</div></div>
+    <div class="stat"><div class="stat-lbl">Festivos semana</div><div class="stat-val">${(data.festivos||[]).length}</div></div>
+    <div class="stat"><div class="stat-lbl">Advertencias</div><div class="stat-val">${(data.advertencias||[]).length}</div><div class="stat-sub">${(data.advertencias||[]).length===0?'Todo correcto':''}</div></div>
+    <div class="stat"><div class="stat-lbl">Semana</div><div class="stat-val">${weekOffset===0?'Actual':weekOffset>0?'+'+weekOffset:weekOffset}</div><div class="stat-sub">${isoDate(getMonday(weekOffset))}</div></div>`;
+}
+
+function showAlert(type, msg){
+  const el = document.getElementById('horario-alert');
+  const cls = {ok:'ok',err:'err',warn:'warn',info:'info'}[type]||'info';
+  el.innerHTML = `<div class="alert ${cls}">${msg}</div>`;
+  setTimeout(()=>el.innerHTML='',6000);
+}
+
+// ── EMPLEADOS ─────────────────────────────────────────────────────────────
+async function loadEmpleados(){
+  const r = await api('GET',`/plantilla?dept=${currentDept}`);
+  if(!r.ok) return;
+  staffCache = r.data;
+  document.getElementById('emp-count').textContent = `${r.data.length} empleados en plantilla`;
+  document.getElementById('emp-list').innerHTML = r.data.map((e,i)=>`
+    <div class="emp-row" onclick="openEditEmp(${i})">
+      <div class="avatar" style="width:34px;height:34px;font-size:12px">${initials(e.name)}</div>
+      <div style="flex:1">
+        <div style="font-size:13.5px;font-weight:500">${e.name}</div>
+        <div style="font-size:11px;color:var(--text-2)">${(ROLES_BY_DEPT[currentDept]||ROLES_BY_DEPT.recepcion).find(x=>x.v===e.role)?.l||e.role}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">
+          ${(e.preferences||[]).map(p=>`<span class="badge ${p}">${p}</span>`).join('')}
+          <span class="tag">${COMP[e.comp]||e.comp}</span>
+          ${e.la_saldo>0?`<span class="tag" style="background:#EEF2FF;color:#3730A3;border-color:#C7D2FE">LA: ${e.la_saldo}</span>`:''}
+          ${e.festivos_trabajados>0?`<span class="tag">🎉 ${e.festivos_trabajados} festivos</span>`:''}
+        </div>
+      </div>
+      <span style="color:var(--text-3)">›</span>
+    </div>`).join('');
+}
+
+document.getElementById('btn-add-emp').onclick = ()=>{
+  editEmpIdx = null;
+  document.getElementById('m-emp-title').textContent = 'Añadir empleado';
+  document.getElementById('m-name').value='';
+  const roles = ROLES_BY_DEPT[currentDept] || ROLES_BY_DEPT.recepcion;
+  document.getElementById('m-role').innerHTML = roles.map(r=>`<option value="${r.v}">${r.l}</option>`).join('');
+  document.getElementById('m-comp').value='cobrar';
+  document.querySelectorAll('#m-prefs .pill').forEach(p=>p.classList.remove('on'));
+  document.getElementById('btn-delete-emp').style.display='none';
+  document.getElementById('modal-emp').classList.remove('hidden');
+};
+
+function openEditEmp(i){
+  editEmpIdx = i;
+  const e = staffCache[i];
+  document.getElementById('m-emp-title').textContent = 'Editar empleado';
+  document.getElementById('m-name').value = e.name;
+  const roles = ROLES_BY_DEPT[currentDept] || ROLES_BY_DEPT.recepcion;
+  document.getElementById('m-role').innerHTML = roles.map(r=>`<option value="${r.v}" ${e.role===r.v?'selected':''}>${r.l}</option>`).join('');
+  document.getElementById('m-comp').value = e.comp||'cobrar';
+  document.querySelectorAll('#m-prefs .pill').forEach(p=>{
+    p.classList.toggle('on',(e.preferences||[]).includes(p.dataset.v));
+  });
+  document.getElementById('btn-delete-emp').style.display='inline-flex';
+  document.getElementById('modal-emp').classList.remove('hidden');
+}
+
+async function deleteEmp(){
+  if(editEmpIdx===null) return;
+  const nombre = staffCache[editEmpIdx].name;
+  if(!confirm(`¿Eliminar a "${nombre}" de la plantilla? Esta acción no se puede deshacer.`)) return;
+  // Disable button to prevent double-click
+  const btn = document.getElementById('btn-delete-emp');
+  btn.disabled = true;
+  const r = await api('DELETE',`/plantilla/${editEmpIdx}?dept=${currentDept}`);
+  btn.disabled = false;
+  if(!r.ok){ toast(r.error,'err'); return; }
+  closeModal('modal-emp');
+  toast(`"${nombre}" eliminado de la plantilla`);
+  loadEmpleados();
+}
+
+document.querySelectorAll('#m-prefs .pill').forEach(p=>p.onclick=()=>p.classList.toggle('on'));
+
+document.getElementById('btn-save-emp').onclick = async ()=>{
+  const name = document.getElementById('m-name').value.trim();
+  if(!name){toast('El nombre es obligatorio','err');return;}
+  const body = {
+    name, role:document.getElementById('m-role').value,
+    comp:document.getElementById('m-comp').value,
+    preferences:[...document.querySelectorAll('#m-prefs .pill.on')].map(p=>p.dataset.v)
+  };
+  const r = editEmpIdx===null
+    ? await api('POST','/plantilla',body)
+    : await api('PUT',`/plantilla/${editEmpIdx}`,body);
+  if(!r.ok){toast(r.error,'err');return;}
+  closeModal('modal-emp');
+  toast(editEmpIdx===null?'Empleado añadido':'Empleado actualizado');
+  loadEmpleados();
+};
+
+// ── FESTIVOS ──────────────────────────────────────────────────────────────
+async function loadFestivos(){
+  // FIX: was mixing backtick open + single-quote close — caused SyntaxError crashing the whole app
+  const r = await api('GET',`/festivos?año=2026`);
+  if(!r.ok) return;
+  document.getElementById('festivos-cal').innerHTML = r.data.map(f=>{
+    const d = new Date(f.fecha+'T00:00:00');
+    const dia = d.toLocaleDateString('es-ES',{weekday:'long'});
+    return `<div class="festivo-row">
+      <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-2);min-width:75px">${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}</span>
+      <div style="flex:1"><div style="font-size:13px;font-weight:500">${f.nombre}</div>
+      <div style="font-size:11px;color:var(--text-2);text-transform:capitalize">${dia}</div></div>
+      <span class="ftipo ${f.tipo}">${f.tipo}</span>
+      ${f.registrado?`<span style="font-size:12px;color:var(--accent)">✓ registrado</span>`:'<span style="font-size:12px;color:var(--text-3)">—</span>'}
+    </div>`;
+  }).join('');
+
+  const rt = await api('GET','/festivos/trabajados');
+  if(rt.ok){
+    document.getElementById('festivos-trab').innerHTML = `
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">Festivos trabajados por empleado</div>`+
+      rt.data.map(e=>`
+      <div style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:10px">
+        <div class="avatar" style="width:28px;height:28px;font-size:10px">${initials(e.nombre)}</div>
+        <div style="flex:1;font-size:13px;font-weight:500">${e.nombre}</div>
+        <span style="font-family:'DM Mono',monospace;font-size:13px">${e.total} festivos</span>
+      </div>`).join('');
+  }
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>{
+      b.classList.remove('active');
+      b.style.borderBottomColor='transparent';
+      b.style.color='var(--text-2)';
+    });
+    btn.classList.add('active');
+    btn.style.borderBottomColor='var(--accent)';
+    btn.style.color='var(--accent)';
+    const tab = btn.dataset.tab;
+    document.getElementById('tab-calendario').classList.toggle('hidden',tab!=='calendario');
+    document.getElementById('tab-trabajados').classList.toggle('hidden',tab!=='trabajados');
+  };
+});
+
+// ── COMPENSACIONES ────────────────────────────────────────────────────────
+async function loadCompensaciones(){
+  const r = await api('GET',`/compensaciones?dept=${currentDept}`);
+  if(!r.ok) return;
+  const data = r.data;
+  document.getElementById('total-la').textContent = data.reduce((s,e)=>s+e.la_saldo,0);
+  document.getElementById('total-cobran').textContent = data.filter(e=>e.modalidad==='cobrar').length;
+
+  document.getElementById('comp-list').innerHTML = data.map((e,i)=>`
+    <div class="comp-card">
+      <div class="comp-hd" onclick="toggleComp(${i})">
+        <div class="avatar" style="width:30px;height:30px;font-size:10px">${initials(e.nombre)}</div>
+        <div style="flex:1">
+          <div style="font-size:13.5px;font-weight:500">${e.nombre}</div>
+          <div style="font-size:11px;color:var(--text-2)">${ROLES[e.role]||''} · ${COMP[e.modalidad]||e.modalidad}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${e.la_saldo>0?`<span class="badge" style="background:#EEF2FF;color:#3730A3">LA: ${e.la_saldo}</span>`:'<span style="font-size:12px;color:var(--text-3)">Sin LA</span>'}
+          <span style="color:var(--text-3);font-size:12px" id="carr-${i}">▼</span>
+        </div>
+      </div>
+      <div class="comp-body hidden" id="cbody-${i}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div>
+            <div style="font-size:12px;color:var(--text-2);margin-bottom:6px">Días LA acumulados</div>
+            <div class="la-ctr">
+              <button class="la-btn" onclick="adjLA('${e.nombre}',${i},-1)">−</button>
+              <span style="font-size:18px;font-weight:600;font-family:'DM Mono',monospace;min-width:28px;text-align:center" id="lac-${i}">${e.la_saldo}</span>
+              <button class="la-btn" onclick="adjLA('${e.nombre}',${i},+1)">+</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--text-2);margin-bottom:6px">Festivos trabajados</div>
+            <div style="font-size:20px;font-weight:600;font-family:'DM Mono',monospace">${e.festivos_trabajados}</div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--text-2);margin-bottom:6px">Modalidad ${!e.modificable?'<span style="color:var(--text-3)">(solo enero)</span>':''}</div>
+            <select style="font-size:12px;padding:5px 8px;border:1px solid var(--border-strong);border-radius:6px;font-family:inherit" ${!e.modificable?'disabled':''} onchange="changeComp('${e.nombre}',this.value)">
+              <option value="cobrar" ${e.modalidad==='cobrar'?'selected':''}>Cobra festivo</option>
+              <option value="librar_mismo_dia" ${e.modalidad==='librar_mismo_dia'?'selected':''}>Libra ese día</option>
+              <option value="dia_libre_eleccion" ${e.modalidad==='dia_libre_eleccion'?'selected':''}>Acumula LA</option>
+            </select>
+          </div>
+        </div>
+        ${e.la_saldo>0?`<button class="btn pri sm" style="margin-top:12px" onclick="openLA('${e.nombre}',${e.la_saldo})">Asignar LA en semana →</button>`:''}
+        ${e.modalidad==='cobrar'?`<div class="alert warn" style="margin-top:10px;padding:8px 12px"><span style="font-size:12px">ℹ Si le toca libre un festivo, ese día se acumula automáticamente como LA.</span></div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+function toggleComp(i){
+  const b=document.getElementById('cbody-'+i),a=document.getElementById('carr-'+i);
+  b.classList.toggle('hidden');
+  a.textContent=b.classList.contains('hidden')?'▼':'▲';
+}
+
+async function adjLA(nombre, i, delta){
+  const r = await api('PUT',`/compensaciones/${encodeURIComponent(nombre)}?dept=${currentDept}`,{ajuste_la:delta});
+  if(r.ok){ document.getElementById('lac-'+i).textContent = r.data.la_saldo; }
+  else toast(r.error,'err');
+}
+
+async function changeComp(nombre, val){
+  const r = await api('PUT',`/compensaciones/${encodeURIComponent(nombre)}?dept=${currentDept}`,{modalidad:val});
+  if(!r.ok){ toast(r.error,'err'); loadCompensaciones(); }
+  else toast('Modalidad actualizada');
+}
+
+function openLA(nombre, saldo){
+  laNombre = nombre;
+  document.getElementById('m-la-title').textContent = `Asignar LA — ${nombre}`;
+  document.getElementById('m-la-info').innerHTML =
+    `ℹ <strong>${nombre}</strong> tiene <strong>${saldo}</strong> día(s) LA acumulados.<br>
+     Este libre es <strong>adicional</strong> a los 2 días libres normales de esa semana.`;
+  // FIX: reliable next-Monday calculation (original could return today on Sundays)
+  const _n = new Date();
+  const _dow = _n.getDay(); // 0=Sun, 1=Mon, ...
+  const _diff = _dow === 0 ? 1 : 8 - _dow; // days until next Monday
+  const nextMon = new Date(_n);
+  nextMon.setDate(_n.getDate() + _diff);
+  document.getElementById('m-la-week').value = isoDate(nextMon);
+  document.getElementById('modal-la').classList.remove('hidden');
+}
+
+document.getElementById('btn-save-la').onclick = async ()=>{
+  if(!laNombre) return;
+  const week = document.getElementById('m-la-week').value;
+  const day  = document.getElementById('m-la-day').value;
+  if(!week){toast('Selecciona una semana','err');return;}
+  const r = await api('POST',`/compensaciones/${encodeURIComponent(laNombre)}/usar-la`,{semana:week,dia:day,dept:currentDept});
+  if(!r.ok){toast(r.error,'err');return;}
+  closeModal('modal-la');
+  toast(r.data.message || 'LA asignado correctamente');
+  loadCompensaciones();
+};
+
+// ── VACACIONES ────────────────────────────────────────────────────────────
+async function loadVacaciones(){
+  const r = await api('GET',`/vacaciones?dept=${currentDept}`);
+  if(!r.ok) return;
+  document.getElementById('vac-count').textContent = `${r.data.length} periodo(s) registrado(s)`;
+  if(!r.data.length){
+    document.getElementById('vac-list').innerHTML='<div class="card" style="color:var(--text-2);text-align:center;padding:24px">No hay vacaciones registradas</div>';
+    return;
+  }
+  document.getElementById('vac-list').innerHTML = r.data.map(v=>`
+    <div class="card" style="display:flex;align-items:center;gap:12px">
+      <div class="avatar" style="width:36px;height:36px;font-size:12px">${initials(v.nombre)}</div>
+      <div style="flex:1">
+        <div style="font-size:13.5px;font-weight:500">${v.nombre}</div>
+        <div style="font-size:12px;color:var(--text-2);margin-top:2px">
+          ${new Date(v.inicio+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short'})}
+          → ${new Date(v.fin+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'})}
+          · ${v.dias} días${v.nota?' · '+v.nota:''}
+        </div>
+      </div>
+      <span class="tag" style="${v.estado==='activo'?'background:#F0FDF4;color:#166534;border-color:#BBF7D0':v.estado==='próximo'?'':'background:var(--bg);color:var(--text-3)'}">${v.estado}</span>
+      <button class="btn danger sm" onclick="deleteVac('${v.id}')">Eliminar</button>
+    </div>`).join('');
+}
+
+document.getElementById('btn-add-vac').onclick = async ()=>{
+  const r = await api('GET',`/plantilla?dept=${currentDept}`);
+  const sel = document.getElementById('m-vac-emp');
+  sel.innerHTML = (r.data||[]).map(e=>`<option>${e.name}</option>`).join('');
+  document.getElementById('m-vac-ini').value='';
+  document.getElementById('m-vac-fin').value='';
+  document.getElementById('m-vac-nota').value='';
+  document.getElementById('modal-vac').classList.remove('hidden');
+};
+
+document.getElementById('btn-save-vac').onclick = async ()=>{
+  const r = await api('POST','/vacaciones',{dept: currentDept,
+    nombre:document.getElementById('m-vac-emp').value,
+    inicio:document.getElementById('m-vac-ini').value,
+    fin:document.getElementById('m-vac-fin').value,
+    nota:document.getElementById('m-vac-nota').value,
+  });
+  if(!r.ok){toast(r.error,'err');return;}
+  closeModal('modal-vac'); toast('Vacaciones registradas'); loadVacaciones();
+};
+
+async function deleteVac(id){
+  if(!confirm('¿Eliminar este periodo de vacaciones?')) return;
+  const r = await api('DELETE',`/vacaciones/${id}?dept=${currentDept}`);
+  if(r.ok){toast('Periodo eliminado');loadVacaciones();}
+  else toast(r.error,'err');
+}
+
+// ── HISTORIAL ─────────────────────────────────────────────────────────────
+async function loadHistorial(){
+  const [rh, rm] = await Promise.all([api('GET',`/horario/semanas?dept=${currentDept}`), api('GET',`/meta?dept=${currentDept}`)]);
+  if(rm.ok){
+    const d=rm.data;
+    document.getElementById('hist-stats').innerHTML=`
+      <div class="stat"><div class="stat-lbl">Semanas guardadas</div><div class="stat-val">${d.semanas_guardadas}</div></div>
+      <div class="stat"><div class="stat-lbl">Festivos registrados</div><div class="stat-val">${d.festivos_registrados}</div></div>
+      <div class="stat"><div class="stat-lbl">LA pendientes</div><div class="stat-val">${d.total_la_pendientes}</div></div>`;
+  }
+  if(rh.ok){
+    document.getElementById('hist-list').innerHTML = rh.data.slice(0,15).map(s=>`
+      <div style="display:flex;align-items:center;padding:9px 16px;border-bottom:1px solid var(--border);gap:10px;font-size:13px">
+        <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-2);min-width:145px">${s.label}</span>
+        <span style="flex:1;color:var(--text-2)">${(s.staff||[]).length} empleados</span>
+        <a href="/api/horario/exportar-semana/${s.semana}?dept=${currentDept}" download class="btn sm">↓ Excel</a>
+        <button class="btn sm ghost" onclick="previewSemana('${s.semana}')">Ver ›</button>
+      </div>`).join('') || '<div style="padding:16px;color:var(--text-2)">No hay semanas guardadas aún.</div>';
+  }
+}
+
+async function previewSemana(semana){
+  const r = await api('GET',`/horario/semanas?dept=${currentDept}`);
+  if(!r.ok) return;
+  const entrada = r.data.find(s=>s.semana===semana);
+  if(!entrada){ toast('Semana no encontrada','err'); return; }
+
+  const d = new Date(semana+'T00:00:00');
+  const fin = new Date(d); fin.setDate(fin.getDate()+6);
+  const titulo = `${d.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})} – ${fin.toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'})}`;
+
+  const cols = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const shiftColors = {Mañana:'var(--mañana)',Tarde:'var(--tarde)',Noche:'var(--noche)',Partido:'var(--partido)',Libre:'var(--libre)'};
+  const shiftText = {Mañana:'var(--mañana-t)',Tarde:'var(--tarde-t)',Noche:'var(--noche-t)',Partido:'var(--partido-t)',Libre:'var(--libre-t)'};
+
+  const headerCells = cols.map(c=>`<th style="padding:6px 8px;font-size:11px;font-weight:500;color:var(--text-2);border-bottom:1px solid var(--border);text-align:center">${c}</th>`).join('');
+  const rows = (entrada.staff||[]).map(p=>{
+    const shifts = entrada.schedule[p.name]||Array(7).fill('Libre');
+    const cells = shifts.map(s=>`<td style="padding:5px 3px;text-align:center;border-bottom:1px solid var(--border)">
+      <span style="display:inline-flex;align-items:center;justify-content:center;padding:2px 6px;border-radius:4px;font-size:10.5px;font-weight:500;min-width:56px;background:${shiftColors[s]||'#eee'};color:${shiftText[s]||'#333'}">${s}</span>
+    </td>`).join('');
+    return `<tr><td style="padding:6px 10px;font-size:12.5px;font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap">${p.name}</td>${cells}</tr>`;
+  }).join('');
+
+  let existing = document.getElementById('modal-preview');
+  if(existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-preview';
+  modal.className = 'overlay';
+  modal.innerHTML = `
+    <div class="modal" style="width:700px;max-width:96vw">
+      <div class="modal-hd">
+        <span>Horario — ${titulo}</span>
+        <button class="btn ghost" onclick="document.getElementById('modal-preview').remove()">✕</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+          <thead><tr>
+            <th style="padding:6px 10px;font-size:11px;font-weight:500;color:var(--text-2);border-bottom:1px solid var(--border);text-align:left">Empleado</th>
+            ${headerCells}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+// ── ASISTENTE IA ──────────────────────────────────────────────────────────
+const QUICK_QS = [
+  '¿Quién trabajó más festivos este año?',
+  '¿Qué empleados tienen LA pendientes?',
+  'Resume el estado del equipo',
+  '¿Hay algún empleado sin preferencia de turno asignada?',
+  '¿Qué trabajadores acumulan días LA?',
+];
+
+function setupAsistente(){
+  document.getElementById('quick-qs').innerHTML = QUICK_QS.map(q=>
+    `<button class="btn sm" onclick="doAsk(${JSON.stringify(q)})">${q}</button>`
+  ).join('');
+}
+
+async function doAsk(query){
+  const out = document.getElementById('ai-out');
+  out.textContent = 'Consultando...';
+  const rp = await api('GET',`/plantilla?dept=${currentDept}`);
+  const rc = await api('GET',`/compensaciones?dept=${currentDept}`);
+  const ctx = {
+    empleados: (rp.data||[]).map(e=>({nombre:e.name,rol:e.role,comp:e.comp,la:e.la_saldo,festivos:e.festivos_trabajados})),
+    compensaciones: rc.data||[],
+  };
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:600,
+        system:`Eres el asistente del sistema de horarios de un hotel en Valencia.
+Respondes en español, de forma concisa y práctica (máx 150 palabras).
+Contexto del equipo: ${JSON.stringify(ctx)}`,
+        messages:[{role:'user',content:query}]
+      })
+    });
+    const data = await resp.json();
+    out.textContent = data.content?.[0]?.text || 'Sin respuesta';
+  } catch(e){ out.textContent = 'Error conectando con el asistente.'; }
+}
+
+document.getElementById('btn-ask').onclick = ()=>{
+  const q = document.getElementById('ai-input').value.trim();
+  if(q){ doAsk(q); document.getElementById('ai-input').value=''; }
+};
+document.getElementById('ai-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter') document.getElementById('btn-ask').click();
+});
+
+// ── PETICIONES ───────────────────────────────────────────────────────────────
+let petWeekOffset = 0;
+
+function updatePetWeekLabel(){
+  const dates = weekDates(petWeekOffset);
+  const mon = dates[0], sun = dates[6];
+  document.getElementById('pet-week-lbl').textContent =
+    `${fmtDate(mon)} – ${fmtDate(sun)} ${sun.getFullYear()}`;
+}
+
+document.getElementById('pet-prev').onclick = ()=>{ petWeekOffset--; updatePetWeekLabel(); loadPeticiones(); };
+document.getElementById('pet-next').onclick = ()=>{ petWeekOffset++; updatePetWeekLabel(); loadPeticiones(); };
+
+async function loadPeticiones(){
+  const semana = isoDate(getMonday(petWeekOffset));
+  const r = await api('GET',`/peticiones?semana=${semana}&dept=${currentDept}`);
+  const el = document.getElementById('pet-list');
+  if(!r.ok){ el.innerHTML='<div style="padding:16px;color:var(--text-2)">Error cargando</div>'; return; }
+  const data = r.data || {};
+  const entries = Object.entries(data);
+  if(!entries.length){
+    el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No hay peticiones para esta semana</div>';
+    return;
+  }
+  el.innerHTML = entries.map(([nombre, entrada])=>{
+    const dias = Array.isArray(entrada) ? entrada : (entrada.dias||[]);
+    const la   = Array.isArray(entrada) ? [] : (entrada.la||[]);
+    const diasStr = dias.length ? `Libre: <strong>${dias.join(', ')}</strong>` : '';
+    const laStr   = la.length   ? `&nbsp;· LA extra: <strong>${la.join(', ')}</strong>` : '';
+    return `<div style="display:flex;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border);gap:10px">
+      <div class="avatar" style="width:30px;height:30px;font-size:10px">${initials(nombre)}</div>
+      <div style="flex:1">
+        <div style="font-size:13.5px;font-weight:500">${nombre}</div>
+        <div style="font-size:12px;color:var(--text-2);margin-top:2px">${diasStr}${laStr}</div>
+      </div>
+      <button class="btn danger sm" onclick="deletePeticion('${semana}','${nombre}')">Eliminar</button>
+    </div>`;
+  }).join('');
+}
+
+let petModalReady = false;
+function initPetModal(){
+  if(petModalReady) return;
+  petModalReady = true;
+  document.querySelectorAll('#m-pet-dias .pill').forEach(p=>p.onclick=()=>p.classList.toggle('on'));
+  document.getElementById('btn-save-pet').onclick = async ()=>{
+    const nombre = document.getElementById('m-pet-emp').value;
+    const semana = document.getElementById('m-pet-week').value;
+    const dias = [...document.querySelectorAll('#m-pet-dias .pill.on')].map(p=>p.dataset.v);
+    if(!semana){ toast('Selecciona una semana','err'); return; }
+    if(!dias.length){ toast('Selecciona al menos un día','err'); return; }
+    const r = await api('POST','/peticiones',{nombre, semana, dias, dept: currentDept});
+    if(!r.ok){ toast(r.error,'err'); return; }
+    closeModal('modal-pet');
+    toast('Petición guardada');
+    loadPeticiones();
+  };
+}
+
+document.getElementById('btn-add-pet').onclick = async ()=>{
+  initPetModal();
+  const r = await api('GET',`/plantilla?dept=${currentDept}`);
+  const sel = document.getElementById('m-pet-emp');
+  sel.innerHTML = (r.data||[]).map(e=>`<option>${e.name}</option>`).join('');
+  document.getElementById('m-pet-week').value = isoDate(getMonday(petWeekOffset));
+  document.querySelectorAll('#m-pet-dias .pill').forEach(p=>p.classList.remove('on'));
+  document.getElementById('modal-pet').classList.remove('hidden');
+};
+
+async function deletePeticion(semana, nombre){
+  if(!confirm(`¿Eliminar petición de ${nombre}?`)) return;
+  const r = await api('DELETE',`/peticiones/${semana}/${encodeURIComponent(nombre)}?dept=${currentDept}`);
+  if(r.ok){ toast('Petición eliminada'); loadPeticiones(); }
+  else toast(r.error,'err');
+}
+
+// ── ESTADÍSTICAS ─────────────────────────────────────────────────────────────
+const COMP_LABEL = {cobrar:'Cobra',librar_mismo_dia:'Libra ese día',dia_libre_eleccion:'Acumula LA'};
+
+async function loadEstadisticas(){
+  const r = await api('GET',`/estadisticas?dept=${currentDept}`);
+  const tbody = document.getElementById('stats-body');
+  if(!r.ok){ tbody.innerHTML='<tr><td colspan="11" style="padding:16px;color:var(--text-2)">Error</td></tr>'; return; }
+  if(!r.data.length){ tbody.innerHTML='<tr><td colspan="11" style="padding:20px;text-align:center;color:var(--text-2)">Sin semanas en el historial aún</td></tr>'; return; }
+
+  tbody.innerHTML = r.data.map(e=>{
+    const laStyle = e.la_saldo>0?'background:#EDE7F6;color:#4527A0;font-weight:600':'';
+    const fdsStyle = 'background:#F3E5F5;color:#6A1B9A;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:500';
+    return `<tr>
+      <td class="nl" style="padding:8px 10px">
+        <div style="display:flex;align-items:center;gap:7px">
+          <div class="avatar" style="width:26px;height:26px;font-size:9px">${initials(e.nombre)}</div>
+          <span style="font-size:12.5px;font-weight:500">${e.nombre}</span>
+        </div>
+      </td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${e.semanas}</td>
+      <td style="background:#FFFDE7"><span style="background:var(--mañana);color:var(--mañana-t);padding:2px 7px;border-radius:4px;font-size:11px;font-weight:500">${e['Mañana']}</span></td>
+      <td style="background:#F1F8E9"><span style="background:var(--tarde);color:var(--tarde-t);padding:2px 7px;border-radius:4px;font-size:11px;font-weight:500">${e['Tarde']}</span></td>
+      <td style="background:#E3F2FD"><span style="background:var(--noche);color:var(--noche-t);padding:2px 7px;border-radius:4px;font-size:11px;font-weight:500">${e['Noche']}</span></td>
+      <td style="background:#FFF3E0"><span style="background:var(--partido);color:var(--partido-t);padding:2px 7px;border-radius:4px;font-size:11px;font-weight:500">${e['Partido']}</span></td>
+      <td style="background:#FFEBEE"><span style="background:var(--libre);color:var(--libre-t);padding:2px 7px;border-radius:4px;font-size:11px;font-weight:500">${e['Libre']}</span></td>
+      <td style="background:#F3E5F5"><span style="${fdsStyle}">${e.fds_libres||0}</span></td>
+      <td style="font-size:12px;text-align:center">${e.peticiones}</td>
+      <td style="text-align:center"><span style="padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;${laStyle}">${e.la_saldo}</span></td>
+      <td><span class="tag" style="font-size:11px">${COMP_LABEL[e.modalidad]||e.modalidad}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+
+document.querySelectorAll('.overlay').forEach(o=>{
+  o.addEventListener('click',e=>{ if(e.target===o) o.classList.add('hidden'); });
+});
+
+// ══════════════════════════════════════════════════════════════════
+// AUTH — LOGIN / SESSION / PERMISOS
+// ══════════════════════════════════════════════════════════════════
+
+let currentUser = null;
+let currentDept = 'recepcion';
+
+// Dept selector
+document.getElementById('dept-selector').onchange = function() {
+  currentDept = this.value;
+  const active = document.querySelector('.nav-item.active');
+  if (active) active.click();
+};
+
+// API helper — handles 401 globally by redirecting to login
+async function api(method, path, body=null){
+  const opts = {method, headers:{'Content-Type':'application/json'}};
+  if(body) opts.body = JSON.stringify(body);
+  const r = await fetch('/api'+path, opts);
+  const d = await r.json();
+  if(d.login){ showLogin(); return d; }
+  return d;
+}
+
+function tienePermiso(p){ return currentUser?.permisos?.includes(p); }
+
+function showLogin(){
+  currentUser = null;
+  document.getElementById('login-page').classList.add('active');
+  document.getElementById('app').style.display = 'none';
+}
+
+function showApp(user){
+  currentUser = user;
+  document.getElementById('login-page').classList.remove('active');
+  document.getElementById('app').style.display = 'flex';
+
+  document.getElementById('user-badge-area').innerHTML = `
+    <div class="user-badge" onclick="document.getElementById('modal-pass').classList.remove('hidden')" title="Cambiar contraseña">
+      <span style="font-size:13px;font-weight:500">${user.nombre}</span>
+      <span class="role-pill ${user.rol}">${user.rol}</span>
+    </div>
+    <button onclick="doLogout()" title="Cerrar sesión"
+      style="padding:6px 10px;border-radius:var(--rs);border:1px solid var(--border-strong);background:var(--surface);cursor:pointer;font-size:18px;line-height:1;color:var(--text-2);transition:all .15s"
+      onmouseover="this.style.background='#FEF2F2';this.style.color='#B91C1C';this.style.borderColor='#FECACA'"
+      onmouseout="this.style.background='var(--surface)';this.style.color='var(--text-2)';this.style.borderColor='var(--border-strong)'">⏻</button>`;
+
+  document.querySelectorAll('.admin-only').forEach(el=>{
+    el.style.display = user.rol==='admin' ? '' : 'none';
+  });
+
+  applyNavPermissions();
+  updateWeekLabel();
+}
+
+function applyNavPermissions(){
+  if(currentUser?.rol === 'empleado'){
+    const allowed = ['horario','peticiones'];
+    document.querySelectorAll('.nav-item[data-sec]').forEach(el=>{
+      el.style.display = allowed.includes(el.dataset.sec) ? '' : 'none';
+    });
+  }
+}
+
+// Login form
+document.getElementById('btn-login').onclick = doLogin;
+document.getElementById('l-pass').addEventListener('keydown', e=>{
+  if(e.key==='Enter') doLogin();
+});
+document.getElementById('l-user').addEventListener('keydown', e=>{
+  if(e.key==='Enter') document.getElementById('l-pass').focus();
+});
+
+async function doLogin(){
+  const username = document.getElementById('l-user').value.trim();
+  const password = document.getElementById('l-pass').value;
+  const errEl    = document.getElementById('login-err');
+  const btn      = document.getElementById('btn-login');
+  if(!username || !password){ errEl.textContent='Introduce usuario y contraseña.'; errEl.style.display='block'; return; }
+  btn.textContent='Entrando...'; btn.disabled=true;
+  const r = await fetch('/api/auth/login',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username, password})
+  });
+  const d = await r.json();
+  btn.textContent='Entrar'; btn.disabled=false;
+  if(!d.ok){
+    errEl.textContent = d.error || 'Error de autenticación';
+    errEl.style.display='block';
+    document.getElementById('l-pass').value='';
+    return;
+  }
+  errEl.style.display='none';
+  document.getElementById('l-pass').value='';
+  showApp(d.data);
+}
+
+async function doLogout(){
+  await fetch('/api/auth/logout',{method:'POST'});
+  showLogin();
+}
+
+document.getElementById('btn-logout').onclick = doLogout;
+
+// Cambiar contraseña propia
+document.getElementById('btn-save-pass').onclick = async ()=>{
+  const actual = document.getElementById('p-actual').value;
+  const nueva  = document.getElementById('p-nueva').value;
+  const repite = document.getElementById('p-repite').value;
+  if(nueva !== repite){ toast('Las contraseñas no coinciden','err'); return; }
+  if(nueva.length < 6){ toast('Mínimo 6 caracteres','err'); return; }
+  const r = await api('POST','/auth/cambiar-password',{actual, nueva});
+  if(!r.ok){ toast(r.error,'err'); return; }
+  closeModal('modal-pass');
+  ['p-actual','p-nueva','p-repite'].forEach(id=>document.getElementById(id).value='');
+  toast('Contraseña cambiada correctamente');
+};
+
+// ── USUARIOS (admin) ──────────────────────────────────────────────
+let editUsrId = null;
+
+async function loadUsuarios(){
+  const r = await api('GET','/usuarios');
+  if(!r.ok) return;
+  const users = r.data;
+  document.getElementById('usr-count').textContent = `${users.length} usuarios registrados`;
+  const ROLE_COLOR = {admin:'#92400E;background:#FEF3C7', encargado:'#1E40AF;background:#DBEAFE', empleado:'#065F46;background:#D1FAE5'};
+  document.getElementById('usr-list').innerHTML = users.map(u=>`
+    <div class="emp-row" onclick="openEditUsr('${u.id}')">
+      <div class="avatar" style="width:34px;height:34px;font-size:12px">${initials(u.nombre)}</div>
+      <div style="flex:1">
+        <div style="font-size:13.5px;font-weight:500">${u.nombre}
+          ${!u.activo?'<span style="font-size:11px;color:#B91C1C;margin-left:6px">[inactivo]</span>':''}
+        </div>
+        <div style="font-size:11px;color:var(--text-2)">@${u.username}${u.empleado_vinculado?' · '+u.empleado_vinculado:''}</div>
+      </div>
+      <span style="font-size:11px;padding:2px 8px;border-radius:12px;font-weight:600;color:${ROLE_COLOR[u.rol]||''}">${u.rol}</span>
+      <span style="color:var(--text-3)">›</span>
+    </div>`).join('');
+}
+
+document.getElementById('btn-add-usr').onclick = async ()=>{
+  editUsrId = null;
+  document.getElementById('m-usr-title').textContent = 'Nuevo usuario';
+  document.getElementById('m-usr-username').value='';
+  document.getElementById('m-usr-username').disabled=false;
+  document.getElementById('m-usr-nombre').value='';
+  document.getElementById('m-usr-rol').value='empleado';
+  document.getElementById('m-usr-pass').value='';
+  document.getElementById('m-usr-pass-label').textContent='Contraseña';
+  document.getElementById('m-usr-pass2-row').classList.add('hidden');
+  document.getElementById('btn-del-usr').style.display='none';
+  await _fillVincSelect(null);
+  document.getElementById('modal-usr').classList.remove('hidden');
+};
+
+async function openEditUsr(id){
+  editUsrId = id;
+  const r = await api('GET','/usuarios');
+  const u = r.data?.find(x=>x.id===id);
+  if(!u) return;
+  document.getElementById('m-usr-title').textContent = 'Editar usuario';
+  document.getElementById('m-usr-username').value = u.username;
+  document.getElementById('m-usr-username').disabled = true;
+  document.getElementById('m-usr-nombre').value = u.nombre;
+  document.getElementById('m-usr-rol').value = u.rol;
+  document.getElementById('m-usr-pass').value='';
+  document.getElementById('m-usr-pass-label').textContent='Nueva contraseña (dejar vacío para no cambiar)';
+  document.getElementById('m-usr-pass2-row').classList.remove('hidden');
+  document.getElementById('m-usr-activo').value = u.activo ? 'true':'false';
+  document.getElementById('btn-del-usr').style.display = u.id===currentUser?.id ? 'none':'inline-flex';
+  await _fillVincSelect(u.empleado_vinculado);
+  document.getElementById('modal-usr').classList.remove('hidden');
+}
+
+async function _fillVincSelect(selected){
+  const rp = await api('GET',`/plantilla?dept=${currentDept}`);
+  const sel = document.getElementById('m-usr-vinc');
+  sel.innerHTML = '<option value="">— Sin vincular —</option>' +
+    (rp.data||[]).map(e=>`<option value="${e.name}" ${e.name===selected?'selected':''}>${e.name}</option>`).join('');
+}
+
+document.getElementById('btn-save-usr').onclick = async ()=>{
+  const nombre   = document.getElementById('m-usr-nombre').value.trim();
+  const username = document.getElementById('m-usr-username').value.trim();
+  const rol      = document.getElementById('m-usr-rol').value;
+  const pass     = document.getElementById('m-usr-pass').value;
+  const vinc     = document.getElementById('m-usr-vinc').value || null;
+  const activo   = document.getElementById('m-usr-activo').value === 'true';
+
+  if(!nombre){ toast('El nombre es obligatorio','err'); return; }
+
+  let r;
+  if(editUsrId === null){
+    if(!username){ toast('El usuario es obligatorio','err'); return; }
+    if(!pass){ toast('La contraseña es obligatoria para nuevos usuarios','err'); return; }
+    r = await api('POST','/usuarios',{username, nombre, rol, password:pass, empleado_vinculado:vinc});
+  } else {
+    const body = {nombre, rol, activo, empleado_vinculado:vinc};
+    if(pass) body.password = pass;
+    r = await api('PUT',`/usuarios/${editUsrId}`, body);
+  }
+  if(!r.ok){ toast(r.error,'err'); return; }
+  closeModal('modal-usr');
+  toast(editUsrId===null ? 'Usuario creado' : 'Usuario actualizado');
+  loadUsuarios();
+};
+
+async function deleteUsr(){
+  if(!editUsrId) return;
+  if(!confirm('¿Eliminar este usuario? Esta acción no se puede deshacer.')) return;
+  const r = await api('DELETE',`/usuarios/${editUsrId}`);
+  if(!r.ok){ toast(r.error,'err'); return; }
+  closeModal('modal-usr');
+  toast('Usuario eliminado');
+  loadUsuarios();
+}
+
+// ── LOG DE ACTIVIDAD ────────────────────────────────────────────────
+const ACTION_COLORS = {
+  LOGIN:'#166534',LOGIN_FALLIDO:'#B91C1C',LOGOUT:'#374151',
+  GENERAR_HORARIO:'#1E40AF',CREAR_USUARIO:'#6B21A8',
+  EDITAR_USUARIO:'#92400E',ELIMINAR_USUARIO:'#B91C1C',
+  CAMBIO_PASSWORD:'#065F46',
+};
+
+async function loadLog(){
+  const r = await api('GET','/log?limite=100');
+  const tbody = document.getElementById('log-body');
+  if(!r.ok){ tbody.innerHTML='<tr><td colspan="6" style="padding:16px;color:var(--text-2)">Error al cargar</td></tr>'; return; }
+  if(!r.data.length){ tbody.innerHTML='<tr><td colspan="6" style="padding:16px;color:var(--text-2)">Sin registros aún</td></tr>'; return; }
+  tbody.innerHTML = r.data.map(entry=>{
+    const col = ACTION_COLORS[entry.accion] || 'var(--text-2)';
+    return `<tr>
+      <td style="padding:7px 12px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-2);white-space:nowrap">${entry.ts}</td>
+      <td style="padding:7px 8px;font-size:12.5px;font-weight:500">${entry.usuario}</td>
+      <td style="padding:7px 8px"><span class="tag" style="font-size:10px">${entry.rol}</span></td>
+      <td style="padding:7px 8px"><span style="font-size:11.5px;font-weight:600;color:${col}">${entry.accion}</span></td>
+      <td style="padding:7px 8px;font-size:12px;color:var(--text-2)">${entry.detalle||'—'}</td>
+      <td style="padding:7px 8px;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-3)">${entry.ip}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── NAVIGATION ──────────────────────────────────────────────────────
+document.querySelectorAll('.nav-item[data-sec]').forEach(el=>{
+  el.addEventListener('click',()=>{
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    el.classList.add('active');
+    const sec = el.dataset.sec;
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    document.getElementById('sec-'+sec).classList.add('active');
+    const [t,s]=SECS[sec]||['',''];
+    document.getElementById('topbar-title').textContent = t;
+    document.getElementById('topbar-sub').textContent = s;
+    document.getElementById('topbar-right').style.display = sec==='horario'?'flex':'none';
+    if(sec==='horario')updateWeekLabel();
+    if(sec==='empleados')loadEmpleados();
+    if(sec==='festivos')loadFestivos();
+    if(sec==='compensaciones')loadCompensaciones();
+    if(sec==='peticiones'){petWeekOffset=0;updatePetWeekLabel();loadPeticiones();}
+    if(sec==='vacaciones')loadVacaciones();
+    if(sec==='estadisticas')loadEstadisticas();
+    if(sec==='historial')loadHistorial();
+    if(sec==='asistente')setupAsistente();
+    if(sec==='usuarios')loadUsuarios();
+    if(sec==='log')loadLog();
+  });
+});
+
+SECS['usuarios'] = ['Usuarios','Gestión de acceso'];
+SECS['log']      = ['Log de actividad','Registro de acciones'];
+
+// ── INIT — check existing session ─────────────────────────────────
+(async ()=>{
+  const r = await fetch('/api/auth/me');
+  const d = await r.json();
+  if(d.ok && d.data){
+    showApp(d.data);
+  } else {
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

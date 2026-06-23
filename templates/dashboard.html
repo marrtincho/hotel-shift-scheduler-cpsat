@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Horarios Hoteleros</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --accent-color: #e74c3c;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-color: #333;
+            --border-color: #dee2e6;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .controls {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        input[type="date"], select, button {
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        input[type="date"]:focus, select:focus {
+            outline: none;
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        button {
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            padding: 0.5rem 1rem;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        button.secondary {
+            background-color: #95a5a6;
+        }
+
+        button.secondary:hover {
+            background-color: #7f8c8d;
+        }
+
+        button.danger {
+            background-color: var(--accent-color);
+        }
+
+        button.danger:hover {
+            background-color: #c0392b;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            transition: transform 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+        }
+
+        .card h3 {
+            margin-bottom: 1rem;
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--secondary-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--secondary-color);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .table-container {
+            background: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: #f1f3f4;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .shift-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: white;
+        }
+
+        .shift-mañana { background-color: #FFF59D; color: #333; }
+        .shift-tarde { background-color: #A5D6A7; color: #333; }
+        .shift-noche { background-color: #90CAF9; color: #333; }
+        .shift-partido { background-color: #FFCC80; color: #333; }
+        .shift-libre { background-color: #EF9A9A; color: #333; }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+
+        .success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 1rem;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🏨 Dashboard de Gestión de Horarios Hoteleros</h1>
+    </header>
+
+    <div class="container">
+        <!-- Controles Principales -->
+        <div class="controls">
+            <div class="control-group">
+                <label for="semana-select">Seleccionar Semana:</label>
+                <select id="semana-select">
+                    <option value="">Cargando semanas...</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="nueva-semana">Generar Nueva Semana:</label>
+                <input type="date" id="nueva-semana">
+            </div>
+            <div class="control-group" style="margin-top: 1.8rem;">
+                <button onclick="generarHorario()">Generar Horario</button>
+                <button class="secondary" onclick="cargarDashboard()">Actualizar</button>
+            </div>
+        </div>
+
+        <!-- Estadísticas Generales -->
+        <div class="stats-grid" id="stats-container">
+            <div class="stat-card">
+                <div class="stat-number" id="total-empleados">0</div>
+                <div class="stat-label">Total Empleados</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="semanas-generadas">0</div>
+                <div class="stat-label">Semanas Generadas</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="festivos-trabajados">0</div>
+                <div class="stat-label">Festivos Trabajados</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="turnos-mañana">0</div>
+                <div class="stat-label">Turnos Mañana</div>
+            </div>
+        </div>
+
+        <!-- Gráficos -->
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3>📊 Distribución de Turnos</h3>
+                <div id="grafico-turnos" style="width: 100%; height: 400px;"></div>
+            </div>
+            <div class="card">
+                <h3>🥧 Distribución de Roles</h3>
+                <div id="grafico-roles" style="width: 100%; height: 400px;"></div>
+            </div>
+            <div class="card">
+                <h3>📈 Semanas Trabajadas</h3>
+                <div id="grafico-semanas" style="width: 100%; height: 400px;"></div>
+            </div>
+            <div class="card">
+                <h3>🗓️ Horario Semanal</h3>
+                <div id="grafico-horario" style="width: 100%; height: 500px;"></div>
+            </div>
+        </div>
+
+        <!-- Tabla de Horarios -->
+        <div class="table-container">
+            <h3 style="padding: 1.5rem; border-bottom: 1px solid var(--border-color);">📋 Horario Detallado</h3>
+            <div id="horario-table-container">
+                <div class="loading">Selecciona una semana para ver el horario...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Variables globales
+        let semanas = [];
+        let estadisticas = {};
+        let horarioActual = {};
+
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', function() {
+            cargarDashboard();
+        });
+
+        // Funciones de API
+        async function fetchData(url) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                return null;
+            }
+        }
+
+        // Carga principal del dashboard
+        async function cargarDashboard() {
+            // Cargar semanas
+            semanas = await fetchData('/api/historial');
+            if (semanas) {
+                llenarSelectorSemanas();
+            }
+
+            // Cargar estadísticas
+            estadisticas = await fetchData('/api/estadisticas');
+            if (estadisticas) {
+                actualizarEstadisticas();
+                cargarGraficos();
+            }
+        }
+
+        // Llenar selector de semanas
+        function llenarSelectorSemanas() {
+            const selector = document.getElementById('semana-select');
+            selector.innerHTML = '<option value="">Seleccionar semana...</option>';
+            
+            semanas.forEach(semana => {
+                const option = document.createElement('option');
+                option.value = semana.semana;
+                option.textContent = `${semana.inicio} - ${semana.fin} (${semana.festivos} festivos)`;
+                selector.appendChild(option);
+            });
+        }
+
+        // Actualizar estadísticas numéricas
+        function actualizarEstadisticas() {
+            if (!estadisticas) return;
+
+            // Total empleados
+            document.getElementById('total-empleados').textContent = Object.keys(estadisticas.turnos_por_empleado).length;
+
+            // Semanas generadas
+            document.getElementById('semanas-generadas').textContent = semanas.length;
+
+            // Festivos trabajados
+            const totalFestivos = Object.values(estadisticas.festivos_trabajados).reduce((a, b) => a + b, 0);
+            document.getElementById('festivos-trabajados').textContent = totalFestivos;
+
+            // Turnos mañana
+            const totalMañana = Object.values(estadisticas.turnos_por_empleado).reduce((acc, turnos) => {
+                return acc + (turnos.Mañana || 0);
+            }, 0);
+            document.getElementById('turnos-mañana').textContent = totalMañana;
+        }
+
+        // Cargar gráficos
+        async function cargarGraficos() {
+            if (!estadisticas) return;
+
+            // Gráfico de turnos
+            const graficoTurnos = await fetchData('/grafico/turnos');
+            if (graficoTurnos) {
+                Plotly.newPlot('grafico-turnos', graficoTurnos.data, graficoTurnos.layout);
+            }
+
+            // Gráfico de roles
+            const graficoRoles = await fetchData('/grafico/roles');
+            if (graficoRoles) {
+                Plotly.newPlot('grafico-roles', graficoRoles.data, graficoRoles.layout);
+            }
+
+            // Gráfico de semanas
+            const graficoSemanas = await fetchData('/grafico/semanas');
+            if (graficoSemanas) {
+                Plotly.newPlot('grafico-semanas', graficoSemanas.data, graficoSemanas.layout);
+            }
+
+            // Gráfico de horario (última semana)
+            if (semanas.length > 0) {
+                await cargarHorarioSemana(semanas[0].semana);
+            }
+        }
+
+        // Cargar horario de una semana específica
+        async function cargarHorarioSemana(semana) {
+            const datos = await fetchData(`/api/horario/${semana}`);
+            if (datos && datos.schedule) {
+                horarioActual = datos;
+                mostrarHorarioTabla(datos);
+                mostrarGraficoHorario(datos);
+            }
+        }
+
+        // Mostrar horario en tabla
+        function mostrarHorarioTabla(datos) {
+            const container = document.getElementById('horario-table-container');
+            const schedule = datos.schedule;
+            const staff = datos.staff;
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Empleado</th>
+                            <th>Lunes</th>
+                            <th>Martes</th>
+                            <th>Miércoles</th>
+                            <th>Jueves</th>
+                            <th>Viernes</th>
+                            <th>Sábado</th>
+                            <th>Domingo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            staff.forEach(persona => {
+                const turnos = schedule[persona.name];
+                let row = `<tr><td><strong>${persona.name}</strong></td>`;
+                
+                turnos.forEach(turno => {
+                    const clase = `shift-${turno.toLowerCase()}`;
+                    row += `<td><span class="shift-badge ${clase}">${turno}</span></td>`;
+                });
+                
+                row += `</tr>`;
+                html += row;
+            });
+
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        // Mostrar gráfico de horario
+        async function mostrarGraficoHorario(datos) {
+            const grafico = await fetchData(`/grafico/horario/${datos.semana || Object.keys(horarioActual)[0]}`);
+            if (grafico) {
+                Plotly.newPlot('grafico-horario', grafico.data, grafico.layout);
+            }
+        }
+
+        // Evento de cambio de semana
+        document.getElementById('semana-select').addEventListener('change', function() {
+            const semana = this.value;
+            if (semana) {
+                cargarHorarioSemana(semana);
+            }
+        });
+
+        // Generar nuevo horario
+        async function generarHorario() {
+            const input = document.getElementById('nueva-semana');
+            const fecha = input.value;
+            
+            if (!fecha) {
+                alert('Por favor, selecciona una fecha para generar el horario');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/generar_horario', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ semana: fecha })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('Horario generado exitosamente');
+                    cargarDashboard();
+                } else {
+                    alert('Error al generar el horario: ' + (result.error || 'Desconocido'));
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error al generar el horario');
+            }
+        }
+    </script>
+</body>
+</html>
