@@ -12,14 +12,14 @@ from datetime import date, timedelta
 from flask import Flask, jsonify, request, send_from_directory, session
 
 # ── Importar lógica del proyecto ─────────────────────────────────────────────
-from modelo_base import DAYS
+from modelo_base import DAYS, SHIFTS
 from herramientas import (
     cargar_plantilla, guardar_plantilla, validar_plantilla,
     cargar_peticiones, guardar_peticiones,
     aplicar_peticiones, obtener_peticiones_semana,
     cargar_vacaciones, guardar_vacaciones,
     aplicar_vacaciones, vacaciones_activas_en_semana,
-    cargar_historial, registrar_semana,
+    cargar_historial, guardar_historial, registrar_semana,
     registrar_festivos_semana, festivos_en_semana,
     cargar_festivos_trabajados,
     cargar_compensaciones, guardar_compensaciones,
@@ -450,14 +450,27 @@ def api_generar():
     staff = aplicar_vacaciones(staff_base, semana, dept_id)
     staff = aplicar_peticiones(staff, semana, dept_id)
 
-    # Mozos: load who covered last week to give them Mon+Tue off this week
+    # Quién cubrió noches la semana pasada y debe descansar esos días esta
+    # semana: mozos siempre (Lun+Mar de la semana siguiente, por diseño) y
+    # recepción cuando la compensación del sustituto cae tras el domingo
+    # (p.ej. cubre Sáb+Dom, descansa Lun+Mar — de la semana que viene, no de
+    # la misma).
+    prev_key = _semana_str(semana - timedelta(weeks=1))
+    cov_path = os.path.join(DATA_DIR, f"night_covers_{dept_id}.json")
     prev_week_covers = {}
-    if cfg.prefer_next_week_for_cover:
-        prev_key = _semana_str(semana - timedelta(weeks=1))
-        cov_path = os.path.join(DATA_DIR, f"night_covers_{dept_id}.json")
-        if os.path.exists(cov_path):
-            import json as _j
-            prev_week_covers = _j.loads(open(cov_path, encoding="utf-8").read()).get(prev_key, {})
+    if os.path.exists(cov_path):
+        import json as _j
+        prev_week_covers = _j.loads(open(cov_path, encoding="utf-8").read()).get(prev_key, {})
+
+    # Las reglas de descanso (no Mañana tras Tarde/Noche, descanso obligatorio
+    # tras Noche) no se reinician al cambiar de semana: se mira qué turno hizo
+    # cada persona el domingo de la semana anterior, si ese horario existe.
+    historial_prev = cargar_historial(dept_id)
+    prev_sem_key = _semana_str(semana - timedelta(weeks=1))
+    prev_sunday_shifts = {}
+    if prev_sem_key in historial_prev:
+        prev_sched = historial_prev[prev_sem_key].get("schedule", {})
+        prev_sunday_shifts = {nombre: turnos[6] for nombre, turnos in prev_sched.items() if len(turnos) == 7}
 
     from modelo_base import generate_schedule as gen_sched
     full_schedule, staff_final, ws_date, night_cover, this_week_covers = gen_sched(
@@ -465,14 +478,13 @@ def api_generar():
         week_start=semana,
         cfg=cfg,
         prev_week_covers=prev_week_covers,
+        prev_sunday_shifts=prev_sunday_shifts,
     )
 
-    if cfg.prefer_next_week_for_cover:
-        import json as _j
-        cov_path = os.path.join(DATA_DIR, f"night_covers_{dept_id}.json")
-        all_covers = _j.loads(open(cov_path).read()) if os.path.exists(cov_path) else {}
-        all_covers[_semana_str(semana)] = this_week_covers
-        open(cov_path, "w").write(_j.dumps(all_covers, ensure_ascii=False, indent=2))
+    import json as _j
+    all_covers = _j.loads(open(cov_path).read()) if os.path.exists(cov_path) else {}
+    all_covers[_semana_str(semana)] = this_week_covers
+    open(cov_path, "w").write(_j.dumps(all_covers, ensure_ascii=False, indent=2))
 
     advertencias = _calcular_advertencias(full_schedule, staff_final, cfg)
 
@@ -526,6 +538,47 @@ def api_horario_semana():
         "existe": True, "semana": key, "dept": dept_id, "bloqueada": bloqueada,
         "schedule": entrada["schedule"], "staff": entrada["staff"],
         "advertencias": advertencias, "festivos": festivos, "dias": DAYS,
+    })
+
+@app.route("/api/horario/turno", methods=["PUT"])
+@permiso_requerido("generar_horario")
+def api_editar_turno():
+    """Modifica manualmente el turno de una persona un día concreto en un horario ya generado."""
+    body    = request.json or {}
+    dept_id = body.get("dept", "recepcion")
+    if dept_id not in ("recepcion", "mozos"):
+        dept_id = "recepcion"
+    nombre  = body.get("nombre")
+    dia_idx = body.get("dia_idx")
+    turno   = body.get("turno")
+    semana  = lunes_de(body.get("semana", date.today().isoformat()))
+
+    if _semana_bloqueada(semana) and usuario_actual()["rol"] != "admin":
+        return err("Esta semana ya pasó y quedó fija. Solo un administrador puede modificarla.", 403)
+    if not isinstance(dia_idx, int) or not (0 <= dia_idx <= 6):
+        return err("Día inválido")
+    if turno not in SHIFTS:
+        return err(f"Turno inválido: {turno}")
+
+    historial = cargar_historial(dept_id)
+    key = _semana_str(semana)
+    if key not in historial:
+        return err("Esta semana no tiene horario generado", 404)
+    entrada = historial[key]
+    if nombre not in entrada["schedule"]:
+        return err("Empleado no encontrado en esta semana")
+
+    entrada["schedule"][nombre][dia_idx] = turno
+    guardar_historial(historial, dept_id)
+    _recalcular_la_desde_historial(dept_id)
+    registrar_accion("EDITAR_TURNO", f"Dept:{dept_id} Semana:{key} {nombre} {DAYS[dia_idx]}->{turno}")
+
+    cfg = _get_dept_config(dept_id)
+    advertencias = _calcular_advertencias(entrada["schedule"], entrada["staff"], cfg)
+    return ok({
+        "semana": key, "dept": dept_id,
+        "schedule": entrada["schedule"], "staff": entrada["staff"],
+        "advertencias": advertencias, "dias": DAYS,
     })
 
 @app.route("/api/horario/exportar", methods=["POST"])

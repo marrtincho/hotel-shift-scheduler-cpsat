@@ -8,6 +8,8 @@ import os
 import shutil
 from datetime import date, timedelta
 
+from modelo_base import DAYS
+
 # ─── RUTAS DE DATOS ──────────────────────────────────────────────────────────
 
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
@@ -472,9 +474,29 @@ def validar_rol(rol_id: str, datos: dict, dept_id: str = "recepcion",
         errores.append(f"Turno fijo inválido: {turno}")
 
     errores += _validar_dias(datos.get("dias_libres_fijos"), "Los días libres fijos")
-    errores += _validar_dias(datos.get("dias_libres_sustituto"), "Los días del sustituto")
+
+    if rol_id == "night_fixed":
+        # Los días del sustituto ya no los elige el admin: se calculan siempre
+        # como los dos días siguientes a los días libres fijos (ver
+        # _dias_sustituto_noche), así el descanso del sustituto nunca rompe el
+        # límite de "máximo 2 libres juntos por semana".
+        fijos = datos.get("dias_libres_fijos")
+        if not fijos:
+            errores.append("El turno noche fijo necesita días libres fijos")
+        elif len(_validar_dias(fijos, "x")) == 0:
+            a, b = sorted(fijos)
+            if b - a != 1:
+                errores.append("Los días libres fijos del turno noche deben ser dos días consecutivos")
 
     return errores
+
+def _dias_sustituto_noche(dias_libres_fijos: list) -> list:
+    """Los dos días siguientes a los días libres fijos del turno noche
+    (con vuelta de semana, p.ej. fijos=Sáb+Dom -> Lun+Mar)."""
+    if not dias_libres_fijos or len(dias_libres_fijos) != 2:
+        return None
+    b = max(dias_libres_fijos)
+    return sorted({(b + 1) % 7, (b + 2) % 7})
 
 def crear_rol(rol_id: str, datos: dict, dept_id: str = "recepcion") -> tuple[bool, str]:
     rol_id  = rol_id.strip().lower().replace(" ", "_")
@@ -505,9 +527,13 @@ def editar_rol(rol_id: str, datos: dict, dept_id: str = "recepcion") -> tuple[bo
         return False, "Categoría no encontrada"
     actual = roles[rol_id]
 
-    # night_fixed: el turno fijo siempre es Noche, no es editable.
+    # night_fixed: el turno fijo siempre es Noche, no es editable; los días del
+    # sustituto tampoco los elige el admin, se calculan a partir de los días
+    # libres fijos (ver _dias_sustituto_noche).
     if rol_id == "night_fixed":
-        datos = {**datos, "turno_fijo": "Noche"}
+        fijos_efectivos = datos.get("dias_libres_fijos", actual.get("dias_libres_fijos"))
+        datos = {**datos, "turno_fijo": "Noche",
+                 "dias_libres_sustituto": _dias_sustituto_noche(fijos_efectivos)}
     # normal: rol genérico por defecto — no tiene sentido fijarle turno/días/unicidad.
     if rol_id == "normal":
         datos = {k: v for k, v in datos.items()

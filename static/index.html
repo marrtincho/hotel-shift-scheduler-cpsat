@@ -103,6 +103,9 @@ nav{padding:10px 0;flex:1}
 .sc.Partido{background:var(--partido);color:var(--partido-t)}
 .sc.Libre{background:var(--libre);color:var(--libre-t)}
 .sc.fest{box-shadow:0 0 0 2px var(--festivo-t)}
+.sc.editable{cursor:pointer}
+.sc.editable:hover{box-shadow:0 0 0 2px var(--text-3)}
+.sc-edit-sel{font-size:11px;font-weight:500;min-width:70px;border-radius:4px;border:1px solid var(--text-3);padding:2px}
 
 /* BADGES */
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
@@ -528,16 +531,8 @@ function closeModal(id){
       </div>
     </div>
     <div class="fr" id="m-cat-sustituto-wrap" style="display:none">
-      <label>Días libres del sustituto (solo Noche fijo)</label>
-      <div class="pill-sel" id="m-cat-sustituto-dias">
-        <div class="pill" data-v="0">Lunes</div>
-        <div class="pill" data-v="1">Martes</div>
-        <div class="pill" data-v="2">Miércoles</div>
-        <div class="pill" data-v="3">Jueves</div>
-        <div class="pill" data-v="4">Viernes</div>
-        <div class="pill" data-v="5">Sábado</div>
-        <div class="pill" data-v="6">Domingo</div>
-      </div>
+      <label>Descanso del sustituto</label>
+      <div class="alert info" id="m-cat-sustituto-info" style="margin:0"></div>
     </div>
     <div class="g2">
       <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="m-cat-sin-noches"> Sin noches (no cubre al fijo de noche)</label>
@@ -645,6 +640,8 @@ async function cargarRolesTodosDepts(){
 let weekOffset = 0;
 let lastSchedule = null;
 let lastStaff = null;
+let lastFestivos = [];
+let lastAdvertencias = [];
 let editEmpIdx = null;
 let laNombre = null;
 let staffCache = [];
@@ -717,6 +714,7 @@ async function cargarHorarioSemana(){
   const r = await api('GET',`/horario/semana?semana=${semana}&dept=${currentDept}`);
   if(!r.ok){ showAlert('err', r.error); return; }
   if(!r.data.existe){
+    lastSchedule = null; lastStaff = null; lastFestivos = []; lastAdvertencias = [];
     renderSchedule({staff:[], schedule:{}, festivos:[], advertencias:[]});
     showAlert('info', semanaBloqueadaParaGenerar(weekOffset)
       ? 'Esta semana pasó sin generarse y quedó fija. Solo un administrador puede generarla.'
@@ -725,6 +723,8 @@ async function cargarHorarioSemana(){
   }
   lastSchedule = r.data.schedule;
   lastStaff = r.data.staff;
+  lastFestivos = r.data.festivos||[];
+  lastAdvertencias = r.data.advertencias||[];
   renderSchedule(r.data);
   if(r.data.advertencias.length)
     showAlert('warn','Advertencias: '+r.data.advertencias.join(' · '));
@@ -749,6 +749,8 @@ document.getElementById('btn-generar').onclick = async ()=>{
   if(!r.ok){ showAlert('err',r.error); return; }
   lastSchedule = r.data.schedule;
   lastStaff = r.data.staff;
+  lastFestivos = r.data.festivos||[];
+  lastAdvertencias = r.data.advertencias||[];
   renderSchedule(r.data);
   if(r.data.advertencias.length)
     showAlert('warn','Advertencias: '+r.data.advertencias.join(' · '));
@@ -765,6 +767,45 @@ document.getElementById('btn-exportar').onclick = async ()=>{
   if(r.ok) toast('Excel guardado en la carpeta del proyecto');
   else toast(r.error,'err');
 };
+
+// La semana vigente y futuras: encargado y admin pueden editar turnos a mano.
+// Semanas pasadas: solo admin (misma regla que generar/regenerar).
+function puedeEditarTurnos(){
+  return tienePermiso('generar_horario') && !semanaBloqueadaParaGenerar(weekOffset);
+}
+
+const TURNOS_EDITABLES = ['Mañana','Tarde','Noche','Partido','Libre'];
+
+function abrirEditorTurno(span){
+  if(span.tagName === 'SELECT') return;
+  const nombre = span.dataset.name;
+  const dia    = Number(span.dataset.day);
+  const actual = span.dataset.value;
+
+  const sel = document.createElement('select');
+  sel.className = 'sc-edit-sel';
+  TURNOS_EDITABLES.forEach(t=>{
+    const opt = document.createElement('option');
+    opt.value = t; opt.textContent = t;
+    if(t === actual) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.onclick = e => e.stopPropagation();
+  const cerrar = ()=> renderSchedule({staff:lastStaff||[], schedule:lastSchedule||{}, festivos:lastFestivos, advertencias:lastAdvertencias});
+  sel.onblur = cerrar;
+  sel.onchange = async ()=>{
+    const turno  = sel.value;
+    const semana = isoDate(getMonday(weekOffset));
+    const r = await api('PUT','/horario/turno',{dept: currentDept, semana, nombre, dia_idx: dia, turno});
+    if(!r.ok){ toast(r.error,'err'); cerrar(); return; }
+    lastSchedule    = r.data.schedule;
+    lastAdvertencias = r.data.advertencias||[];
+    renderSchedule({staff:lastStaff, schedule:lastSchedule, festivos:lastFestivos, advertencias:lastAdvertencias});
+    toast(`Turno de ${nombre} actualizado`);
+  };
+  span.replaceWith(sel);
+  sel.focus();
+}
 
 function renderSchedule(data){
   const dates = weekDates(weekOffset);
@@ -789,10 +830,14 @@ function renderSchedule(data){
       <div class="avatar" style="width:28px;height:28px;font-size:10px">${initials(p.name)}</div>
       <div><div style="font-size:12.5px;font-weight:500">${p.name}</div>
       <div style="font-size:10px;color:var(--text-2)">${ROLES[p.role]||p.role}</div></div></div></td>`;
+    const editable = puedeEditarTurnos();
     shifts.forEach((s,i)=>{
       const iso = isoDate(dates[i]);
       const fest = festDates.has(iso) && s!=='Libre';
-      html += `<td><span class="sc ${s}${fest?' fest':''}">${s}</span></td>`;
+      const cls = `sc ${s}${fest?' fest':''}${editable?' editable':''}`;
+      html += editable
+        ? `<td><span class="${cls}" data-name="${p.name}" data-day="${i}" data-value="${s}" onclick="abrirEditorTurno(this)">${s}</span></td>`
+        : `<td><span class="${cls}">${s}</span></td>`;
     });
     tr.innerHTML = html;
     tbody.appendChild(tr);
@@ -932,7 +977,6 @@ function _resetCatModal(){
   const turnoSel = document.getElementById('m-cat-turno');
   turnoSel.value = ''; turnoSel.disabled = false;
   document.querySelectorAll('#m-cat-dias .pill').forEach(p=>p.classList.remove('on'));
-  document.querySelectorAll('#m-cat-sustituto-dias .pill').forEach(p=>p.classList.remove('on'));
   document.getElementById('m-cat-sustituto-wrap').style.display = 'none';
   document.getElementById('m-cat-sin-noches').checked = false;
   document.getElementById('m-cat-unico').checked = false;
@@ -966,9 +1010,7 @@ function openEditCat(id){
   if(id === 'night_fixed'){
     document.getElementById('m-cat-turno').disabled = true;
     document.getElementById('m-cat-sustituto-wrap').style.display = '';
-    document.querySelectorAll('#m-cat-sustituto-dias .pill').forEach(p=>{
-      p.classList.toggle('on', (c.dias_libres_sustituto||[]).includes(Number(p.dataset.v)));
-    });
+    _actualizarSustitutoInfo();
   }
   if(c.protegido){
     document.getElementById('m-cat-protegido-alert').style.display = '';
@@ -979,8 +1021,39 @@ function openEditCat(id){
   document.getElementById('modal-cat').classList.remove('hidden');
 }
 
-document.querySelectorAll('#m-cat-dias .pill, #m-cat-sustituto-dias .pill').forEach(p=>{
-  p.onclick = ()=>p.classList.toggle('on');
+// Los días de descanso del sustituto se calculan, no se eligen: son siempre
+// los dos días siguientes a los días libres fijos del turno noche (con vuelta
+// de semana, p.ej. fijos=Sáb+Dom -> descansa Lun+Mar de la semana que viene).
+// Así nunca se puede romper el límite de máximo 2 libres juntos por semana.
+const DIAS_NOMBRE = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+function _diasSustitutoNoche(diasFijos){
+  if(!diasFijos || diasFijos.length !== 2) return null;
+  const b = Math.max(...diasFijos);
+  return [...new Set([(b+1)%7, (b+2)%7])].sort((a,b)=>a-b);
+}
+
+function _actualizarSustitutoInfo(){
+  const diasFijos = _diasPills('m-cat-dias');
+  const info = document.getElementById('m-cat-sustituto-info');
+  if(!diasFijos || diasFijos.length !== 2){
+    info.textContent = 'Elige los 2 días libres fijos para calcular el descanso del sustituto.';
+    return;
+  }
+  const [a,b] = diasFijos;
+  if(b - a !== 1){
+    info.textContent = 'Los días libres fijos deben ser consecutivos para poder calcular el descanso del sustituto.';
+    return;
+  }
+  const dias = _diasSustitutoNoche(diasFijos).map(d=>DIAS_NOMBRE[d]).join(' y ');
+  info.textContent = `El sustituto descansará ${dias} (calculado automáticamente a partir de los días libres fijos).`;
+}
+
+document.querySelectorAll('#m-cat-dias .pill').forEach(p=>{
+  p.onclick = ()=>{
+    p.classList.toggle('on');
+    if(editCatId === 'night_fixed') _actualizarSustitutoInfo();
+  };
 });
 
 function _diasPills(containerId){
@@ -993,11 +1066,11 @@ document.getElementById('btn-save-cat').onclick = async ()=>{
   const nDias = document.querySelectorAll('#m-cat-dias .pill.on').length;
   if(nDias !== 0 && nDias !== 2){ toast('Elige 0 o exactamente 2 días libres fijos','err'); return; }
 
-  let diasSustituto = null;
+  const diasFijos = _diasPills('m-cat-dias');
   if(editCatId === 'night_fixed'){
-    const nSus = document.querySelectorAll('#m-cat-sustituto-dias .pill.on').length;
-    if(nSus !== 0 && nSus !== 2){ toast('Elige 0 o exactamente 2 días para el sustituto','err'); return; }
-    diasSustituto = _diasPills('m-cat-sustituto-dias');
+    if(!diasFijos){ toast('El turno noche fijo necesita días libres fijos','err'); return; }
+    const [a,b] = diasFijos;
+    if(b - a !== 1){ toast('Los días libres fijos del turno noche deben ser dos días consecutivos','err'); return; }
   }
 
   const label = document.getElementById('m-cat-label').value.trim();
@@ -1009,8 +1082,7 @@ document.getElementById('btn-save-cat').onclick = async ()=>{
     label,
     icon: document.getElementById('m-cat-icon').value.trim(),
     turno_fijo: document.getElementById('m-cat-turno').value || null,
-    dias_libres_fijos: _diasPills('m-cat-dias'),
-    dias_libres_sustituto: diasSustituto,
+    dias_libres_fijos: diasFijos,
     sin_noches: document.getElementById('m-cat-sin-noches').checked,
     unico: document.getElementById('m-cat-unico').checked,
   };

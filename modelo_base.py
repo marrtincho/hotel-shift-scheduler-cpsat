@@ -41,10 +41,15 @@ class DeptConfig:
 def get_consecutive_day_pairs():
     return [(i, i+1) for i in range(len(DAYS)-1)]
 
-def can_work_morning(person_name, day_idx, schedule):
+def _turno_anterior(person_name, day_idx, schedule, prev_sunday_shifts=None):
+    """Turno del día anterior. Para el lunes (day_idx=0), mira el domingo
+    de la semana pasada (prev_sunday_shifts), no reinicia la regla."""
     if day_idx == 0:
-        return True
-    return schedule[person_name][day_idx-1] not in NO_MORNING_AFTER
+        return (prev_sunday_shifts or {}).get(person_name)
+    return schedule[person_name][day_idx-1]
+
+def can_work_morning(person_name, day_idx, schedule, prev_sunday_shifts=None):
+    return _turno_anterior(person_name, day_idx, schedule, prev_sunday_shifts) not in NO_MORNING_AFTER
 
 def _get_weekend_counts(dept_id: str) -> dict:
     try:
@@ -135,12 +140,30 @@ def select_night_covers(staff_list: list, week_start: date, cfg: DeptConfig) -> 
         # They get no forced days off this week from coverage (their normal rotation applies)
         # but we note it so next week gives them Lun+Mar
         chosen_person["covered_nights_prev_week"] = True
+        # Excepción mozos: si tras la última noche cubierta (p.ej. Sábado, si
+        # cubre Vie+Sáb) todavía queda un día dentro de la MISMA semana antes
+        # del domingo inclusive, ese día debe librarse obligatoriamente —
+        # nunca puede empezar un turno normal recién saliendo de una noche.
+        last_day = max(cfg.night_fixed_days_off) if cfg.night_fixed_days_off else -1
+        if 0 <= last_day < 6:
+            chosen_person["dia_descanso_tras_cobertura"] = last_day + 1
     else:
-        # Recepción style: immediate Sat+Sun off (se combina con lo que ya
-        # tuviera, p.ej. vacaciones, en vez de sobrescribirlo)
-        comp_day_names = [DAYS[i] for i in cfg.night_cover_compensation]
-        existentes = chosen_person.get("forced_days_off", [])
-        chosen_person["forced_days_off"] = list(dict.fromkeys(existentes + comp_day_names))
+        # Recepción style: el sustituto descansa justo después de su última noche
+        # de cobertura. Si esos días de compensación caen dentro de la misma
+        # semana (p.ej. cubre Jue+Vie, descansa Sáb+Dom) se aplican ya — pero si
+        # la última noche cubierta es Sábado o Domingo, "el día siguiente" cae
+        # en la semana QUE VIENE (Domingo→Lunes), así que ese descanso no se
+        # puede aplicar todavía: se guarda en next_week_rest_days para que el
+        # llamador lo traslade a la generación de la semana siguiente.
+        last_day = max(cfg.night_fixed_days_off) if cfg.night_fixed_days_off else -1
+        same_week_idx = [i for i in cfg.night_cover_compensation if i > last_day]
+        next_week_idx = [i for i in cfg.night_cover_compensation if i <= last_day]
+        if same_week_idx:
+            comp_day_names = [DAYS[i] for i in same_week_idx]
+            existentes = chosen_person.get("forced_days_off", [])
+            chosen_person["forced_days_off"] = list(dict.fromkeys(existentes + comp_day_names))
+        if next_week_idx:
+            chosen_person["next_week_rest_days"] = [DAYS[i] for i in next_week_idx]
 
     history[chosen_name] = history.get(chosen_name, 0) + 1
     _save_night_history(cfg.night_rotation_key, history)
@@ -226,6 +249,16 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
             person["days_off"] = list(chosen)
             pair_usage[chosen] += 1
 
+        elif person.get("dia_descanso_tras_cobertura") is not None:
+            # Mozos cover (Vie+Sáb): si tras la última noche cubierta aún
+            # queda un día dentro de la misma semana (el domingo), ese día
+            # libra obligatoriamente como descanso — sin pareja de rotación
+            # normal aparte, para no superar los 2 libres semanales (el
+            # premio de Lun+Mar de la semana siguiente se aplica por separado).
+            dia = person["dia_descanso_tras_cobertura"]
+            schedule[person["name"]][dia] = "Libre"
+            person["days_off"] = sorted(set(person.get("days_off", [])) | {dia})
+
         elif person.get("night_cover_this_week"):
             # Mozos cover: no forced comp days this week, use normal rotation
             # but avoid covering nights (those are their work days)
@@ -260,18 +293,18 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
 
 # ─── ASIGNACIÓN DE TURNOS ────────────────────────────────────────────────────
 
-def allowed_shifts(person, day_idx, schedule, coverage, cfg: DeptConfig):
+def allowed_shifts(person, day_idx, schedule, coverage, cfg: DeptConfig, prev_sunday_shifts=None):
     result = []
     for shift in ["Mañana", "Tarde", "Partido"]:
         if coverage.get(shift, 0) >= cfg.max_coverage.get(shift, 99):
             continue
-        if shift == "Mañana" and not can_work_morning(person["name"], day_idx, schedule):
+        if shift == "Mañana" and not can_work_morning(person["name"], day_idx, schedule, prev_sunday_shifts):
             continue
         result.append(shift)
     return result
 
 def assign_shifts(staff_list: list, days_off_schedule: dict,
-                  night_cover: dict, cfg: DeptConfig) -> dict:
+                  night_cover: dict, cfg: DeptConfig, prev_sunday_shifts: dict = None) -> dict:
     if night_cover is None:
         night_cover = {}
 
@@ -313,7 +346,7 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
             needed = unfilled()
             if not needed:
                 break
-            opts = allowed_shifts(person, day_idx, schedule, coverage, cfg)
+            opts = allowed_shifts(person, day_idx, schedule, coverage, cfg, prev_sunday_shifts)
             fillable = [s for s in opts if s in needed]
             if not fillable:
                 continue
@@ -325,11 +358,11 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
 
         # Sub-pass B: remaining
         for person in available:
-            opts = allowed_shifts(person, day_idx, schedule, coverage, cfg)
+            opts = allowed_shifts(person, day_idx, schedule, coverage, cfg, prev_sunday_shifts)
             if not opts:
                 fallback = [s for s in ["Partido", "Tarde", "Mañana"]
                             if coverage.get(s, 0) < cfg.max_coverage.get(s, 99)
-                            and (s != "Mañana" or can_work_morning(person["name"], day_idx, schedule))]
+                            and (s != "Mañana" or can_work_morning(person["name"], day_idx, schedule, prev_sunday_shifts))]
                 chosen = fallback[0] if fallback else "Tarde"
             else:
                 prefs = [s for s in person.get("preferences", []) if s in opts]
@@ -342,29 +375,46 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
 # ─── FUNCIÓN PRINCIPAL ───────────────────────────────────────────────────────
 
 def generate_schedule(staff_list: list, week_start: date, cfg: DeptConfig,
-                      prev_week_covers: dict = None):
+                      prev_week_covers: dict = None, prev_sunday_shifts: dict = None):
     """
     Main schedule generation function.
-    prev_week_covers: {name: True} — mozos who covered last week get Lun+Mar off.
+    prev_week_covers: {name: True} (mozos) o {name: [día,...]} (recepción) —
+    quién cubrió noches la semana pasada y debe descansar esos días esta semana,
+    porque su descanso de compensación cayó tras el fin de la semana anterior.
+    prev_sunday_shifts: {name: turno} — turno del domingo de la semana anterior,
+    para que las reglas de descanso (no Mañana tras Tarde/Noche, descanso tras Noche)
+    no se reinicien al cambiar de semana.
     """
     staff_list = copy.deepcopy(staff_list)
 
-    # Apply previous week cover compensation (mozos: Lun+Mar of this week)
-    if prev_week_covers and cfg.prefer_next_week_for_cover:
+    # Aplicar el descanso de compensación pendiente de la semana pasada.
+    if prev_week_covers:
         for person in staff_list:
-            if prev_week_covers.get(person["name"]):
+            dias = prev_week_covers.get(person["name"])
+            if not dias:
+                continue
+            if cfg.prefer_next_week_for_cover:
+                # Mozos: siempre Lun+Mar de la semana siguiente, por diseño.
                 person["forced_days_off"] = ["Lunes", "Martes"]
+            elif isinstance(dias, list):
+                existentes = person.get("forced_days_off", [])
+                person["forced_days_off"] = list(dict.fromkeys(existentes + dias))
 
     night_cover    = select_night_covers(staff_list, week_start, cfg)
     days_off_sched = assign_days_off(staff_list, night_cover, cfg)
-    full_schedule  = assign_shifts(staff_list, days_off_sched, night_cover, cfg)
+    full_schedule  = assign_shifts(staff_list, days_off_sched, night_cover, cfg, prev_sunday_shifts)
 
-    # Record who covered this week (for next week's compensation)
+    # Registrar quién necesita descanso de compensación la semana que viene.
     this_week_covers = {}
     if cfg.prefer_next_week_for_cover:
         for person in staff_list:
             if person.get("night_cover_this_week"):
                 this_week_covers[person["name"]] = True
+    else:
+        for person in staff_list:
+            dias = person.get("next_week_rest_days")
+            if dias:
+                this_week_covers[person["name"]] = dias
 
     return full_schedule, staff_list, week_start, night_cover, this_week_covers
 
