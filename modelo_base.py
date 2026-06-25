@@ -96,9 +96,17 @@ def select_night_covers(staff_list: list, week_start: date, cfg: DeptConfig) -> 
             if day_name in forced:
                 blocked.add(p["name"])
 
+    try:
+        from herramientas import cargar_roles
+        roles_cfg = cargar_roles(cfg.dept_id)
+        eligible_roles = {rid for rid, r in roles_cfg.items()
+                           if not r.get("sin_noches") and rid != "night_fixed"}
+    except Exception:
+        eligible_roles = {"normal"}
+
     eligible = [
         p for p in staff_list
-        if p["role"] == "normal" and p["name"] not in blocked
+        if p["role"] in eligible_roles and p["name"] not in blocked
     ]
     if not eligible:
         return {}
@@ -128,9 +136,11 @@ def select_night_covers(staff_list: list, week_start: date, cfg: DeptConfig) -> 
         # but we note it so next week gives them Lun+Mar
         chosen_person["covered_nights_prev_week"] = True
     else:
-        # Recepción style: immediate Sat+Sun off
+        # Recepción style: immediate Sat+Sun off (se combina con lo que ya
+        # tuviera, p.ej. vacaciones, en vez de sobrescribirlo)
         comp_day_names = [DAYS[i] for i in cfg.night_cover_compensation]
-        chosen_person["forced_days_off"] = comp_day_names
+        existentes = chosen_person.get("forced_days_off", [])
+        chosen_person["forced_days_off"] = list(dict.fromkeys(existentes + comp_day_names))
 
     history[chosen_name] = history.get(chosen_name, 0) + 1
     _save_night_history(cfg.night_rotation_key, history)
@@ -174,7 +184,17 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
         if pair in pair_usage:
             pair_usage[pair] += 1
 
-    # Everyone else
+    # Vacaciones y peticiones de libre: se respetan siempre y por completo,
+    # sin importar el rol (incluso para turnos fijos como jefe o night_fixed).
+    for person in staff_list:
+        forced_indices = [DAYS.index(d) for d in person.get("forced_days_off", []) if d in DAYS]
+        extra_indices  = [DAYS.index(d) for d in person.get("extra_days_off", [])  if d in DAYS]
+        for idx in forced_indices + extra_indices:
+            schedule[person["name"]][idx] = "Libre"
+        if forced_indices or extra_indices:
+            person["days_off"] = sorted(set(person.get("days_off", [])) | set(forced_indices) | set(extra_indices))
+
+    # Everyone else (roles sin turno fijo): completar su pareja de libres semanales
     fixed_roles = set(cfg.fixed_days_off.keys()) | {"night_fixed"}
     for person in staff_list:
         if person["role"] in fixed_roles:
@@ -185,11 +205,9 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
         must_work = set(cover_by_person.get(person["name"], []))
 
         if len(forced_indices) >= 2:
-            chosen_idxs = forced_indices[:2]
-            for idx in chosen_idxs:
-                schedule[person["name"]][idx] = "Libre"
-            person["days_off"] = sorted(chosen_idxs)
-            pair = tuple(sorted(chosen_idxs))
+            # Ya quedaron marcados Libre arriba; solo se registra el par
+            # principal para el balanceo de uso de parejas de días.
+            pair = tuple(sorted(forced_indices[:2]))
             if pair in pair_usage:
                 pair_usage[pair] += 1
 
@@ -237,11 +255,6 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
             person["days_off"] = list(chosen)
             if chosen == (5,6):
                 weekend_counts[person["name"]] = wc + 1
-
-        # Extra LA days (non-replacing)
-        for day_name in person.get("extra_days_off", []):
-            if day_name in DAYS:
-                schedule[person["name"]][DAYS.index(day_name)] = "Libre"
 
     return schedule
 
@@ -371,7 +384,7 @@ def thin_border():
     s = Side(style="thin", color="BBBBBB")
     return Border(left=s, right=s, top=s, bottom=s)
 
-def export_to_excel(schedule, staff_list, week_start, filename, cfg: DeptConfig):
+def export_to_excel(schedule, staff_list, week_start, filename, cfg: DeptConfig, role_icons: dict = None):
     wb = Workbook()
     ws = wb.active
     ws.title = "Horario Semanal"
@@ -401,9 +414,10 @@ def export_to_excel(schedule, staff_list, week_start, filename, cfg: DeptConfig)
         ws.column_dimensions[get_column_letter(col)].width = 13
     ws.row_dimensions[2].height = 32
 
-    ROLE_ICONS = {"night_fixed":"★","jefe":"👑","subjefe":"⭐","adjunto_recepcion":"◉"}
+    icons = role_icons if role_icons is not None else \
+        {"night_fixed":"★","jefe":"👑","subjefe":"⭐","adjunto_recepcion":"◉"}
     for row_idx, person in enumerate(staff_list, start=3):
-        icon = ROLE_ICONS.get(person["role"], "")
+        icon = icons.get(person["role"], "")
         name_cell = ws.cell(row=row_idx, column=1, value=f"{person['name']} {icon}".strip())
         name_cell.font      = Font(bold=True)
         name_cell.alignment = Alignment(vertical="center", horizontal="left")

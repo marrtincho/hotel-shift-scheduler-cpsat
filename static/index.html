@@ -207,6 +207,7 @@ function closeModal(id){
     <div class="nav-item" data-sec="historial"><span class="nav-icon">≡</span>Historial</div>
     <div class="nav-item" data-sec="asistente"><span class="nav-icon">✦</span>Asistente IA</div>
     <div class="nav-section admin-only">Administración</div>
+    <div class="nav-item admin-only" data-sec="categorias"><span class="nav-icon">🏷</span>Categorías</div>
     <div class="nav-item admin-only" data-sec="usuarios"><span class="nav-icon">◉</span>Usuarios</div>
     <div class="nav-item admin-only" data-sec="log"><span class="nav-icon">◎</span>Log actividad</div>
   </nav>
@@ -274,6 +275,15 @@ function closeModal(id){
         <button class="btn pri sm" id="btn-add-emp">+ Añadir empleado</button>
       </div>
       <div class="card0" id="emp-list"></div>
+    </div>
+
+    <!-- ═══ CATEGORÍAS (admin) ═══ -->
+    <div class="section" id="sec-categorias">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-size:13px;color:var(--text-2)" id="cat-count"></span>
+        <button class="btn pri sm" id="btn-add-cat">+ Nueva categoría</button>
+      </div>
+      <div class="card0" id="cat-list"></div>
     </div>
 
     <!-- ═══ FESTIVOS ═══ -->
@@ -490,6 +500,60 @@ function closeModal(id){
   </div>
 </div>
 
+<!-- MODAL CATEGORÍA -->
+<div class="overlay hidden" id="modal-cat">
+  <div class="modal">
+    <div class="modal-hd"><span id="m-cat-title">Categoría</span><button class="btn ghost" onclick="closeModal('modal-cat')">✕</button></div>
+    <div class="fr"><label>Id interno</label><input id="m-cat-id" type="text" placeholder="p.ej. recepcionista_senior"></div>
+    <div class="fr"><label>Nombre visible</label><input id="m-cat-label" type="text" placeholder="p.ej. Recepcionista Senior"></div>
+    <div class="fr"><label>Icono (opcional)</label><input id="m-cat-icon" type="text" placeholder="p.ej. ⭐" maxlength="2"></div>
+    <div class="fr"><label>Turno fijo</label>
+      <select id="m-cat-turno">
+        <option value="">Sin turno fijo (rota normalmente)</option>
+        <option value="Mañana">Mañana</option>
+        <option value="Tarde">Tarde</option>
+        <option value="Noche">Noche</option>
+        <option value="Partido">Partido</option>
+      </select>
+    </div>
+    <div class="fr"><label>Días libres fijos (elige 0 o exactamente 2)</label>
+      <div class="pill-sel" id="m-cat-dias">
+        <div class="pill" data-v="0">Lunes</div>
+        <div class="pill" data-v="1">Martes</div>
+        <div class="pill" data-v="2">Miércoles</div>
+        <div class="pill" data-v="3">Jueves</div>
+        <div class="pill" data-v="4">Viernes</div>
+        <div class="pill" data-v="5">Sábado</div>
+        <div class="pill" data-v="6">Domingo</div>
+      </div>
+    </div>
+    <div class="fr" id="m-cat-sustituto-wrap" style="display:none">
+      <label>Días libres del sustituto (solo Noche fijo)</label>
+      <div class="pill-sel" id="m-cat-sustituto-dias">
+        <div class="pill" data-v="0">Lunes</div>
+        <div class="pill" data-v="1">Martes</div>
+        <div class="pill" data-v="2">Miércoles</div>
+        <div class="pill" data-v="3">Jueves</div>
+        <div class="pill" data-v="4">Viernes</div>
+        <div class="pill" data-v="5">Sábado</div>
+        <div class="pill" data-v="6">Domingo</div>
+      </div>
+    </div>
+    <div class="g2">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="m-cat-sin-noches"> Sin noches (no cubre al fijo de noche)</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="m-cat-unico"> Única persona con esta categoría</label>
+    </div>
+    <div class="alert warn" id="m-cat-protegido-alert" style="display:none">ℹ Categoría protegida del sistema: algunos campos no se pueden modificar y no se puede eliminar.</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px">
+      <button class="btn danger" id="btn-delete-cat" style="display:none">Eliminar</button>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn" onclick="closeModal('modal-cat')">Cancelar</button>
+        <button class="btn pri" id="btn-save-cat">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL VACACIONES -->
 <div class="overlay hidden" id="modal-vac">
   <div class="modal">
@@ -551,26 +615,32 @@ function closeModal(id){
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-const ROLES = {
-  normal:'Empleado',jefe:'Jefe 👑',subjefe:'Subjefe ⭐',
-  night_fixed:'Noche fijo ★',adjunto_recepcion:'Adjunto Recepción ◉'
-};
-const ROLES_BY_DEPT = {
-  recepcion: [
-    {v:'normal',       l:'Empleado normal'},
-    {v:'jefe',         l:'Jefe 👑 (Mañana fijo, libre Sáb+Dom)'},
-    {v:'subjefe',      l:'Subjefe ⭐ (preferencia Tarde)'},
-    {v:'night_fixed',  l:'Turno Noche fijo ★ (libre Jue+Vie)'},
-    {v:'adjunto_recepcion', l:'Adjunto Recepción ◉ (sin noches)'},
-  ],
-  mozos: [
-    {v:'normal',      l:'Mozo normal'},
-    {v:'night_fixed', l:'Turno Noche fijo ★ (libre Vie+Sáb)'},
-  ],
-};
+// ROLES y ROLES_BY_DEPT se cargan dinámicamente desde /api/roles (ver
+// cargarRolesDept/cargarRolesTodosDepts más abajo) — antes estaban
+// hardcodeados aquí. Se mantienen como objetos mutables con la misma forma
+// para no romper renderSchedule/loadEmpleados/loadCompensaciones/modal-emp.
+let ROLES = {};
+let ROLES_BY_DEPT = {};
+let rolesCache = {};
 const COMP  = {cobrar:'Cobra festivo',librar_mismo_dia:'Libra ese día',dia_libre_eleccion:'Acumula LA'};
 const DAYS  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
-const SECS  = {horario:['Horario semanal',''],empleados:['Empleados','Gestión de plantilla'],festivos:['Festivos','Valencia ciudad 2026'],compensaciones:['Compensaciones (LA)','Libres adicionales y festivos trabajados'],peticiones:['Peticiones','Días libres solicitados por empleado'],vacaciones:['Vacaciones','Periodos registrados'],estadisticas:['Estadísticas','Acumulado histórico por empleado'],historial:['Historial','Semanas guardadas'],asistente:['Asistente IA','Consultas sobre el equipo']};
+const SECS  = {horario:['Horario semanal',''],empleados:['Empleados','Gestión de plantilla'],categorias:['Categorías','Configuración de roles de empleado'],festivos:['Festivos','Valencia ciudad 2026'],compensaciones:['Compensaciones (LA)','Libres adicionales y festivos trabajados'],peticiones:['Peticiones','Días libres solicitados por empleado'],vacaciones:['Vacaciones','Periodos registrados'],estadisticas:['Estadísticas','Acumulado histórico por empleado'],historial:['Historial','Semanas guardadas'],asistente:['Asistente IA','Consultas sobre el equipo']};
+
+async function cargarRolesDept(dept){
+  const r = await api('GET', `/roles?dept=${dept}`);
+  if(!r.ok) return;
+  rolesCache[dept] = r.data;
+  ROLES_BY_DEPT[dept] = Object.entries(r.data).map(([v,info])=>(
+    {v, l: `${info.label}${info.icon?' '+info.icon:''}`}
+  ));
+  Object.entries(r.data).forEach(([v,info])=>{
+    ROLES[v] = `${info.label}${info.icon?' '+info.icon:''}`;
+  });
+}
+
+async function cargarRolesTodosDepts(){
+  await Promise.all([cargarRolesDept('recepcion'), cargarRolesDept('mozos')]);
+}
 
 let weekOffset = 0;
 let lastSchedule = null;
@@ -618,16 +688,64 @@ function toast(msg, type='ok'){
 // ── NAVIGATION — handled in auth section below ────────────────────────────
 
 // ── HORARIO ───────────────────────────────────────────────────────────────
-document.getElementById('btn-prev').onclick = ()=>{ weekOffset--; updateWeekLabel(); };
-document.getElementById('btn-next').onclick = ()=>{ weekOffset++; updateWeekLabel(); };
+function isPastWeek(off){ return getMonday(off) < getMonday(0); }
+
+// La semana queda fija una vez pasada: solo el admin puede regenerarla.
+function semanaBloqueadaParaGenerar(off){
+  return isPastWeek(off) && currentUser?.rol !== 'admin';
+}
+
+function updateGenerarState(){
+  const btnGen = document.getElementById('btn-generar');
+  const btnExp = document.getElementById('btn-exportar');
+  btnGen.style.display = tienePermiso('generar_horario') ? '' : 'none';
+  btnExp.style.display = tienePermiso('exportar_horario') ? '' : 'none';
+  if(semanaBloqueadaParaGenerar(weekOffset)){
+    btnGen.disabled = true;
+    btnGen.textContent = '🔒 Semana fija';
+    btnGen.title = 'Esta semana ya pasó. Solo un administrador puede regenerarla.';
+  } else {
+    btnGen.disabled = false;
+    btnGen.textContent = '⟳ Generar';
+    btnGen.title = '';
+  }
+}
+
+async function cargarHorarioSemana(){
+  const semana = isoDate(getMonday(weekOffset));
+  updateGenerarState();
+  const r = await api('GET',`/horario/semana?semana=${semana}&dept=${currentDept}`);
+  if(!r.ok){ showAlert('err', r.error); return; }
+  if(!r.data.existe){
+    renderSchedule({staff:[], schedule:{}, festivos:[], advertencias:[]});
+    showAlert('info', semanaBloqueadaParaGenerar(weekOffset)
+      ? 'Esta semana pasó sin generarse y quedó fija. Solo un administrador puede generarla.'
+      : 'Aún no se ha generado el horario de esta semana. Pulsa "Generar".');
+    return;
+  }
+  lastSchedule = r.data.schedule;
+  lastStaff = r.data.staff;
+  renderSchedule(r.data);
+  if(r.data.advertencias.length)
+    showAlert('warn','Advertencias: '+r.data.advertencias.join(' · '));
+  else
+    showAlert('ok', isPastWeek(weekOffset) ? 'Horario fijo de esta semana.' : 'Horario vigente de esta semana.');
+}
+
+document.getElementById('btn-prev').onclick = ()=>{ weekOffset--; updateWeekLabel(); cargarHorarioSemana(); };
+document.getElementById('btn-next').onclick = ()=>{ weekOffset++; updateWeekLabel(); cargarHorarioSemana(); };
 
 document.getElementById('btn-generar').onclick = async ()=>{
+  if(semanaBloqueadaParaGenerar(weekOffset)){
+    showAlert('err','Esta semana ya pasó y quedó fija. Solo un administrador puede regenerarla.');
+    return;
+  }
   const btn = document.getElementById('btn-generar');
   btn.innerHTML = '<span class="spinner"></span> Generando...';
   btn.disabled = true;
   const semana = isoDate(getMonday(weekOffset));
   const r = await api('POST','/horario/generar',{semana, dept: currentDept});
-  btn.textContent = '⟳ Generar'; btn.disabled = false;
+  updateGenerarState();
   if(!r.ok){ showAlert('err',r.error); return; }
   lastSchedule = r.data.schedule;
   lastStaff = r.data.staff;
@@ -769,7 +887,8 @@ document.getElementById('btn-save-emp').onclick = async ()=>{
   const body = {
     name, role:document.getElementById('m-role').value,
     comp:document.getElementById('m-comp').value,
-    preferences:[...document.querySelectorAll('#m-prefs .pill.on')].map(p=>p.dataset.v)
+    preferences:[...document.querySelectorAll('#m-prefs .pill.on')].map(p=>p.dataset.v),
+    dept: currentDept
   };
   const r = editEmpIdx===null
     ? await api('POST','/plantilla',body)
@@ -778,6 +897,142 @@ document.getElementById('btn-save-emp').onclick = async ()=>{
   closeModal('modal-emp');
   toast(editEmpIdx===null?'Empleado añadido':'Empleado actualizado');
   loadEmpleados();
+};
+
+// ── CATEGORÍAS (admin) ──────────────────────────────────────────────────────
+let editCatId = null;
+
+async function loadCategorias(){
+  const r = await api('GET', `/roles?dept=${currentDept}`);
+  if(!r.ok) return;
+  rolesCache[currentDept] = r.data;
+  const entries = Object.entries(r.data);
+  document.getElementById('cat-count').textContent = `${entries.length} categorías en ${currentDept}`;
+  document.getElementById('cat-list').innerHTML = entries.map(([id,c])=>`
+    <div class="emp-row" onclick="openEditCat('${id}')">
+      <div style="flex:1">
+        <div style="font-size:13.5px;font-weight:500">${c.label}${c.icon?' '+c.icon:''} ${c.protegido?'<span class="tag">protegida</span>':''}</div>
+        <div style="font-size:11px;color:var(--text-2)">
+          ${c.turno_fijo ? 'Turno fijo: '+c.turno_fijo : 'Rota normalmente'}
+          ${c.dias_libres_fijos ? ' · Libra: '+c.dias_libres_fijos.map(d=>DAYS[d].substring(0,3)).join('+') : ''}
+          ${c.sin_noches ? ' · Sin noches' : ''}
+          ${c.unico ? ' · Única persona' : ''}
+          · En uso: ${c.en_uso}
+        </div>
+      </div>
+      <span style="color:var(--text-3)">›</span>
+    </div>`).join('');
+}
+
+function _resetCatModal(){
+  const idInput = document.getElementById('m-cat-id');
+  idInput.disabled = false; idInput.value = '';
+  document.getElementById('m-cat-label').value = '';
+  document.getElementById('m-cat-icon').value = '';
+  const turnoSel = document.getElementById('m-cat-turno');
+  turnoSel.value = ''; turnoSel.disabled = false;
+  document.querySelectorAll('#m-cat-dias .pill').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('#m-cat-sustituto-dias .pill').forEach(p=>p.classList.remove('on'));
+  document.getElementById('m-cat-sustituto-wrap').style.display = 'none';
+  document.getElementById('m-cat-sin-noches').checked = false;
+  document.getElementById('m-cat-unico').checked = false;
+  document.getElementById('m-cat-protegido-alert').style.display = 'none';
+  document.getElementById('btn-delete-cat').style.display = 'none';
+}
+
+document.getElementById('btn-add-cat').onclick = ()=>{
+  editCatId = null;
+  _resetCatModal();
+  document.getElementById('m-cat-title').textContent = 'Nueva categoría';
+  document.getElementById('modal-cat').classList.remove('hidden');
+};
+
+function openEditCat(id){
+  editCatId = id;
+  const c = rolesCache[currentDept][id];
+  _resetCatModal();
+  document.getElementById('m-cat-title').textContent = 'Editar categoría';
+  document.getElementById('m-cat-id').value = id;
+  document.getElementById('m-cat-id').disabled = true;
+  document.getElementById('m-cat-label').value = c.label;
+  document.getElementById('m-cat-icon').value = c.icon||'';
+  document.getElementById('m-cat-turno').value = c.turno_fijo||'';
+  document.querySelectorAll('#m-cat-dias .pill').forEach(p=>{
+    p.classList.toggle('on', (c.dias_libres_fijos||[]).includes(Number(p.dataset.v)));
+  });
+  document.getElementById('m-cat-sin-noches').checked = !!c.sin_noches;
+  document.getElementById('m-cat-unico').checked = !!c.unico;
+
+  if(id === 'night_fixed'){
+    document.getElementById('m-cat-turno').disabled = true;
+    document.getElementById('m-cat-sustituto-wrap').style.display = '';
+    document.querySelectorAll('#m-cat-sustituto-dias .pill').forEach(p=>{
+      p.classList.toggle('on', (c.dias_libres_sustituto||[]).includes(Number(p.dataset.v)));
+    });
+  }
+  if(c.protegido){
+    document.getElementById('m-cat-protegido-alert').style.display = '';
+  }
+  if(c.borrable && c.en_uso === 0){
+    document.getElementById('btn-delete-cat').style.display = 'inline-flex';
+  }
+  document.getElementById('modal-cat').classList.remove('hidden');
+}
+
+document.querySelectorAll('#m-cat-dias .pill, #m-cat-sustituto-dias .pill').forEach(p=>{
+  p.onclick = ()=>p.classList.toggle('on');
+});
+
+function _diasPills(containerId){
+  const pills = [...document.querySelectorAll(`#${containerId} .pill.on`)];
+  if(pills.length === 0) return null;
+  return pills.map(p=>Number(p.dataset.v)).sort((a,b)=>a-b);
+}
+
+document.getElementById('btn-save-cat').onclick = async ()=>{
+  const nDias = document.querySelectorAll('#m-cat-dias .pill.on').length;
+  if(nDias !== 0 && nDias !== 2){ toast('Elige 0 o exactamente 2 días libres fijos','err'); return; }
+
+  let diasSustituto = null;
+  if(editCatId === 'night_fixed'){
+    const nSus = document.querySelectorAll('#m-cat-sustituto-dias .pill.on').length;
+    if(nSus !== 0 && nSus !== 2){ toast('Elige 0 o exactamente 2 días para el sustituto','err'); return; }
+    diasSustituto = _diasPills('m-cat-sustituto-dias');
+  }
+
+  const label = document.getElementById('m-cat-label').value.trim();
+  if(!label){ toast('El nombre es obligatorio','err'); return; }
+
+  const body = {
+    dept: currentDept,
+    id: document.getElementById('m-cat-id').value.trim(),
+    label,
+    icon: document.getElementById('m-cat-icon').value.trim(),
+    turno_fijo: document.getElementById('m-cat-turno').value || null,
+    dias_libres_fijos: _diasPills('m-cat-dias'),
+    dias_libres_sustituto: diasSustituto,
+    sin_noches: document.getElementById('m-cat-sin-noches').checked,
+    unico: document.getElementById('m-cat-unico').checked,
+  };
+
+  const r = editCatId === null
+    ? await api('POST', '/roles', body)
+    : await api('PUT', `/roles/${editCatId}`, body);
+  if(!r.ok){ toast(r.error, 'err'); return; }
+  closeModal('modal-cat');
+  toast(editCatId === null ? 'Categoría creada' : 'Categoría actualizada');
+  await cargarRolesDept(currentDept);
+  loadCategorias();
+};
+
+document.getElementById('btn-delete-cat').onclick = async ()=>{
+  if(!editCatId || !confirm(`¿Eliminar la categoría "${editCatId}"?`)) return;
+  const r = await api('DELETE', `/roles/${editCatId}?dept=${currentDept}`);
+  if(!r.ok){ toast(r.error, 'err'); return; }
+  closeModal('modal-cat');
+  toast('Categoría eliminada');
+  await cargarRolesDept(currentDept);
+  loadCategorias();
 };
 
 // ── FESTIVOS ──────────────────────────────────────────────────────────────
@@ -1241,10 +1496,11 @@ function showLogin(){
   document.getElementById('app').style.display = 'none';
 }
 
-function showApp(user){
+async function showApp(user){
   currentUser = user;
   document.getElementById('login-page').classList.remove('active');
   document.getElementById('app').style.display = 'flex';
+  await cargarRolesTodosDepts();
 
   document.getElementById('user-badge-area').innerHTML = `
     <div class="user-badge" onclick="document.getElementById('modal-pass').classList.remove('hidden')" title="Cambiar contraseña">
@@ -1262,6 +1518,10 @@ function showApp(user){
 
   applyNavPermissions();
   updateWeekLabel();
+  if(document.querySelector('.nav-item.active')?.dataset.sec === 'horario'){
+    document.getElementById('topbar-right').style.display = 'flex';
+    cargarHorarioSemana();
+  }
 }
 
 function applyNavPermissions(){
@@ -1303,7 +1563,7 @@ async function doLogin(){
   }
   errEl.style.display='none';
   document.getElementById('l-pass').value='';
-  showApp(d.data);
+  await showApp(d.data);
 }
 
 async function doLogout(){
@@ -1465,8 +1725,9 @@ document.querySelectorAll('.nav-item[data-sec]').forEach(el=>{
     document.getElementById('topbar-title').textContent = t;
     document.getElementById('topbar-sub').textContent = s;
     document.getElementById('topbar-right').style.display = sec==='horario'?'flex':'none';
-    if(sec==='horario')updateWeekLabel();
+    if(sec==='horario'){ updateWeekLabel(); cargarHorarioSemana(); }
     if(sec==='empleados')loadEmpleados();
+    if(sec==='categorias')loadCategorias();
     if(sec==='festivos')loadFestivos();
     if(sec==='compensaciones')loadCompensaciones();
     if(sec==='peticiones'){petWeekOffset=0;updatePetWeekLabel();loadPeticiones();}
@@ -1487,7 +1748,7 @@ SECS['log']      = ['Log de actividad','Registro de acciones'];
   const r = await fetch('/api/auth/me');
   const d = await r.json();
   if(d.ok && d.data){
-    showApp(d.data);
+    await showApp(d.data);
   } else {
     showLogin();
   }

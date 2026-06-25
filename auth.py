@@ -39,6 +39,7 @@ LOG_FILE     = os.path.join(DATA_DIR, "actividad.json")
 PERMISOS = {
     "admin": {
         "gestionar_usuarios",
+        "gestionar_roles",
         "ver_plantilla", "editar_plantilla",
         "generar_horario", "exportar_horario",
         "ver_historial", "eliminar_historial",
@@ -132,12 +133,6 @@ def autenticar(username: str, password: str) -> dict | None:
         if u["username"].lower() == username.lower() and u.get("activo", True):
             if _verify_password(password, u["hash"], u["salt"]):
                 return u
-    return None
-
-def usuario_por_id(uid: str) -> dict | None:
-    for u in _cargar_usuarios():
-        if u["id"] == uid:
-            return u
     return None
 
 def listar_usuarios() -> list[dict]:

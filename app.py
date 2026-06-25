@@ -24,7 +24,8 @@ from herramientas import (
     cargar_festivos_trabajados,
     cargar_compensaciones, guardar_compensaciones,
     cargar_festivos, FESTIVOS_VALENCIA,
-    ROLES_VALIDOS, MODALIDADES, BASE_DIR, DATA_DIR,
+    MODALIDADES, BASE_DIR, DATA_DIR,
+    cargar_roles, crear_rol, editar_rol, eliminar_rol,
     _semana_str,
 )
 from auth import (
@@ -236,12 +237,14 @@ def api_add_empleado():
     staff = cargar_plantilla(dept_id)
     if any(p["name"].lower() == nombre.lower() for p in staff):
         return err("Ya existe un empleado con ese nombre")
+    rol = body.get("role", "normal")
+    if rol not in cargar_roles(dept_id):
+        return err(f"Categoría de empleado inválida: {rol}")
     nuevo = {
         "name":        nombre,
-        "role":        body.get("role", "normal"),
+        "role":        rol,
         "preferences": body.get("preferences", []),
     }
-    dept_id = body.get("dept","recepcion")
     staff.append(nuevo)
     errores = validar_plantilla(staff, dept_id=dept_id)
     if errores:
@@ -267,10 +270,12 @@ def api_edit_empleado(idx):
             return err("Ya existe un empleado con ese nombre")
         staff[idx]["name"] = nombre
     if "role" in body:
+        if body["role"] not in cargar_roles(dept_id):
+            return err(f"Categoría de empleado inválida: {body['role']}")
         staff[idx]["role"] = body["role"]
     if "preferences" in body:
         staff[idx]["preferences"] = body["preferences"]
-    errores = validar_plantilla(staff, excluir_idx=idx)
+    errores = validar_plantilla(staff, excluir_idx=idx, dept_id=dept_id)
     if errores:
         staff[idx] = original
         return err(errores[0])
@@ -300,15 +305,108 @@ def _guardar_comp_empleado(nombre: str, modalidad: str, dept_id: str = "recepcio
     guardar_compensaciones(comp, dept_id)
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# API — CATEGORÍAS / ROLES DE EMPLEADO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/roles", methods=["GET"])
+@login_requerido
+def api_get_roles():
+    dept_id = request.args.get("dept", "recepcion")
+    roles   = cargar_roles(dept_id)
+    staff   = cargar_plantilla(dept_id)
+    conteo  = {}
+    for p in staff:
+        conteo[p["role"]] = conteo.get(p["role"], 0) + 1
+    return ok({rid: {**r, "en_uso": conteo.get(rid, 0)} for rid, r in roles.items()})
+
+@app.route("/api/roles", methods=["POST"])
+@permiso_requerido("gestionar_roles")
+def api_crear_rol():
+    body    = request.json or {}
+    dept_id = body.get("dept", "recepcion")
+    rol_id  = (body.get("id") or "").strip().lower().replace(" ", "_")
+    if not rol_id:
+        return err("El id de categoría es obligatorio")
+    ok2, msg = crear_rol(rol_id, body, dept_id)
+    if ok2:
+        registrar_accion("CREAR_ROL", f"Dept:{dept_id} Rol:{rol_id}")
+        return ok(message=msg)
+    return err(msg)
+
+@app.route("/api/roles/<rol_id>", methods=["PUT"])
+@permiso_requerido("gestionar_roles")
+def api_editar_rol(rol_id):
+    body    = request.json or {}
+    dept_id = body.get("dept", "recepcion")
+    ok2, msg = editar_rol(rol_id, body, dept_id)
+    if ok2:
+        registrar_accion("EDITAR_ROL", f"Dept:{dept_id} Rol:{rol_id}")
+        return ok(message=msg)
+    return err(msg)
+
+@app.route("/api/roles/<rol_id>", methods=["DELETE"])
+@permiso_requerido("gestionar_roles")
+def api_eliminar_rol(rol_id):
+    dept_id  = request.args.get("dept", "recepcion")
+    ok2, msg = eliminar_rol(rol_id, dept_id)
+    if ok2:
+        registrar_accion("ELIMINAR_ROL", f"Dept:{dept_id} Rol:{rol_id}")
+        return ok(message=msg)
+    return err(msg)
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # API — HORARIO
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _get_dept_config(dept_id: str):
+    """
+    Devuelve el DeptConfig del departamento, con fixed_roles/fixed_days_off/
+    night_fixed_days_off/night_cover_compensation parcheados según data/roles*.json
+    (editables desde la pestaña de Categorías) en vez de los valores estáticos
+    de modelo_recepcion.py/modelo_mozos.py.
+    """
     if dept_id == "mozos":
-        from modelo_mozos import MOZOS_CONFIG
-        return MOZOS_CONFIG
-    from modelo_recepcion import RECEPCION_CONFIG
-    return RECEPCION_CONFIG
+        from modelo_mozos import MOZOS_CONFIG as base
+    else:
+        from modelo_recepcion import RECEPCION_CONFIG as base
+    cfg = copy.deepcopy(base)
+
+    roles = cargar_roles(dept_id)
+    cfg.fixed_roles = {
+        rid: r["turno_fijo"] for rid, r in roles.items()
+        if r.get("turno_fijo") and rid != "night_fixed"
+    }
+    cfg.fixed_days_off = {
+        rid: r["dias_libres_fijos"] for rid, r in roles.items()
+        if r.get("dias_libres_fijos") and rid != "night_fixed"
+    }
+    nf = roles.get("night_fixed", {})
+    if nf.get("dias_libres_fijos"):
+        cfg.night_fixed_days_off = nf["dias_libres_fijos"]
+    if nf.get("dias_libres_sustituto"):
+        cfg.night_cover_compensation = nf["dias_libres_sustituto"]
+    return cfg
+
+def _semana_bloqueada(semana: date) -> bool:
+    """Las semanas anteriores a la actual quedan fijas; solo el admin puede regenerarlas."""
+    return semana < lunes_de(date.today().isoformat())
+
+def _calcular_advertencias(full_schedule: dict, staff_final: list[dict], cfg) -> list[str]:
+    advertencias = []
+    for shift in ["Mañana", "Tarde", "Noche", "Partido"]:
+        for day_idx, day in enumerate(DAYS):
+            count = sum(1 for p in staff_final if full_schedule[p["name"]][day_idx] == shift)
+            mn = cfg.min_coverage.get(shift, 0)
+            mx = cfg.max_coverage.get(shift, 99)
+            if not (mn <= count <= mx):
+                advertencias.append(f"{day} – {shift}: {count} (mín {mn}, máx {mx})")
+    from modelo_base import NO_MORNING_AFTER as NMA
+    for p in staff_final:
+        for i in range(1, 7):
+            prev, curr = full_schedule[p["name"]][i-1], full_schedule[p["name"]][i]
+            if prev in NMA and curr == "Mañana":
+                advertencias.append(f"{p['name']}: {DAYS[i-1]} ({prev}) → {DAYS[i]} (Mañana)")
+    return advertencias
 
 def _recalcular_la_desde_historial(dept_id: str = "recepcion"):
     from herramientas import cargar_historial, cargar_festivos
@@ -345,6 +443,9 @@ def api_generar():
     semana  = lunes_de(fecha)
     cfg     = _get_dept_config(dept_id)
 
+    if _semana_bloqueada(semana) and usuario_actual()["rol"] != "admin":
+        return err("Esta semana ya pasó y quedó fija. Solo un administrador puede modificarla.", 403)
+
     staff_base = cargar_plantilla(dept_id)
     staff = aplicar_vacaciones(staff_base, semana, dept_id)
     staff = aplicar_peticiones(staff, semana, dept_id)
@@ -373,20 +474,7 @@ def api_generar():
         all_covers[_semana_str(semana)] = this_week_covers
         open(cov_path, "w").write(_j.dumps(all_covers, ensure_ascii=False, indent=2))
 
-    advertencias = []
-    for shift in ["Mañana", "Tarde", "Noche", "Partido"]:
-        for day_idx, day in enumerate(DAYS):
-            count = sum(1 for p in staff_final if full_schedule[p["name"]][day_idx] == shift)
-            mn = cfg.min_coverage.get(shift, 0)
-            mx = cfg.max_coverage.get(shift, 99)
-            if not (mn <= count <= mx):
-                advertencias.append(f"{day} – {shift}: {count} (mín {mn}, máx {mx})")
-    from modelo_base import NO_MORNING_AFTER as NMA
-    for p in staff_final:
-        for i in range(1, 7):
-            prev, curr = full_schedule[p["name"]][i-1], full_schedule[p["name"]][i]
-            if prev in NMA and curr == "Mañana":
-                advertencias.append(f"{p['name']}: {DAYS[i-1]} ({prev}) → {DAYS[i]} (Mañana)")
+    advertencias = _calcular_advertencias(full_schedule, staff_final, cfg)
 
     festivos = [
         {"fecha": f["date"].isoformat(), "nombre": f["nombre"],
@@ -411,6 +499,35 @@ def api_generar():
         "advertencias": advertencias, "festivos": festivos, "dias": DAYS,
     })
 
+@app.route("/api/horario/semana", methods=["GET"])
+@login_requerido
+def api_horario_semana():
+    """Devuelve el horario ya generado de una semana sin volver a generarlo."""
+    dept_id = request.args.get("dept", "recepcion")
+    if dept_id not in ("recepcion", "mozos"):
+        dept_id = "recepcion"
+    semana    = lunes_de(request.args.get("semana", date.today().isoformat()))
+    historial = cargar_historial(dept_id)
+    key       = _semana_str(semana)
+    bloqueada = _semana_bloqueada(semana)
+
+    if key not in historial:
+        return ok({"existe": False, "semana": key, "dept": dept_id, "bloqueada": bloqueada})
+
+    entrada      = historial[key]
+    cfg          = _get_dept_config(dept_id)
+    advertencias = _calcular_advertencias(entrada["schedule"], entrada["staff"], cfg)
+    festivos = [
+        {"fecha": f["date"].isoformat(), "nombre": f["nombre"],
+         "tipo": f["tipo"], "dia_semana": f["dia_semana"]}
+        for f in festivos_en_semana(semana)
+    ]
+    return ok({
+        "existe": True, "semana": key, "dept": dept_id, "bloqueada": bloqueada,
+        "schedule": entrada["schedule"], "staff": entrada["staff"],
+        "advertencias": advertencias, "festivos": festivos, "dias": DAYS,
+    })
+
 @app.route("/api/horario/exportar", methods=["POST"])
 @permiso_requerido("exportar_horario")
 def api_exportar():
@@ -425,7 +542,8 @@ def api_exportar():
     entrada = historial[key]
     ruta    = os.path.join(BASE_DIR, f"horario_{dept_id}_{key}.xlsx")
     from modelo_base import export_to_excel as exp_xl
-    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg)
+    icons = {rid: r.get("icon", "") for rid, r in cargar_roles(dept_id).items()}
+    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg, role_icons=icons)
     return ok({"ruta": ruta})
 
 @app.route("/api/horario/semanas", methods=["GET"])
@@ -458,7 +576,8 @@ def api_exportar_semana(semana_str):
     semana  = date.fromisoformat(semana_str)
     ruta    = os.path.join(BASE_DIR, f"horario_{dept_id}_{semana_str}.xlsx")
     from modelo_base import export_to_excel as exp_xl
-    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg)
+    icons = {rid: r.get("icon", "") for rid, r in cargar_roles(dept_id).items()}
+    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg, role_icons=icons)
     return send_file(ruta, as_attachment=True,
                      download_name=f"horario_{dept_id}_{semana_str}.xlsx",
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -531,19 +650,19 @@ def api_delete_peticion(semana, nombre):
 @app.route("/api/compensaciones/<nombre>/usar-la", methods=["POST"])
 @permiso_requerido("editar_compensaciones")
 def api_usar_la(nombre):
-    body   = request.json or {}
+    body    = request.json or {}
     dept_id = body.get("dept","recepcion")
-    fecha  = body.get("semana")
-    dia    = body.get("dia")
+    fecha   = body.get("semana")
+    dia     = body.get("dia")
     if not fecha or not dia:
         return err("Faltan semana y día")
-    comp = cargar_compensaciones()
+    comp = cargar_compensaciones(dept_id)
     if comp.get(nombre, {}).get("la_saldo", 0) < 1:
         return err(f"{nombre} no tiene días LA disponibles")
 
     semana = lunes_de(fecha)
-    # Store LA under a separate key so modelo.py treats it as extra
-    pet = cargar_peticiones()
+    # Store LA under a separate key so modelo_base.py treats it as extra
+    pet = cargar_peticiones(dept_id)
     key = _semana_str(semana)
     if key not in pet:
         pet[key] = {}
@@ -558,35 +677,6 @@ def api_usar_la(nombre):
     pet[key][nombre] = entry
     guardar_peticiones(pet, dept_id)
 
-    comp[nombre]["la_saldo"] = comp[nombre].get("la_saldo", 1) - 1
-    guardar_compensaciones(comp, dept_id)
-    return ok({
-        "la_saldo": comp[nombre]["la_saldo"],
-        "message":  f"LA asignado: {nombre} libre extra el {dia} semana del {semana.strftime('%d/%m/%Y')}"
-    })
-
-    fecha   = body.get("semana")
-    dia     = body.get("dia")
-    dept_id = body.get("dept","recepcion")
-    if not fecha or not dia:
-        return err("Faltan semana y día")
-    comp = cargar_compensaciones(dept_id)
-    if comp.get(nombre, {}).get("la_saldo", 0) < 1:
-        return err(f"{nombre} no tiene días LA disponibles")
-    semana = lunes_de(fecha)
-    pet = cargar_peticiones(dept_id)
-    key = _semana_str(semana)
-    if key not in pet:
-        pet[key] = {}
-    entry = pet[key].get(nombre, {})
-    if not isinstance(entry, dict):
-        entry = {"dias": entry if isinstance(entry, list) else [], "la": []}
-    la_dias = entry.get("la", [])
-    if dia not in la_dias:
-        la_dias.append(dia)
-    entry["la"] = la_dias
-    pet[key][nombre] = entry
-    guardar_peticiones(pet, dept_id)
     comp[nombre]["la_saldo"] = comp[nombre].get("la_saldo", 1) - 1
     guardar_compensaciones(comp, dept_id)
     return ok({
