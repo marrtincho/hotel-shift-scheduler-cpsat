@@ -1,4 +1,4 @@
-# HorariosRecepcion 🏨
+# HorariosRecepcion
 
 Aplicación web interna para la gestión automatizada de horarios de personal hotelero, construida con Flask y desplegada en red local. Diseñada para reemplazar la planificación manual en Excel, resolviendo restricciones de cobertura, rotaciones y legislación laboral de forma automática.
 
