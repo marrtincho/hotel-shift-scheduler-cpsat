@@ -16,7 +16,7 @@ from modelo_base import DAYS, SHIFTS
 from herramientas import (
     cargar_plantilla, guardar_plantilla, validar_plantilla,
     cargar_peticiones, guardar_peticiones,
-    aplicar_peticiones, obtener_peticiones_semana,
+    aplicar_peticiones, aplicar_peticiones_con_prioridad, obtener_peticiones_semana,
     cargar_vacaciones, guardar_vacaciones,
     aplicar_vacaciones, vacaciones_activas_en_semana,
     cargar_historial, guardar_historial, registrar_semana,
@@ -448,7 +448,8 @@ def api_generar():
 
     staff_base = cargar_plantilla(dept_id)
     staff = aplicar_vacaciones(staff_base, semana, dept_id)
-    staff = aplicar_peticiones(staff, semana, dept_id)
+    min_w = sum(cfg.min_coverage.values())
+    staff, pets_denegadas = aplicar_peticiones_con_prioridad(staff, semana, dept_id, min_w)
 
     # Quién cubrió noches la semana pasada y debe descansar esos días esta
     # semana: mozos siempre (Lun+Mar de la semana siguiente, por diseño) y
@@ -509,6 +510,7 @@ def api_generar():
         "schedule": {p["name"]: full_schedule[p["name"]] for p in staff_final},
         "staff": clean_staff,
         "advertencias": advertencias, "festivos": festivos, "dias": DAYS,
+        "peticiones_denegadas": pets_denegadas,
     })
 
 @app.route("/api/horario/semana", methods=["GET"])
@@ -581,6 +583,18 @@ def api_editar_turno():
         "advertencias": advertencias, "dias": DAYS,
     })
 
+def _extra_dept_section(key: str, semana: date, dept_excluido: str) -> list:
+    """Devuelve la lista extra_sections con el otro departamento si tiene
+    horario generado para esa semana, vacía en caso contrario."""
+    otro = "mozos" if dept_excluido == "recepcion" else "recepcion"
+    hist_otro = cargar_historial(otro)
+    if key not in hist_otro:
+        return []
+    e = hist_otro[key]
+    cfg_otro   = _get_dept_config(otro)
+    icons_otro = {rid: r.get("icon", "") for rid, r in cargar_roles(otro).items()}
+    return [(e["schedule"], e["staff"], cfg_otro, icons_otro)]
+
 @app.route("/api/horario/exportar", methods=["POST"])
 @permiso_requerido("exportar_horario")
 def api_exportar():
@@ -593,10 +607,12 @@ def api_exportar():
     if key not in historial:
         return err("Genera el horario antes de exportar")
     entrada = historial[key]
-    ruta    = os.path.join(BASE_DIR, f"horario_{dept_id}_{key}.xlsx")
+    ruta    = os.path.join(BASE_DIR, f"horario_{key}.xlsx")
     from modelo_base import export_to_excel as exp_xl
     icons = {rid: r.get("icon", "") for rid, r in cargar_roles(dept_id).items()}
-    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg, role_icons=icons)
+    extra = _extra_dept_section(key, semana, dept_id)
+    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg,
+           role_icons=icons, extra_sections=extra)
     return ok({"ruta": ruta})
 
 @app.route("/api/horario/semanas", methods=["GET"])
@@ -627,12 +643,14 @@ def api_exportar_semana(semana_str):
         return err("Semana no encontrada", 404)
     entrada = historial[semana_str]
     semana  = date.fromisoformat(semana_str)
-    ruta    = os.path.join(BASE_DIR, f"horario_{dept_id}_{semana_str}.xlsx")
+    ruta    = os.path.join(BASE_DIR, f"horario_{semana_str}.xlsx")
     from modelo_base import export_to_excel as exp_xl
     icons = {rid: r.get("icon", "") for rid, r in cargar_roles(dept_id).items()}
-    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg, role_icons=icons)
+    extra = _extra_dept_section(semana_str, semana, dept_id)
+    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg,
+           role_icons=icons, extra_sections=extra)
     return send_file(ruta, as_attachment=True,
-                     download_name=f"horario_{dept_id}_{semana_str}.xlsx",
+                     download_name=f"horario_{semana_str}.xlsx",
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ═══════════════════════════════════════════════════════════════════════════════

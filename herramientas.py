@@ -168,6 +168,96 @@ def aplicar_peticiones(staff_list: list[dict], week_start: date, dept_id: str = 
     return staff_copia
 
 
+def contar_peticiones_concedidas(dept_id: str = "recepcion") -> dict:
+    """Cuenta cuántas peticiones de libre han sido concedidas por persona."""
+    historial  = cargar_historial(dept_id)
+    peticiones = cargar_peticiones(dept_id)
+    concedidas: dict = {}
+    for semana_str, entrada in historial.items():
+        pets  = peticiones.get(semana_str, {})
+        sched = entrada.get("schedule", {})
+        for nombre, pet in pets.items():
+            if isinstance(pet, list):
+                dias = pet
+            elif isinstance(pet, dict):
+                dias = pet.get("dias", [])
+            else:
+                continue
+            for dia in dias:
+                if dia not in DIAS_SEMANA:
+                    continue
+                idx    = DIAS_SEMANA.index(dia)
+                turnos = sched.get(nombre, [])
+                if len(turnos) > idx and turnos[idx] == "Libre":
+                    concedidas[nombre] = concedidas.get(nombre, 0) + 1
+    return concedidas
+
+
+def aplicar_peticiones_con_prioridad(staff_list: list, week_start: date,
+                                     dept_id: str = "recepcion",
+                                     min_workers_dia: int = 5) -> tuple:
+    """
+    Aplica peticiones de libre respetando prioridad histórica.
+    Si conceder una petición deja el día con menos de min_workers_dia disponibles,
+    se deniega priorizando a quienes más peticiones ya llevan concedidas.
+    Soporta los formatos de petición antiguo (lista) y nuevo (dict con 'dias' y 'la').
+    Devuelve (staff_modificado, peticiones_denegadas).
+    """
+    import copy
+    peticiones  = obtener_peticiones_semana(week_start, dept_id)
+    concedidas  = contar_peticiones_concedidas(dept_id)
+    staff_copia = copy.deepcopy(staff_list)
+
+    # Disponibles por día antes de aplicar peticiones (ya incluye vacaciones)
+    disponibles = [
+        {p["name"] for p in staff_copia
+         if DIAS_SEMANA[d] not in p.get("forced_days_off", [])}
+        for d in range(7)
+    ]
+
+    # Aplanar peticiones regulares con su carga histórica
+    solicitudes_raw = []
+    for nombre, entrada in peticiones.items():
+        if isinstance(entrada, list):
+            dias = entrada
+        elif isinstance(entrada, dict):
+            dias = entrada.get("dias", [])
+        else:
+            continue
+        for dia in dias:
+            if dia in DIAS_SEMANA:
+                solicitudes_raw.append((concedidas.get(nombre, 0), nombre, dia))
+
+    denegadas: list = []
+    for _, nombre, dia in sorted(solicitudes_raw):
+        idx = DIAS_SEMANA.index(dia)
+        if len(disponibles[idx] - {nombre}) < min_workers_dia:
+            denegadas.append({"nombre": nombre, "dia": dia})
+            continue
+        for p in staff_copia:
+            if p["name"] == nombre:
+                prev = p.get("forced_days_off", [])
+                if dia not in prev:
+                    p["forced_days_off"] = prev + [dia]
+                break
+        disponibles[idx] -= {nombre}
+
+    # Los días LA (libres extra) se aplican siempre, sin restricción de cobertura
+    for nombre, entrada in peticiones.items():
+        if not isinstance(entrada, dict):
+            continue
+        dias_la = entrada.get("la", [])
+        if not dias_la:
+            continue
+        for p in staff_copia:
+            if p["name"] == nombre:
+                existentes_la = p.get("extra_days_off", [])
+                p["extra_days_off"] = list(dict.fromkeys(existentes_la + dias_la))
+                break
+
+    return staff_copia, denegadas
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MÓDULO 3 — HISTORIAL
 # ═══════════════════════════════════════════════════════════════════════════════

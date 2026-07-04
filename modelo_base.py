@@ -53,8 +53,7 @@ def can_work_morning(person_name, day_idx, schedule, prev_sunday_shifts=None):
 
 def _get_weekend_counts(dept_id: str) -> dict:
     try:
-        from herramientas import cargar_historial, DATA_DIR
-        import os, json
+        from herramientas import cargar_historial
         historial = cargar_historial(dept_id)
         counts = {}
         for entrada in historial.values():
@@ -64,6 +63,27 @@ def _get_weekend_counts(dept_id: str) -> dict:
         return counts
     except Exception:
         return {}
+
+def _get_shift_counts(dept_id: str) -> dict:
+    """Lee el historial y cuenta cuántas veces cada persona ha hecho cada turno."""
+    try:
+        from herramientas import cargar_historial
+        counts: dict = {}
+        for entrada in cargar_historial(dept_id).values():
+            for nombre, turnos in entrada.get("schedule", {}).items():
+                c = counts.setdefault(nombre, {})
+                for t in turnos:
+                    c[t] = c.get(t, 0) + 1
+        return counts
+    except Exception:
+        return {}
+
+def _night_covers(history: dict, nombre: str) -> tuple:
+    """Lee (covers, pending) del historial de noches. Soporta formato antiguo (int)."""
+    v = history.get(nombre, 0)
+    if isinstance(v, int):
+        return v, 0
+    return v.get("covers", 0), v.get("pending", 0)
 
 def _load_night_history(rotation_key: str) -> dict:
     try:
@@ -76,11 +96,10 @@ def _load_night_history(rotation_key: str) -> dict:
 
 def _save_night_history(rotation_key: str, history: dict):
     try:
-        from herramientas import DATA_DIR
-        import json, os
+        from herramientas import DATA_DIR, guardar_json_atomico
+        import os
         path = os.path.join(DATA_DIR, f"night_rotation_{rotation_key}.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(history, f, ensure_ascii=False, indent=2)
+        guardar_json_atomico(path, history)
     except Exception:
         pass
 
@@ -125,9 +144,18 @@ def select_night_covers(staff_list: list, week_start: date, cfg: DeptConfig) -> 
         comp = {}
 
     def sort_key(p):
-        count = history.get(p["name"], 0)
-        prefers_cobrar = 0 if comp.get(p["name"], {}).get("modalidad", "cobrar") == "cobrar" else 1
-        return (count, prefers_cobrar, p["name"])
+        covers, pending = _night_covers(history, p["name"])
+        prefers_cobrar  = 0 if comp.get(p["name"], {}).get("modalidad", "cobrar") == "cobrar" else 1
+        return (covers - pending, prefers_cobrar, p["name"])
+
+    # Si el primero en la rotación global está bloqueado por una petición,
+    # acumula su deuda para que tenga prioridad en la semana siguiente.
+    all_candidates = [p for p in staff_list if p["role"] in eligible_roles]
+    sorted_all      = sorted(all_candidates, key=sort_key)
+    if sorted_all and sorted_all[0]["name"] in blocked:
+        deudor          = sorted_all[0]["name"]
+        cov_d, pend_d   = _night_covers(history, deudor)
+        history[deudor] = {"covers": cov_d, "pending": pend_d + 1}
 
     chosen_person = sorted(eligible, key=sort_key)[0]
     chosen_name   = chosen_person["name"]
@@ -165,7 +193,8 @@ def select_night_covers(staff_list: list, week_start: date, cfg: DeptConfig) -> 
         if next_week_idx:
             chosen_person["next_week_rest_days"] = [DAYS[i] for i in next_week_idx]
 
-    history[chosen_name] = history.get(chosen_name, 0) + 1
+    covers, pending         = _night_covers(history, chosen_name)
+    history[chosen_name]    = {"covers": covers + 1, "pending": 0}
     _save_night_history(cfg.night_rotation_key, history)
 
     return {day_idx: chosen_name for day_idx in cfg.night_fixed_days_off}
@@ -219,6 +248,10 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
 
     # Everyone else (roles sin turno fijo): completar su pareja de libres semanales
     fixed_roles = set(cfg.fixed_days_off.keys()) | {"night_fixed"}
+    no_fixed    = [p for p in staff_list if p["role"] not in fixed_roles]
+    avg_wc      = (sum(weekend_counts.get(p["name"], 0) for p in no_fixed)
+                   / max(len(no_fixed), 1))
+
     for person in staff_list:
         if person["role"] in fixed_roles:
             continue
@@ -278,15 +311,16 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
                 valid_pairs = pairs
             wc = weekend_counts.get(person["name"], 0)
             def pair_sort_key(pair):
-                usage = pair_usage[pair]
-                weekend_bonus = -0.5 if pair == (5,6) and wc < 1 else 0
+                usage         = pair_usage[pair]
+                deficit       = avg_wc - wc
+                weekend_bonus = max(-1.0, -deficit * 0.5) if pair == (5, 6) else 0
                 return usage + weekend_bonus
             chosen = sorted(valid_pairs, key=pair_sort_key)[0]
             pair_usage[chosen] += 1
             schedule[person["name"]][chosen[0]] = "Libre"
             schedule[person["name"]][chosen[1]] = "Libre"
             person["days_off"] = list(chosen)
-            if chosen == (5,6):
+            if chosen == (5, 6):
                 weekend_counts[person["name"]] = wc + 1
 
     return schedule
@@ -304,7 +338,8 @@ def allowed_shifts(person, day_idx, schedule, coverage, cfg: DeptConfig, prev_su
     return result
 
 def assign_shifts(staff_list: list, days_off_schedule: dict,
-                  night_cover: dict, cfg: DeptConfig, prev_sunday_shifts: dict = None) -> dict:
+                  night_cover: dict, cfg: DeptConfig, prev_sunday_shifts: dict = None,
+                  shift_history: dict = None) -> dict:
     if night_cover is None:
         night_cover = {}
 
@@ -341,7 +376,8 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
                     needed.extend([shift] * deficit)
             return needed
 
-        # Sub-pass A: fill deficits
+        # Sub-pass A: fill deficits — usa conteos históricos para escoger
+        # qué turno de déficit cubrir (mismo criterio que sub-pass B).
         for person in list(available):
             needed = unfilled()
             if not needed:
@@ -350,14 +386,25 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
             fillable = [s for s in opts if s in needed]
             if not fillable:
                 continue
-            prefs = [s for s in person.get("preferences", []) if s in fillable]
-            chosen = prefs[0] if prefs else fillable[0]
+            hist  = (shift_history or {}).get(person["name"], {})
+            prefs = set(person.get("preferences", []))
+            chosen = min(fillable,
+                         key=lambda s: hist.get(s, 0) + (-0.5 if s in prefs else 0))
             schedule[person["name"]][day_idx] = chosen
             coverage[chosen] += 1
             available.remove(person)
 
-        # Sub-pass B: remaining
-        for person in available:
+        # Sub-pass B: ordenar por mínimo coste histórico para que la persona
+        # más hambrienta de su turno escoja primero (evita que max_coverage la deje fuera).
+        def _b_priority(p):
+            h     = (shift_history or {}).get(p["name"], {})
+            prefs = set(p.get("preferences", []))
+            tracked = (set(h.keys()) | prefs) & {"Mañana", "Tarde", "Partido"}
+            if not tracked:
+                tracked = {"Mañana", "Tarde", "Partido"}
+            return min(h.get(s, 0) + (-0.5 if s in prefs else 0) for s in tracked)
+
+        for person in sorted(available, key=_b_priority):
             opts = allowed_shifts(person, day_idx, schedule, coverage, cfg, prev_sunday_shifts)
             if not opts:
                 fallback = [s for s in ["Partido", "Tarde", "Mañana"]
@@ -365,8 +412,10 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
                             and (s != "Mañana" or can_work_morning(person["name"], day_idx, schedule, prev_sunday_shifts))]
                 chosen = fallback[0] if fallback else "Tarde"
             else:
-                prefs = [s for s in person.get("preferences", []) if s in opts]
-                chosen = min(prefs or opts, key=lambda s: coverage.get(s, 0))
+                hist  = (shift_history or {}).get(person["name"], {})
+                prefs = set(person.get("preferences", []))
+                chosen = min(opts,
+                             key=lambda s: hist.get(s, 0) + (-0.5 if s in prefs else 0))
             schedule[person["name"]][day_idx] = chosen
             coverage[chosen] = coverage.get(chosen, 0) + 1
 
@@ -400,9 +449,11 @@ def generate_schedule(staff_list: list, week_start: date, cfg: DeptConfig,
                 existentes = person.get("forced_days_off", [])
                 person["forced_days_off"] = list(dict.fromkeys(existentes + dias))
 
+    shift_history  = _get_shift_counts(cfg.dept_id)
     night_cover    = select_night_covers(staff_list, week_start, cfg)
     days_off_sched = assign_days_off(staff_list, night_cover, cfg)
-    full_schedule  = assign_shifts(staff_list, days_off_sched, night_cover, cfg, prev_sunday_shifts)
+    full_schedule  = assign_shifts(staff_list, days_off_sched, night_cover, cfg,
+                                   prev_sunday_shifts, shift_history=shift_history)
 
     # Registrar quién necesita descanso de compensación la semana que viene.
     this_week_covers = {}
@@ -434,70 +485,106 @@ def thin_border():
     s = Side(style="thin", color="BBBBBB")
     return Border(left=s, right=s, top=s, bottom=s)
 
-def export_to_excel(schedule, staff_list, week_start, filename, cfg: DeptConfig, role_icons: dict = None):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Horario Semanal"
-
+def _write_dept_section(ws, start_row: int, schedule: dict, staff_list: list,
+                        week_start: date, cfg: DeptConfig,
+                        role_icons: dict = None) -> int:
+    """
+    Escribe una sección de un departamento en la hoja ws a partir de start_row.
+    Devuelve la primera fila libre tras la sección (incluye filas de cobertura).
+    """
     week_end = week_start + timedelta(days=6)
-    title = f"{cfg.dept_label} — Semana {week_start.strftime('%d/%m/%Y')} – {week_end.strftime('%d/%m/%Y')}"
-    ws.merge_cells("A1:I1")
-    ws["A1"] = title
-    ws["A1"].font      = Font(bold=True, size=14, color="FFFFFF")
-    ws["A1"].fill      = PatternFill("solid", start_color=HEADER_COLOR)
-    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 28
+    title    = (f"{cfg.dept_label} — Semana "
+                f"{week_start.strftime('%d/%m/%Y')} – {week_end.strftime('%d/%m/%Y')}")
 
-    ws["A2"] = "Empleado"
-    ws["A2"].font      = Font(bold=True, color="FFFFFF")
-    ws["A2"].fill      = PatternFill("solid", start_color=SUB_HEADER)
-    ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
-    ws.column_dimensions["A"].width = 18
+    # Fila de título del departamento
+    title_end = get_column_letter(8)
+    ws.merge_cells(f"A{start_row}:{title_end}{start_row}")
+    tc = ws.cell(row=start_row, column=1, value=title)
+    tc.font      = Font(bold=True, size=14, color="FFFFFF")
+    tc.fill      = PatternFill("solid", start_color=HEADER_COLOR)
+    tc.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[start_row].height = 28
 
-    for col, offset in enumerate(range(7), start=2):
-        day_date = week_start + timedelta(days=offset)
-        cell = ws.cell(row=2, column=col)
-        cell.value = f"{DAYS[offset]}\n{day_date.strftime('%d/%m')}"
+    # Cabecera de días
+    hdr_row = start_row + 1
+    hc = ws.cell(row=hdr_row, column=1, value="Empleado")
+    hc.font      = Font(bold=True, color="FFFFFF")
+    hc.fill      = PatternFill("solid", start_color=SUB_HEADER)
+    hc.alignment = Alignment(horizontal="center", vertical="center")
+
+    for col_offset in range(7):
+        day_date = week_start + timedelta(days=col_offset)
+        cell = ws.cell(row=hdr_row, column=col_offset + 2)
+        cell.value     = f"{DAYS[col_offset]}\n{day_date.strftime('%d/%m')}"
         cell.font      = Font(bold=True, color="FFFFFF")
         cell.fill      = PatternFill("solid", start_color=SUB_HEADER)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        ws.column_dimensions[get_column_letter(col)].width = 13
-    ws.row_dimensions[2].height = 32
+    ws.row_dimensions[hdr_row].height = 32
 
-    icons = role_icons if role_icons is not None else \
-        {"night_fixed":"★","jefe":"👑","subjefe":"⭐","adjunto_recepcion":"◉"}
-    for row_idx, person in enumerate(staff_list, start=3):
+    # Filas de empleados
+    icons = role_icons or {}
+    data_start = hdr_row + 1
+    for row_offset, person in enumerate(staff_list):
+        r    = data_start + row_offset
         icon = icons.get(person["role"], "")
-        name_cell = ws.cell(row=row_idx, column=1, value=f"{person['name']} {icon}".strip())
-        name_cell.font      = Font(bold=True)
-        name_cell.alignment = Alignment(vertical="center", horizontal="left")
-        name_cell.border    = thin_border()
-        ws.row_dimensions[row_idx].height = 22
+        nc   = ws.cell(row=r, column=1,
+                       value=f"{person['name']} {icon}".strip())
+        nc.font      = Font(bold=True)
+        nc.alignment = Alignment(vertical="center", horizontal="left")
+        nc.border    = thin_border()
+        ws.row_dimensions[r].height = 22
         for col_idx in range(7):
             shift = schedule[person["name"]][col_idx]
-            cell  = ws.cell(row=row_idx, column=col_idx+2, value=shift)
-            cell.fill      = PatternFill("solid", start_color=SHIFT_COLORS.get(shift,"FFFFFF"))
+            cell  = ws.cell(row=r, column=col_idx + 2, value=shift)
+            cell.fill      = PatternFill("solid", start_color=SHIFT_COLORS.get(shift, "FFFFFF"))
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border    = thin_border()
             cell.font      = Font(size=10)
 
-    summary_row = len(staff_list) + 4
+    # Filas de cobertura (fórmulas COUNTIF)
+    summary_row = data_start + len(staff_list) + 1
     ws.cell(row=summary_row, column=1, value="COBERTURA").font = Font(bold=True, size=11)
-    for s_idx, shift in enumerate(["Mañana","Tarde","Noche","Partido"]):
-        r = summary_row + 1 + s_idx
+    for s_idx, shift in enumerate(["Mañana", "Tarde", "Noche", "Partido"]):
+        r     = summary_row + 1 + s_idx
         label = ws.cell(row=r, column=1, value=shift)
-        label.font = Font(bold=True)
-        label.fill = PatternFill("solid", start_color=SHIFT_COLORS[shift])
-        label.border = thin_border()
+        label.font      = Font(bold=True)
+        label.fill      = PatternFill("solid", start_color=SHIFT_COLORS[shift])
+        label.border    = thin_border()
         label.alignment = Alignment(horizontal="center")
-        for col_idx in range(2,9):
+        ds = data_start
+        de = data_start + len(staff_list) - 1
+        for col_idx in range(2, 9):
             day_col = get_column_letter(col_idx)
-            ds, de  = 3, 3 + len(staff_list) - 1
-            cell = ws.cell(row=r, column=col_idx,
-                           value=f'=COUNTIF({day_col}{ds}:{day_col}{de},"{shift}")')
+            cell    = ws.cell(row=r, column=col_idx,
+                              value=f'=COUNTIF({day_col}{ds}:{day_col}{de},"{shift}")')
             cell.alignment = Alignment(horizontal="center")
             cell.border    = thin_border()
             cell.fill      = PatternFill("solid", start_color=SHIFT_COLORS[shift])
+
+    return summary_row + 5   # +4 filas cobertura +1 fila en blanco de separación
+
+
+def export_to_excel(schedule, staff_list, week_start, filename, cfg: DeptConfig,
+                    role_icons: dict = None,
+                    extra_sections: list = None):
+    """
+    Genera el Excel del horario.
+    extra_sections: lista de (schedule, staff_list, cfg, role_icons) adicionales
+    que se escriben debajo del primero (p.ej. mozos debajo de recepción).
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Horario Semanal"
+
+    ws.column_dimensions["A"].width = 18
+    for col in range(2, 9):
+        ws.column_dimensions[get_column_letter(col)].width = 13
+
+    next_row = _write_dept_section(ws, 1, schedule, staff_list, week_start, cfg, role_icons)
+
+    for sched_ex, staff_ex, cfg_ex, icons_ex in (extra_sections or []):
+        next_row = _write_dept_section(ws, next_row, sched_ex, staff_ex,
+                                       week_start, cfg_ex, icons_ex)
 
     ws.freeze_panes = "B3"
     wb.save(filename)
