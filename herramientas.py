@@ -35,8 +35,16 @@ def _cargar_json(path, default):
             return json.load(f)
     return default
 
+def guardar_json_atomico(path: str, data):
+    """Escribe JSON de forma atómica: primero a .tmp, luego os.replace().
+    Garantiza que un crash a mitad de escritura nunca deja el archivo corrupto."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
 def _guardar_json(path, data):
-    """Guarda JSON haciendo backup automático del archivo anterior."""
+    """Guarda JSON con backup automático y escritura atómica."""
     if os.path.exists(path):
         nombre = os.path.basename(path)
         ts     = date.today().strftime("%Y%m%d")
@@ -48,8 +56,7 @@ def _guardar_json(path, data):
         )
         for viejo in todos[:-10]:
             os.remove(os.path.join(BACKUP_DIR, viejo))
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    guardar_json_atomico(path, data)
 
 def _semana_str(week_start: date) -> str:
     return week_start.strftime("%Y-%m-%d")
