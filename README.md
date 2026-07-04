@@ -12,11 +12,11 @@ Planificar los turnos semanales de recepción y mozos en un hotel implica maneja
 
 - Cobertura mínima y máxima por turno (Mañana, Tarde, Noche, Partido)
 - Roles con turnos o días libres fijos (jefe, fijo de noche, subjefe...)
-- Rotación justa del sustituto nocturno y compensación de días libres que puede cruzar semanas
+- Rotación equitativa del sustituto nocturno, con deuda explícita si la petición de un empleado impide que le toque esa semana
 - Restricción de no asignar turno de Mañana tras Tarde o Noche (también entre semanas)
 - Peticiones de días libres, vacaciones y festivos trabajados
-- Balance histórico de fines de semana libres por empleado
-- Exportación a Excel para su distribución
+- Balance histórico de Mañana/Tarde/Partido y de fines de semana libres por empleado
+- Exportación a Excel para su distribución (Recepción y Mozos en el mismo archivo)
 
 Ninguna herramienta genérica de scheduling cubre todas estas reglas a la vez. Esta aplicación las modela explícitamente.
 
@@ -32,11 +32,23 @@ Esto permite que el mismo motor genere horarios para **Recepción** y **Mozos** 
 
 El algoritmo opera en tres fases:
 
-1. **Selección del sustituto nocturno**: elige al empleado elegible con menos coberturas históricas (rotación equitativa), respetando preferencias de compensación (cobrar vs. días LA). Si la compensación cae fuera de la semana actual, la persiste para aplicarla la semana siguiente.
+**1. Selección del sustituto nocturno**
 
-2. **Asignación de días libres**: respeta primero los días forzados (vacaciones, peticiones, compensaciones), luego balancea las parejas de días libres restantes usando conteo histórico de fines de semana.
+Elige al empleado elegible con menor puntuación neta `(coberturas - pendientes)`. Si el candidato con menor puntuación tiene una petición de libre que coincide con los días a cubrir, se le anota una deuda (`pending += 1`) en el historial y se pasa al siguiente. Esto garantiza que quien cedió su turno por una petición tenga prioridad explícita la semana siguiente. El historial (`night_rotation_*.json`) usa un formato compatible hacia atrás con versiones anteriores.
 
-3. **Asignación de turnos**: dos sub-pasadas por día: primero cubre déficits de cobertura mínima, luego distribuye el resto respetando preferencias individuales y la restricción de no-Mañana-tras-Noche/Tarde, incluyendo el cruce de semana.
+**2. Asignación de días libres**
+
+Respeta primero los días forzados (vacaciones, peticiones ya concedidas, compensaciones). Para la pareja de días libres restante, balancea usando un bonus proporcional al déficit de fines de semana de cada empleado respecto a la media del grupo (en lugar de un bonus fijo de una sola vez).
+
+**3. Asignación de turnos**
+
+Dos sub-pasadas por día:
+- *Sub-pass A (déficits)*: cubre los turnos con cobertura por debajo del mínimo. El empleado elige el turno deficitario que menos ha hecho históricamente (las preferencias son una guía suave de ‑0,5, no una regla absoluta).
+- *Sub-pass B (resto)*: distribuye los empleados restantes ordenados por mayor desequilibrio histórico primero, para que quien más necesita un turno lo elija antes de que se agoten los slots. El criterio es el mínimo coste ajustado por preferencias sobre los turnos ya realizados.
+
+Este diseño reduce la desviación estándar de Mañanas entre empleados de **24,3 a 3,8** en simulaciones de 20 semanas.
+
+**Peticiones conflictivas**: si dos personas piden el mismo día libre y conceder ambas dejaría la cobertura por debajo del mínimo, se deniega la de quien más peticiones lleva concedidas históricamente. Las peticiones denegadas se devuelven en la respuesta de la API.
 
 ### API REST (`app.py`)
 
@@ -44,17 +56,19 @@ Flask sirve ~30 endpoints organizados por dominio: autenticación, plantilla de 
 
 Las semanas pasadas quedan bloqueadas automáticamente: solo el rol `admin` puede modificarlas.
 
+La clave secreta de sesión se puede inyectar mediante la variable de entorno `SECRET_KEY`; si no existe, se genera y persiste en disco.
+
 ### Sistema de roles y permisos (`auth.py`)
 
-Autenticación por sesión con clave secreta persistente en disco. Permisos granulares por rol: `gestionar_usuarios`, `editar_plantilla`, `generar_horario`, `exportar_horario`, `editar_vacaciones`, `editar_compensaciones`, `gestionar_roles`. Los decoradores `@login_requerido` y `@permiso_requerido` protegen cada endpoint.
+Autenticación por sesión con clave secreta persistente. Permisos granulares por rol: `gestionar_usuarios`, `editar_plantilla`, `generar_horario`, `exportar_horario`, `editar_vacaciones`, `editar_compensaciones`, `gestionar_roles`. Los decoradores `@login_requerido` y `@permiso_requerido` protegen cada endpoint.
 
 Log de actividad persistente para todas las acciones relevantes.
 
 ### Estadísticas y trazabilidad
 
 - Distribución histórica de turnos por empleado
-- Fines de semana libres acumulados
-- Tasa de peticiones concedidas
+- Fines de semana libres acumulados y balance respecto a la media del grupo
+- Tasa de peticiones concedidas vs. denegadas
 - Festivos trabajados y saldo de días LA pendientes
 - Advertencias automáticas de violaciones de cobertura o restricciones
 
@@ -63,24 +77,29 @@ Log de actividad persistente para todas las acciones relevantes.
 ## Stack
 
 - **Backend**: Python 3, Flask
-- **Persistencia**: JSON en disco (sin base de datos externa; el sistema corre en la red local del hotel)
-- **Exportación**: openpyxl (Excel con colores por turno, fórmulas de cobertura, freeze panes)
+- **Persistencia**: JSON en disco con escritura atómica (write-to-tmp + `os.replace`), sin base de datos externa
+- **Exportación**: openpyxl (Excel combinado Recepción + Mozos, colores por turno, fórmulas de cobertura, freeze panes)
 - **Frontend**: HTML/CSS/JS vanilla servido por Flask
+- **Tests**: pytest, con datos en memoria y semanas en futuro lejano para no tocar datos de producción
 
 ---
 
 ## Estructura del proyecto
 
 ```
-├── app.py               # Servidor Flask, API REST (~30 endpoints)
-├── modelo_base.py       # Motor genérico de scheduling + exportación Excel
-├── modelo_recepcion.py  # DeptConfig específico de Recepción
-├── modelo_mozos.py      # DeptConfig específico de Mozos
-├── herramientas.py      # Persistencia: plantilla, historial, vacaciones, peticiones...
-├── auth.py              # Autenticación, sesiones, permisos, log de actividad
-├── static/              # Frontend (index.html, JS, CSS)
-├── data/                # JSONs de estado (plantilla, historial, rotaciones...)
-└── instalar.bat         # Script de instalación para Windows (entorno del hotel)
+├── app.py                  # Servidor Flask, API REST (~30 endpoints)
+├── modelo_base.py          # Motor genérico de scheduling + exportación Excel
+├── modelo_recepcion.py     # DeptConfig específico de Recepción
+├── modelo_mozos.py         # DeptConfig específico de Mozos
+├── herramientas.py         # Persistencia: plantilla, historial, vacaciones, peticiones...
+├── auth.py                 # Autenticación, sesiones, permisos, log de actividad
+├── static/                 # Frontend (index.html, JS, CSS)
+├── tests/                  # Pruebas de humo con pytest
+├── scripts/                # Generador de datos de ejemplo
+├── data/                   # JSONs de estado (plantilla, historial, rotaciones...)
+├── requirements.txt        # Flask, openpyxl
+├── requirements-dev.txt    # + pytest
+└── instalar.bat            # Script de instalación para Windows (entorno del hotel)
 ```
 
 ---
@@ -91,7 +110,11 @@ Log de actividad persistente para todas las acciones relevantes.
 
 **Motor parametrizable por departamento**: en lugar de dos motores separados para Recepción y Mozos, un único `generate_schedule()` recibe un `DeptConfig`. Añadir un nuevo departamento es crear una nueva configuración, no nuevo código.
 
-**Compensación nocturna entre semanas**: la lógica de sustitución detecta si los días de compensación del sustituto caen fuera de la semana actual y los persiste para aplicarlos en la siguiente generación. Esto evita violaciones del descanso mínimo sin intervención manual.
+**Preferencias como guía suave**: las preferencias de turno de cada empleado influyen con un peso de ‑0,5 sobre el conteo histórico. Esto permite que un empleado que ha acumulado muchos turnos de Tarde por preferencia sea reorientado gradualmente hacia Mañana sin contradecir su preferencia de forma brusca.
+
+**Deuda nocturna explícita**: si la petición de un empleado impide que cubra el turno nocturno cuando le toca en la rotación, se le anota `pending += 1` en el historial. La clave de ordenación es `covers - pending`, lo que lo sitúa automáticamente como primero en la rotación de la semana siguiente.
+
+**Compensación nocturna entre semanas**: la lógica de sustitución detecta si los días de compensación del sustituto caen fuera de la semana actual y los persiste para aplicarlos en la siguiente generación, evitando violaciones del descanso mínimo sin intervención manual.
 
 **Bloqueo de semanas pasadas**: una vez que una semana queda en el pasado, sus horarios se congelan. Solo el administrador puede modificarlos, previniendo cambios accidentales en registros históricos que afectarían las estadísticas.
 
@@ -117,4 +140,19 @@ Abrir en el navegador: `http://localhost:5000`
 
 En Windows, el script `instalar.bat` automatiza la instalación del entorno.
 
-**Credenciales por defecto**: usuario `admin`, contraseña `admin` (cambiar tras el primer login).
+**Credenciales por defecto**: usuario `admin`, contraseña `admin1234` (cambiar tras el primer login).
+
+### Tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests/ -v
+```
+
+### SECRET_KEY personalizada
+
+```bash
+SECRET_KEY=mi_clave_secreta python app.py
+```
+
+Si no se especifica, se genera automáticamente y se persiste en `data/.secret_key`.
