@@ -1,0 +1,30 @@
+{
+  "night_fixed": {
+    "label": "Turno Noche fijo",
+    "icon": "★",
+    "turno_fijo": "Noche",
+    "dias_libres_fijos": [
+      4,
+      5
+    ],
+    "dias_libres_sustituto": [
+      0,
+      1
+    ],
+    "sin_noches": false,
+    "unico": true,
+    "protegido": true,
+    "borrable": false
+  },
+  "normal": {
+    "label": "Mozo normal",
+    "icon": "",
+    "turno_fijo": null,
+    "dias_libres_fijos": null,
+    "dias_libres_sustituto": null,
+    "sin_noches": false,
+    "unico": false,
+    "protegido": true,
+    "borrable": false
+  }
+}

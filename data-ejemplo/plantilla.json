@@ -1,0 +1,55 @@
+[
+  {
+    "name": "Carlos",
+    "role": "night_fixed",
+    "preferences": [
+      "Noche"
+    ]
+  },
+  {
+    "name": "Juan",
+    "role": "jefe",
+    "preferences": [
+      "Mañana"
+    ]
+  },
+  {
+    "name": "Laura",
+    "role": "subjefe",
+    "preferences": [
+      "Tarde"
+    ]
+  },
+  {
+    "name": "Pedro",
+    "role": "normal",
+    "preferences": [
+      "Mañana",
+      "Partido"
+    ]
+  },
+  {
+    "name": "Ana",
+    "role": "normal",
+    "preferences": []
+  },
+  {
+    "name": "Miguel",
+    "role": "normal",
+    "preferences": [
+      "Tarde"
+    ]
+  },
+  {
+    "name": "Sofía",
+    "role": "adjunto_recepcion",
+    "preferences": [
+      "Mañana"
+    ]
+  },
+  {
+    "name": "Diego",
+    "role": "normal",
+    "preferences": []
+  }
+]

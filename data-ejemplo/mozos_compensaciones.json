@@ -1,0 +1,22 @@
+{
+  "Fran": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Rubén": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Gloria": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Tomás": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Inés": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  }
+}

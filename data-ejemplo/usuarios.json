@@ -1,0 +1,12 @@
+[
+  {
+    "id": "1",
+    "username": "admin",
+    "nombre": "Administrador Ejemplo",
+    "rol": "admin",
+    "hash": "1e87cc04443415f13ee43e62a86b413ae2973d2a9906427f887a5e1f4bf8aa55",
+    "salt": "b3c141aff0d4f90170e3d2a18d0a7e05",
+    "activo": true,
+    "empleado_vinculado": null
+  }
+]

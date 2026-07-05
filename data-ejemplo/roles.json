@@ -1,0 +1,66 @@
+{
+  "night_fixed": {
+    "label": "Turno Noche fijo",
+    "icon": "★",
+    "turno_fijo": "Noche",
+    "dias_libres_fijos": [
+      3,
+      4
+    ],
+    "dias_libres_sustituto": [
+      5,
+      6
+    ],
+    "sin_noches": false,
+    "unico": true,
+    "protegido": true,
+    "borrable": false
+  },
+  "jefe": {
+    "label": "Jefe",
+    "icon": "👑",
+    "turno_fijo": "Mañana",
+    "dias_libres_fijos": [
+      5,
+      6
+    ],
+    "dias_libres_sustituto": null,
+    "sin_noches": true,
+    "unico": true,
+    "protegido": false,
+    "borrable": true
+  },
+  "subjefe": {
+    "label": "Subjefe",
+    "icon": "⭐",
+    "turno_fijo": null,
+    "dias_libres_fijos": null,
+    "dias_libres_sustituto": null,
+    "sin_noches": true,
+    "unico": false,
+    "protegido": false,
+    "borrable": true
+  },
+  "adjunto_recepcion": {
+    "label": "Adjunto Recepción",
+    "icon": "◉",
+    "turno_fijo": null,
+    "dias_libres_fijos": null,
+    "dias_libres_sustituto": null,
+    "sin_noches": true,
+    "unico": false,
+    "protegido": false,
+    "borrable": true
+  },
+  "normal": {
+    "label": "Empleado",
+    "icon": "",
+    "turno_fijo": null,
+    "dias_libres_fijos": null,
+    "dias_libres_sustituto": null,
+    "sin_noches": false,
+    "unico": false,
+    "protegido": true,
+    "borrable": false
+  }
+}

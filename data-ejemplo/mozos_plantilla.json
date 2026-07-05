@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Fran",
+    "role": "night_fixed",
+    "preferences": [
+      "Noche"
+    ]
+  },
+  {
+    "name": "Rubén",
+    "role": "normal",
+    "preferences": [
+      "Mañana"
+    ]
+  },
+  {
+    "name": "Gloria",
+    "role": "normal",
+    "preferences": [
+      "Tarde"
+    ]
+  },
+  {
+    "name": "Tomás",
+    "role": "normal",
+    "preferences": []
+  },
+  {
+    "name": "Inés",
+    "role": "normal",
+    "preferences": [
+      "Mañana"
+    ]
+  }
+]

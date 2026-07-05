@@ -1,0 +1,34 @@
+{
+  "Carlos": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Juan": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Laura": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Pedro": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Ana": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Miguel": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Sofía": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  },
+  "Diego": {
+    "modalidad": "cobrar",
+    "la_saldo": 0
+  }
+}

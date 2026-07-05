@@ -51,18 +51,72 @@ def _turno_anterior(person_name, day_idx, schedule, prev_sunday_shifts=None):
 def can_work_morning(person_name, day_idx, schedule, prev_sunday_shifts=None):
     return _turno_anterior(person_name, day_idx, schedule, prev_sunday_shifts) not in NO_MORNING_AFTER
 
-def _get_weekend_counts(dept_id: str) -> dict:
+def _get_weekend_ratios(dept_id: str, staff_actual: list) -> dict:
+    """
+    Calcula el ratio finde-libre/semanas-trabajadas para cada persona del staff actual.
+    Devuelve {"nombre": {"finds": n, "semanas": m, "ratio": r}}.
+    Ventana máxima de 52 semanas. Excluye vacaciones completas y semanas en que
+    el finde libre fue compensación por cobertura nocturna.
+    Personas sin historial reciben el ratio medio del equipo.
+    """
     try:
         from herramientas import cargar_historial
-        historial = cargar_historial(dept_id)
-        counts = {}
-        for entrada in historial.values():
-            for nombre, turnos in entrada.get("schedule", {}).items():
-                if len(turnos) >= 7 and turnos[5] == "Libre" and turnos[6] == "Libre":
-                    counts[nombre] = counts.get(nombre, 0) + 1
-        return counts
     except Exception:
         return {}
+
+    historial = cargar_historial(dept_id)
+    cutoff    = (date.today() - timedelta(weeks=52)).strftime("%Y-%m-%d")
+
+    nombres   = {p["name"] for p in staff_actual}
+    resultado = {n: {"finds": 0, "semanas": 0} for n in nombres}
+
+    for semana_str in sorted(historial):
+        if semana_str < cutoff:
+            continue
+        entrada      = historial[semana_str]
+        schedule_sem = entrada.get("schedule", {})
+        staff_semana = {p["name"] for p in entrada.get("staff", [])}
+
+        # Días que el night_fixed tenía Libre esa semana = días de cobertura nocturna
+        nf_en_staff  = next(
+            (p for p in entrada.get("staff", []) if p.get("role") == "night_fixed"),
+            None,
+        )
+        dias_cobertura: set = set()
+        if nf_en_staff:
+            nf_t           = schedule_sem.get(nf_en_staff["name"], [])
+            dias_cobertura = {i for i, t in enumerate(nf_t) if t == "Libre"}
+
+        for nombre in nombres:
+            if nombre not in staff_semana:
+                continue
+            turnos = schedule_sem.get(nombre, [])
+            if len(turnos) < 7:
+                continue
+            # Semana de vacaciones completa: no computa
+            if all(t == "Libre" for t in turnos):
+                continue
+            resultado[nombre]["semanas"] += 1
+            # Finde libre: verificar que no fue compensación nocturna
+            if turnos[5] == "Libre" and turnos[6] == "Libre":
+                fue_comp = bool(
+                    dias_cobertura
+                    and any(turnos[d] == "Noche" for d in dias_cobertura)
+                )
+                if not fue_comp:
+                    resultado[nombre]["finds"] += 1
+
+    # Ratio individual; media del equipo para quienes no tienen historial
+    ratios_validos = [
+        d["finds"] / d["semanas"]
+        for d in resultado.values()
+        if d["semanas"] > 0
+    ]
+    avg = sum(ratios_validos) / len(ratios_validos) if ratios_validos else 0.0
+    for datos in resultado.values():
+        datos["ratio"] = datos["finds"] / datos["semanas"] if datos["semanas"] > 0 else avg
+
+    return resultado
 
 def _get_shift_counts(dept_id: str) -> dict:
     """Lee el historial y cuenta cuántas veces cada persona ha hecho cada turno."""
@@ -202,7 +256,8 @@ def select_night_covers(staff_list: list, week_start: date, cfg: DeptConfig) -> 
 # ─── ASIGNACIÓN DE LIBRES ────────────────────────────────────────────────────
 
 def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dict:
-    """Generic days-off assignment respecting dept config."""
+    """Asignación de libres respetando la config del departamento y balanceando
+    los fines de semana libres a largo plazo mediante ratio proporcional."""
     if night_cover is None:
         night_cover = {}
 
@@ -210,12 +265,11 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
     for day_idx, name in night_cover.items():
         cover_by_person.setdefault(name, []).append(day_idx)
 
-    pairs          = get_consecutive_day_pairs()
-    schedule       = {p["name"]: ["" for _ in DAYS] for p in staff_list}
-    pair_usage     = {pair: 0 for pair in pairs}
-    weekend_counts = _get_weekend_counts(cfg.dept_id)
+    pairs      = get_consecutive_day_pairs()
+    schedule   = {p["name"]: ["" for _ in DAYS] for p in staff_list}
+    pair_usage = {pair: 0 for pair in pairs}
 
-    # Fixed roles: days off
+    # ── Roles con días fijos ────────────────────────────────────────────────
     for role, days in cfg.fixed_days_off.items():
         person = next((p for p in staff_list if p["role"] == role), None)
         if person:
@@ -226,7 +280,7 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
             if pair in pair_usage:
                 pair_usage[pair] += 1
 
-    # Night fixed: days off
+    # Night fixed: días fijos libres
     nf = next((p for p in staff_list if p["role"] == "night_fixed"), None)
     if nf:
         for d in cfg.night_fixed_days_off:
@@ -246,55 +300,92 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
         if forced_indices or extra_indices:
             person["days_off"] = sorted(set(person.get("days_off", [])) | set(forced_indices) | set(extra_indices))
 
-    # Everyone else (roles sin turno fijo): completar su pareja de libres semanales
+    # ── Personas sin turno fijo ─────────────────────────────────────────────
     fixed_roles = set(cfg.fixed_days_off.keys()) | {"night_fixed"}
     no_fixed    = [p for p in staff_list if p["role"] not in fixed_roles]
-    avg_wc      = (sum(weekend_counts.get(p["name"], 0) for p in no_fixed)
-                   / max(len(no_fixed), 1))
 
+    def _is_normal_rotation(p: dict) -> bool:
+        """Persona que caerá en la rotación normal (sin forzados ni cobertura)."""
+        fi = [DAYS.index(d) for d in p.get("forced_days_off", []) if d in DAYS]
+        return (
+            len(fi) == 0
+            and p.get("dia_descanso_tras_cobertura") is None
+            and not p.get("night_cover_this_week")
+        )
+
+    normal_people = [p for p in no_fixed if _is_normal_rotation(p)]
+
+    # K = cuántas personas pueden librarse el finde sin romper cobertura mínima.
+    # La noche la cubre el night_fixed (o su sustituto), así que solo contamos
+    # Mañana, Tarde y Partido para los trabajadores de rotación normal.
+    min_workers = sum(cfg.min_coverage.get(s, 0) for s in ["Mañana", "Tarde", "Partido"])
+    K           = max(0, len(normal_people) - min_workers)
+
+    # Calcular ratios de equidad proporcional para los no-fijos
+    ratios    = _get_weekend_ratios(cfg.dept_id, no_fixed)
+    avg_ratio = (
+        sum(d["ratio"] for d in ratios.values()) / len(ratios)
+        if ratios else 0.0
+    )
+
+    # Shuffle previo → desempate aleatorio al ordenar por ratio
+    random.shuffle(normal_people)
+    normal_people.sort(
+        key=lambda p: ratios.get(p["name"], {}).get("ratio", avg_ratio)
+    )
+
+    # Asignar K slots de finde (ratio menor → prioridad mayor)
+    weekend_assigned: set = set()
+    for p in normal_people:
+        if len(weekend_assigned) >= K:
+            break
+        mw = set(cover_by_person.get(p["name"], []))
+        if not (mw & {5, 6}):
+            weekend_assigned.add(p["name"])
+
+    # ── Bucle principal: forzados, compensaciones y cobertura nocturna ────────
     for person in staff_list:
         if person["role"] in fixed_roles:
             continue
+        if _is_normal_rotation(person):
+            continue  # se procesan en las dos pasadas siguientes
 
-        forced  = person.get("forced_days_off", [])
-        forced_indices = [DAYS.index(d) for d in forced if d in DAYS]
-        must_work = set(cover_by_person.get(person["name"], []))
+        forced_indices = [DAYS.index(d) for d in person.get("forced_days_off", []) if d in DAYS]
+        must_work      = set(cover_by_person.get(person["name"], []))
 
         if len(forced_indices) >= 2:
-            # Ya quedaron marcados Libre arriba; solo se registra el par
-            # principal para el balanceo de uso de parejas de días.
+            # Ya marcados Libre arriba; registrar par para pair_usage
             pair = tuple(sorted(forced_indices[:2]))
             if pair in pair_usage:
                 pair_usage[pair] += 1
 
         elif len(forced_indices) == 1:
-            fi = forced_indices[0]
-            candidates = [(fi-1,fi)] if fi>0 else []
-            if fi < len(DAYS)-1:
-                candidates.append((fi, fi+1))
+            fi         = forced_indices[0]
+            candidates = [(fi - 1, fi)] if fi > 0 else []
+            if fi < len(DAYS) - 1:
+                candidates.append((fi, fi + 1))
             valid = [c for c in candidates if c in pair_usage and not (must_work & set(c))]
             if not valid:
                 valid = [c for c in candidates if c in pair_usage]
-            chosen = min(valid, key=lambda p: pair_usage[p]) if valid \
-                     else sorted(pairs, key=lambda p: pair_usage[p])[0]
+            chosen = (
+                min(valid, key=lambda p: pair_usage[p])
+                if valid
+                else sorted(pairs, key=lambda p: pair_usage[p])[0]
+            )
             schedule[person["name"]][chosen[0]] = "Libre"
             schedule[person["name"]][chosen[1]] = "Libre"
             person["days_off"] = list(chosen)
             pair_usage[chosen] += 1
 
         elif person.get("dia_descanso_tras_cobertura") is not None:
-            # Mozos cover (Vie+Sáb): si tras la última noche cubierta aún
-            # queda un día dentro de la misma semana (el domingo), ese día
-            # libra obligatoriamente como descanso — sin pareja de rotación
-            # normal aparte, para no superar los 2 libres semanales (el
-            # premio de Lun+Mar de la semana siguiente se aplica por separado).
+            # Mozos cover (Vie+Sáb): descanso obligatorio tras la última noche
             dia = person["dia_descanso_tras_cobertura"]
             schedule[person["name"]][dia] = "Libre"
             person["days_off"] = sorted(set(person.get("days_off", [])) | {dia})
 
         elif person.get("night_cover_this_week"):
-            # Mozos cover: no forced comp days this week, use normal rotation
-            # but avoid covering nights (those are their work days)
+            # Mozos cover sin días forzados esta semana: rotación normal
+            # evitando los días en que cubre noches
             valid_pairs = [p for p in pairs if not (must_work & set(p))]
             if not valid_pairs:
                 valid_pairs = pairs
@@ -304,24 +395,42 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
             schedule[person["name"]][chosen[1]] = "Libre"
             person["days_off"] = list(chosen)
 
-        else:
-            # Normal rotation with weekend balancing
-            valid_pairs = [p for p in pairs if not (must_work & set(p))]
-            if not valid_pairs:
-                valid_pairs = pairs
-            wc = weekend_counts.get(person["name"], 0)
-            def pair_sort_key(pair):
-                usage         = pair_usage[pair]
-                deficit       = avg_wc - wc
-                weekend_bonus = max(-1.0, -deficit * 0.5) if pair == (5, 6) else 0
-                return usage + weekend_bonus
-            chosen = sorted(valid_pairs, key=pair_sort_key)[0]
-            pair_usage[chosen] += 1
-            schedule[person["name"]][chosen[0]] = "Libre"
-            schedule[person["name"]][chosen[1]] = "Libre"
-            person["days_off"] = list(chosen)
-            if chosen == (5, 6):
-                weekend_counts[person["name"]] = wc + 1
+    # ── Pasada A: finde libre por ratio (K personas, ratio ascendente) ────────
+    for person in normal_people:
+        if person["name"] not in weekend_assigned:
+            continue
+        must_work   = set(cover_by_person.get(person["name"], []))
+        valid_pairs = [p for p in pairs if not (must_work & set(p))]
+        if not valid_pairs:
+            valid_pairs = pairs
+        chosen = (5, 6) if (5, 6) in valid_pairs else min(valid_pairs, key=lambda p: pair_usage[p])
+        pair_usage[chosen] += 1
+        schedule[person["name"]][chosen[0]] = "Libre"
+        schedule[person["name"]][chosen[1]] = "Libre"
+        person["days_off"] = list(chosen)
+
+    # ── Pasada B: rotación sin finde, orden aleatorio para desempate ──────────
+    # Se excluyen todos los pares que contengan Sábado(5) o Domingo(6) para
+    # no reducir la cobertura del finde más allá del K acordado.
+    resto = [p for p in normal_people if p["name"] not in weekend_assigned]
+    random.shuffle(resto)
+    for person in resto:
+        must_work   = set(cover_by_person.get(person["name"], []))
+        valid_pairs = [p for p in pairs if not (must_work & set(p))]
+        if not valid_pairs:
+            valid_pairs = pairs
+        # Preferir pares sin días de fin de semana; recaer en (4,5) solo si
+        # no hay otra opción y en (5,6) solo si tampoco hay ninguna más.
+        sin_finde = [p for p in valid_pairs if 5 not in p and 6 not in p]
+        if not sin_finde:
+            sin_finde = [p for p in valid_pairs if p != (5, 6)]
+        if not sin_finde:
+            sin_finde = valid_pairs
+        chosen = min(sin_finde, key=lambda p: pair_usage[p])
+        pair_usage[chosen] += 1
+        schedule[person["name"]][chosen[0]] = "Libre"
+        schedule[person["name"]][chosen[1]] = "Libre"
+        person["days_off"] = list(chosen)
 
     return schedule
 
@@ -335,6 +444,17 @@ def allowed_shifts(person, day_idx, schedule, coverage, cfg: DeptConfig, prev_su
         if shift == "Mañana" and not can_work_morning(person["name"], day_idx, schedule, prev_sunday_shifts):
             continue
         result.append(shift)
+    # Partido solo cuando los turnos con cobertura mínima están cubiertos
+    if "Partido" in result:
+        priority_unfilled = any(
+            coverage.get(s, 0) < cfg.min_coverage.get(s, 0)
+            for s in ["Mañana", "Tarde", "Noche"]
+            if cfg.min_coverage.get(s, 0) > 0
+        )
+        if priority_unfilled:
+            sin_partido = [s for s in result if s != "Partido"]
+            if sin_partido:
+                result = sin_partido
     return result
 
 def assign_shifts(staff_list: list, days_off_schedule: dict,
@@ -407,7 +527,7 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
         for person in sorted(available, key=_b_priority):
             opts = allowed_shifts(person, day_idx, schedule, coverage, cfg, prev_sunday_shifts)
             if not opts:
-                fallback = [s for s in ["Partido", "Tarde", "Mañana"]
+                fallback = [s for s in ["Tarde", "Mañana", "Partido"]
                             if coverage.get(s, 0) < cfg.max_coverage.get(s, 99)
                             and (s != "Mañana" or can_work_morning(person["name"], day_idx, schedule, prev_sunday_shifts))]
                 chosen = fallback[0] if fallback else "Tarde"

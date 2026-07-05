@@ -934,6 +934,17 @@ def api_estadisticas():
                         stats[nombre]["peticiones"] += 1
     return ok(list(stats.values()))
 
+@app.route("/api/historial/limpiar", methods=["POST"])
+@permiso_requerido("gestionar_usuarios")
+def api_limpiar_historial():
+    """Borra el historial de semanas generadas de todos los departamentos."""
+    from herramientas import guardar_historial
+    guardar_historial({}, "recepcion")
+    guardar_historial({}, "mozos")
+    registrar_accion("LIMPIAR_HISTORIAL",
+                     "Historial de horarios eliminado (recepción + mozos)")
+    return ok(message="Historial eliminado correctamente")
+
 @app.route("/api/meta", methods=["GET"])
 @login_requerido
 def api_meta():

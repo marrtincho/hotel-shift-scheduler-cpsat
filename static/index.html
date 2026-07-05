@@ -362,7 +362,10 @@ function closeModal(id){
     <div class="section" id="sec-historial">
       <div class="g3" style="margin-bottom:16px" id="hist-stats"></div>
       <div class="card0">
-        <div class="card-hd">Semanas registradas</div>
+        <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Semanas registradas</span>
+          <button class="btn danger sm admin-only" id="btn-limpiar-hist" onclick="confirmarLimpiarHistorial()">🗑 Limpiar historial</button>
+        </div>
         <div id="hist-list"></div>
       </div>
     </div>
@@ -415,6 +418,32 @@ function closeModal(id){
 
   </div>
 </div>
+</div>
+
+<!-- MODAL LIMPIAR HISTORIAL -->
+<div class="overlay hidden" id="modal-limpiar-hist">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-hd">
+      <span style="color:#B91C1C">⚠ Limpiar historial de horarios</span>
+      <button class="btn ghost" onclick="closeModal('modal-limpiar-hist')">✕</button>
+    </div>
+    <div class="alert err" style="margin-bottom:16px">
+      <div>
+        <strong>Esta acción no se puede deshacer.</strong><br>
+        Se eliminarán permanentemente:
+        <ul style="margin:8px 0 0 16px;line-height:1.8">
+          <li>Todas las semanas del historial de recepción</li>
+          <li>Todas las semanas del historial de mozos</li>
+          <li>Las estadísticas históricas de turnos y fines de semana</li>
+        </ul>
+        Los empleados, roles, vacaciones, peticiones y compensaciones no se verán afectados.
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+      <button class="btn" onclick="closeModal('modal-limpiar-hist')">Cancelar</button>
+      <button class="btn danger" id="btn-confirmar-limpiar" onclick="ejecutarLimpiarHistorial()">Sí, eliminar todo el historial</button>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL USUARIO -->
@@ -1814,6 +1843,27 @@ document.querySelectorAll('.nav-item[data-sec]').forEach(el=>{
 
 SECS['usuarios'] = ['Usuarios','Gestión de acceso'];
 SECS['log']      = ['Log de actividad','Registro de acciones'];
+
+// ── LIMPIAR HISTORIAL (admin) ─────────────────────────────────────
+function confirmarLimpiarHistorial(){
+  document.getElementById('modal-limpiar-hist').classList.remove('hidden');
+}
+
+async function ejecutarLimpiarHistorial(){
+  const btn = document.getElementById('btn-confirmar-limpiar');
+  btn.disabled = true;
+  btn.textContent = 'Eliminando...';
+  const r = await api('POST','/historial/limpiar');
+  btn.disabled = false;
+  btn.textContent = 'Sí, eliminar todo el historial';
+  closeModal('modal-limpiar-hist');
+  if(r.ok){
+    toast('Historial eliminado correctamente');
+    loadHistorial();
+  } else {
+    toast(r.error || 'Error al limpiar el historial','err');
+  }
+}
 
 // ── INIT — check existing session ─────────────────────────────────
 (async ()=>{
