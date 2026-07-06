@@ -63,7 +63,7 @@ def _simular(n_semanas, semana_extra_staff=None):
 
         staff = copy.deepcopy(plantilla)
 
-        sch, staff_final, _, _, next_covers = generate_schedule(
+        sch, staff_final, _, _, next_covers, _ = generate_schedule(
             staff_list        = staff,
             week_start        = week_start,
             cfg               = RECEPCION_CONFIG,

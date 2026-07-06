@@ -135,6 +135,23 @@ def obtener_peticiones_semana(week_start: date, dept_id: str = "recepcion") -> d
     peticiones = cargar_peticiones(dept_id)
     return peticiones.get(_semana_str(week_start), {})
 
+def obtener_prioridad_semana(week_start: date, dept_id: str = "recepcion") -> list | None:
+    """Devuelve la lista de nombres en orden de prioridad manual, o None si es automática."""
+    return cargar_peticiones(dept_id).get("_prioridad", {}).get(_semana_str(week_start))
+
+def guardar_prioridad_semana(week_start: date, order: list | None, dept_id: str = "recepcion"):
+    """Guarda o elimina el orden de prioridad manual para la semana."""
+    pet  = cargar_peticiones(dept_id)
+    prio = pet.setdefault("_prioridad", {})
+    key  = _semana_str(week_start)
+    if order is None:
+        prio.pop(key, None)
+        if not prio:
+            del pet["_prioridad"]
+    else:
+        prio[key] = order
+    guardar_peticiones(pet, dept_id)
+
 def aplicar_peticiones(staff_list: list[dict], week_start: date, dept_id: str = "recepcion") -> list[dict]:
     """
     Devuelve una copia de staff_list con:
@@ -216,6 +233,7 @@ def aplicar_peticiones_con_prioridad(staff_list: list, week_start: date,
     ]
 
     # Aplanar peticiones regulares con su carga histórica
+    manual_order = obtener_prioridad_semana(week_start, dept_id)
     solicitudes_raw = []
     for nombre, entrada in peticiones.items():
         if isinstance(entrada, list):
@@ -228,8 +246,19 @@ def aplicar_peticiones_con_prioridad(staff_list: list, week_start: date,
             if dia in DIAS_SEMANA:
                 solicitudes_raw.append((concedidas.get(nombre, 0), nombre, dia))
 
+    if manual_order:
+        def _sort_key(item):
+            count, nombre, dia = item
+            try:
+                return (0, manual_order.index(nombre), dia)
+            except ValueError:
+                return (1, count, nombre, dia)
+        solicitudes_sorted = sorted(solicitudes_raw, key=_sort_key)
+    else:
+        solicitudes_sorted = sorted(solicitudes_raw)
+
     denegadas: list = []
-    for _, nombre, dia in sorted(solicitudes_raw):
+    for _, nombre, dia in solicitudes_sorted:
         idx = DIAS_SEMANA.index(dia)
         if len(disponibles[idx] - {nombre}) < min_workers_dia:
             denegadas.append({"nombre": nombre, "dia": dia})
@@ -573,14 +602,8 @@ def validar_rol(rol_id: str, datos: dict, dept_id: str = "recepcion",
     errores += _validar_dias(datos.get("dias_libres_fijos"), "Los días libres fijos")
 
     if rol_id == "night_fixed":
-        # Los días del sustituto ya no los elige el admin: se calculan siempre
-        # como los dos días siguientes a los días libres fijos (ver
-        # _dias_sustituto_noche), así el descanso del sustituto nunca rompe el
-        # límite de "máximo 2 libres juntos por semana".
         fijos = datos.get("dias_libres_fijos")
-        if not fijos:
-            errores.append("El turno noche fijo necesita días libres fijos")
-        elif len(_validar_dias(fijos, "x")) == 0:
+        if fijos and len(_validar_dias(fijos, "x")) == 0:
             a, b = sorted(fijos)
             if b - a != 1:
                 errores.append("Los días libres fijos del turno noche deben ser dos días consecutivos")
@@ -663,3 +686,126 @@ def eliminar_rol(rol_id: str, dept_id: str = "recepcion") -> tuple[bool, str]:
     del roles[rol_id]
     guardar_roles(roles, dept_id)
     return True, "Categoría eliminada"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MÓDULO — COBERTURA POR TEMPORADA
+# Gestiona perfiles de min/max coverage (normal, alta, baja) por departamento.
+# El fichero data/coverage_config.json se crea automáticamente si no existe,
+# usando los valores actuales de cada departamento como perfil "normal".
+# ═══════════════════════════════════════════════════════════════════════════════
+
+COVERAGE_CONFIG_FILE = os.path.join(DATA_DIR, "coverage_config.json")
+
+# Valores por defecto: los actuales de cada departamento pasan al perfil "normal"
+COVERAGE_CONFIG_DEFAULT: dict = {
+    "recepcion": {
+        "perfiles": {
+            "normal": {
+                "min_coverage": {"Mañana": 2, "Tarde": 2, "Noche": 1, "Partido": 0},
+                "max_coverage": {"Mañana": 3, "Tarde": 3, "Noche": 1, "Partido": 1},
+            },
+            "alta": {
+                # Temporada alta: máximos más amplios para absorber plantillas mayores
+                "min_coverage": {"Mañana": 2, "Tarde": 2, "Noche": 1, "Partido": 0},
+                "max_coverage": {"Mañana": 4, "Tarde": 4, "Noche": 1, "Partido": 2},
+            },
+            "baja": {
+                # Temporada baja: mínimo de Tarde reducido a 1 para equipos más pequeños
+                "min_coverage": {"Mañana": 2, "Tarde": 1, "Noche": 1, "Partido": 0},
+                "max_coverage": {"Mañana": 3, "Tarde": 3, "Noche": 1, "Partido": 1},
+            },
+        },
+        "activo": "normal",
+    },
+    "mozos": {
+        "perfiles": {
+            "normal": {
+                "min_coverage": {"Mañana": 1, "Tarde": 1, "Noche": 1, "Partido": 0},
+                "max_coverage": {"Mañana": 1, "Tarde": 1, "Noche": 1, "Partido": 2},
+            },
+            "alta": {
+                "min_coverage": {"Mañana": 1, "Tarde": 1, "Noche": 1, "Partido": 0},
+                "max_coverage": {"Mañana": 2, "Tarde": 2, "Noche": 1, "Partido": 2},
+            },
+            "baja": {
+                "min_coverage": {"Mañana": 1, "Tarde": 1, "Noche": 1, "Partido": 0},
+                "max_coverage": {"Mañana": 1, "Tarde": 1, "Noche": 1, "Partido": 2},
+            },
+        },
+        "activo": "normal",
+    },
+}
+
+
+def cargar_coverage_config() -> dict:
+    """Carga la configuración de cobertura por temporada desde disco.
+    Si el fichero no existe lo crea con los valores por defecto (mismo patrón
+    que el resto de ficheros data/). Fusiona los defaults para garantizar que
+    siempre existen todos los departamentos y perfiles."""
+    import copy as _copy
+
+    if not os.path.exists(COVERAGE_CONFIG_FILE):
+        guardar_json_atomico(COVERAGE_CONFIG_FILE, COVERAGE_CONFIG_DEFAULT)
+        return _copy.deepcopy(COVERAGE_CONFIG_DEFAULT)
+
+    data = _cargar_json(COVERAGE_CONFIG_FILE, None)
+    if not isinstance(data, dict):
+        return _copy.deepcopy(COVERAGE_CONFIG_DEFAULT)
+
+    # Asegurar que todos los depts y perfiles existen aunque el fichero sea antiguo
+    for dept, dept_default in COVERAGE_CONFIG_DEFAULT.items():
+        dept_data = data.setdefault(dept, _copy.deepcopy(dept_default))
+        dept_data.setdefault("activo", "normal")
+        perfiles = dept_data.setdefault("perfiles", {})
+        for nombre_perfil, vals in dept_default["perfiles"].items():
+            perfiles.setdefault(nombre_perfil, _copy.deepcopy(vals))
+
+    return data
+
+
+def guardar_coverage_config(data: dict) -> None:
+    """Guarda la config de cobertura de forma atómica."""
+    guardar_json_atomico(COVERAGE_CONFIG_FILE, data)
+
+
+def cargar_coverage_activa(dept_id: str) -> dict:
+    """Devuelve {"min_coverage": {...}, "max_coverage": {...}} del perfil activo
+    para el departamento dado. Nunca lanza excepción: cae al perfil 'normal'."""
+    config   = cargar_coverage_config()
+    dept_cfg = config.get(dept_id, COVERAGE_CONFIG_DEFAULT.get(dept_id, {}))
+    activo   = dept_cfg.get("activo", "normal")
+    perfiles = dept_cfg.get("perfiles", {})
+    perfil   = perfiles.get(activo) or perfiles.get("normal") or next(iter(perfiles.values()), {})
+    # Garantizar que min/max existen aunque el perfil esté incompleto
+    fallback = COVERAGE_CONFIG_DEFAULT.get(dept_id, {}).get("perfiles", {}).get("normal", {})
+    return {
+        "min_coverage": perfil.get("min_coverage", fallback.get("min_coverage", {})),
+        "max_coverage": perfil.get("max_coverage", fallback.get("max_coverage", {})),
+    }
+
+
+def validar_coverage_perfil(datos: dict) -> list[str]:
+    """Valida un perfil de cobertura. Devuelve lista de errores (vacía = válido).
+    Reglas: valores enteros no negativos, min <= max por turno, Noche >= 1."""
+    errores: list[str] = []
+    turnos = ["Mañana", "Tarde", "Noche", "Partido"]
+    for campo in ("min_coverage", "max_coverage"):
+        if campo not in datos:
+            errores.append(f"Falta el campo '{campo}'")
+            continue
+        for turno in turnos:
+            v = datos[campo].get(turno)
+            if v is None:
+                errores.append(f"{campo}['{turno}'] es obligatorio")
+            elif not isinstance(v, int) or v < 0:
+                errores.append(f"{campo}['{turno}'] debe ser un entero no negativo")
+    if not errores:
+        for turno in turnos:
+            mn = datos["min_coverage"].get(turno, 0)
+            mx = datos["max_coverage"].get(turno, 0)
+            if mn > mx:
+                errores.append(f"min > max para turno '{turno}' ({mn} > {mx})")
+        if datos["min_coverage"].get("Noche", 0) < 1:
+            errores.append("min_coverage['Noche'] debe ser al menos 1")
+    return errores

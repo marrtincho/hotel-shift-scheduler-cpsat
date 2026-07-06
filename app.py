@@ -17,6 +17,7 @@ from herramientas import (
     cargar_plantilla, guardar_plantilla, validar_plantilla,
     cargar_peticiones, guardar_peticiones,
     aplicar_peticiones, aplicar_peticiones_con_prioridad, obtener_peticiones_semana,
+    obtener_prioridad_semana, guardar_prioridad_semana,
     cargar_vacaciones, guardar_vacaciones,
     aplicar_vacaciones, vacaciones_activas_en_semana,
     cargar_historial, guardar_historial, registrar_semana,
@@ -26,13 +27,15 @@ from herramientas import (
     cargar_festivos, FESTIVOS_VALENCIA,
     MODALIDADES, BASE_DIR, DATA_DIR,
     cargar_roles, crear_rol, editar_rol, eliminar_rol,
+    cargar_coverage_config, guardar_coverage_config,
+    cargar_coverage_activa, validar_coverage_perfil,
     _semana_str,
 )
 from auth import (
     inicializar_usuarios, autenticar, usuario_actual,
     login_usuario, logout_usuario, listar_usuarios,
     crear_usuario, editar_usuario, eliminar_usuario,
-    login_requerido, permiso_requerido,
+    login_requerido, permiso_requerido, tiene_permiso,
     registrar_accion, obtener_log,
     PERMISOS, ROLES_LABEL,
 )
@@ -360,10 +363,13 @@ def api_eliminar_rol(rol_id):
 
 def _get_dept_config(dept_id: str):
     """
-    Devuelve el DeptConfig del departamento, con fixed_roles/fixed_days_off/
-    night_fixed_days_off/night_cover_compensation parcheados según data/roles*.json
-    (editables desde la pestaña de Categorías) en vez de los valores estáticos
-    de modelo_recepcion.py/modelo_mozos.py.
+    Devuelve el DeptConfig del departamento con tres capas de parches:
+      1. Roles editables (fixed_roles, fixed_days_off, night_fixed_days_off…)
+         desde data/roles*.json.
+      2. min_coverage y max_coverage del perfil de temporada activo
+         desde data/coverage_config.json.
+    Los valores estáticos de modelo_recepcion/modelo_mozos actúan solo como
+    fallback si los ficheros de datos no existen todavía.
     """
     if dept_id == "mozos":
         from modelo_mozos import MOZOS_CONFIG as base
@@ -371,6 +377,7 @@ def _get_dept_config(dept_id: str):
         from modelo_recepcion import RECEPCION_CONFIG as base
     cfg = copy.deepcopy(base)
 
+    # — Parche de roles editables —
     roles = cargar_roles(dept_id)
     cfg.fixed_roles = {
         rid: r["turno_fijo"] for rid, r in roles.items()
@@ -381,10 +388,16 @@ def _get_dept_config(dept_id: str):
         if r.get("dias_libres_fijos") and rid != "night_fixed"
     }
     nf = roles.get("night_fixed", {})
-    if nf.get("dias_libres_fijos"):
-        cfg.night_fixed_days_off = nf["dias_libres_fijos"]
+    if "dias_libres_fijos" in nf:
+        cfg.night_fixed_days_off = nf["dias_libres_fijos"] or []
     if nf.get("dias_libres_sustituto"):
         cfg.night_cover_compensation = nf["dias_libres_sustituto"]
+
+    # — Parche de cobertura por temporada —
+    coverage = cargar_coverage_activa(dept_id)
+    cfg.min_coverage = coverage["min_coverage"]
+    cfg.max_coverage = coverage["max_coverage"]
+
     return cfg
 
 def _semana_bloqueada(semana: date) -> bool:
@@ -451,6 +464,13 @@ def api_generar():
     min_w = sum(cfg.min_coverage.values())
     staff, pets_denegadas = aplicar_peticiones_con_prioridad(staff, semana, dept_id, min_w)
 
+    # Chequeo de viabilidad previo: evita intentar generar con plantilla
+    # manifiestamente inviable (demasiado pocas o demasiadas personas activas).
+    from modelo_base import validar_viabilidad
+    viable, msg_viabilidad = validar_viabilidad(staff, cfg)
+    if not viable:
+        return err(msg_viabilidad, 422)
+
     # Quién cubrió noches la semana pasada y debe descansar esos días esta
     # semana: mozos siempre (Lun+Mar de la semana siguiente, por diseño) y
     # recepción cuando la compensación del sustituto cae tras el domingo
@@ -473,21 +493,22 @@ def api_generar():
         prev_sched = historial_prev[prev_sem_key].get("schedule", {})
         prev_sunday_shifts = {nombre: turnos[6] for nombre, turnos in prev_sched.items() if len(turnos) == 7}
 
-    from modelo_base import generate_schedule as gen_sched
-    full_schedule, staff_final, ws_date, night_cover, this_week_covers = gen_sched(
-        staff_list=copy.deepcopy(staff),
-        week_start=semana,
-        cfg=cfg,
-        prev_week_covers=prev_week_covers,
-        prev_sunday_shifts=prev_sunday_shifts,
-    )
+    from modelo_base import generate_schedule_valido
+    full_schedule, staff_final, ws_date, night_cover, this_week_covers, violaciones = \
+        generate_schedule_valido(
+            staff_list=copy.deepcopy(staff),
+            week_start=semana,
+            cfg=cfg,
+            prev_week_covers=prev_week_covers,
+            prev_sunday_shifts=prev_sunday_shifts,
+        )
 
     import json as _j
     all_covers = _j.loads(open(cov_path).read()) if os.path.exists(cov_path) else {}
     all_covers[_semana_str(semana)] = this_week_covers
     open(cov_path, "w").write(_j.dumps(all_covers, ensure_ascii=False, indent=2))
 
-    advertencias = _calcular_advertencias(full_schedule, staff_final, cfg)
+    advertencias = violaciones  # solo no vacío si ningún intento fue perfecto
 
     festivos = [
         {"fecha": f["date"].isoformat(), "nombre": f["nombre"],
@@ -663,25 +684,43 @@ def api_get_peticiones():
     fecha   = request.args.get("semana", date.today().isoformat())
     dept_id = request.args.get("dept","recepcion")
     semana  = lunes_de(fecha)
+    u       = usuario_actual()
     raw     = obtener_peticiones_semana(semana, dept_id)
     result  = {}
     for nombre, entrada in raw.items():
         if isinstance(entrada, list):
-            result[nombre] = {"dias": entrada, "la": []}
+            result[nombre] = {"dias": entrada, "la": [], "motivo": None}
         elif isinstance(entrada, dict):
-            result[nombre] = {"dias": entrada.get("dias",[]), "la": entrada.get("la",[])}
-    return ok(result)
+            result[nombre] = {"dias": entrada.get("dias",[]), "la": entrada.get("la",[]),
+                              "motivo": entrada.get("motivo") or None}
+    if u and u.get("rol") == "empleado":
+        vinculado = u.get("vinculado")
+        result = {k: v for k, v in result.items() if k == vinculado} if vinculado else {}
+        return ok(result)
+    priority_order = obtener_prioridad_semana(semana, dept_id)
+    return ok(result, priority_order=priority_order)
 
 @app.route("/api/peticiones", methods=["POST"])
-@permiso_requerido("editar_peticiones")
+@login_requerido
 def api_add_peticion():
+    u       = usuario_actual()
+    es_propia = tiene_permiso("editar_peticiones_propias") and not tiene_permiso("editar_peticiones")
+    if not tiene_permiso("editar_peticiones") and not tiene_permiso("editar_peticiones_propias"):
+        return err("Sin permisos", 403)
     body    = request.json or {}
     fecha   = body.get("semana")
     nombre  = body.get("nombre","").strip()
     dias    = body.get("dias",[])
     dept_id = body.get("dept","recepcion")
+    motivo  = (body.get("motivo") or "").strip() or None
     if not fecha or not nombre or not dias:
         return err("Faltan datos")
+    if es_propia:
+        vinculado = u.get("vinculado")
+        if not vinculado:
+            return err("Tu cuenta no está vinculada a ningún empleado de la plantilla", 403)
+        if nombre != vinculado:
+            return err("Solo puedes crear peticiones para ti mismo", 403)
     semana = lunes_de(fecha)
     pet    = cargar_peticiones(dept_id)
     key    = _semana_str(semana)
@@ -691,6 +730,10 @@ def api_add_peticion():
     if isinstance(existing, list):
         existing = {"dias": existing, "la": []}
     existing["dias"] = dias
+    if motivo is not None:
+        existing["motivo"] = motivo
+    elif "motivo" in existing:
+        del existing["motivo"]
     pet[key][nombre] = existing
     guardar_peticiones(pet, dept_id)
     return ok(message="Petición guardada")
@@ -700,8 +743,14 @@ def api_add_peticion():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/api/peticiones/<semana>/<nombre>", methods=["DELETE"])
-@permiso_requerido("editar_peticiones")
+@login_requerido
 def api_delete_peticion(semana, nombre):
+    u = usuario_actual()
+    es_propia = tiene_permiso("editar_peticiones_propias") and not tiene_permiso("editar_peticiones")
+    if not tiene_permiso("editar_peticiones") and not tiene_permiso("editar_peticiones_propias"):
+        return err("Sin permisos", 403)
+    if es_propia and nombre != u.get("vinculado"):
+        return err("Solo puedes eliminar tus propias peticiones", 403)
     dept_id  = request.args.get("dept","recepcion")
     pet      = cargar_peticiones(dept_id)
     semana_d = lunes_de(semana)
@@ -713,6 +762,18 @@ def api_delete_peticion(semana, nombre):
         del pet[key]
     guardar_peticiones(pet, dept_id)
     return ok(message="Petición eliminada")
+
+@app.route("/api/peticiones/<semana>/prioridad", methods=["PUT"])
+@permiso_requerido("editar_peticiones")
+def api_set_prioridad_peticiones(semana):
+    body    = request.json or {}
+    dept_id = body.get("dept","recepcion")
+    order   = body.get("order")   # lista de nombres o null para restablecer automático
+    if order is not None and not isinstance(order, list):
+        return err("order debe ser una lista o null")
+    guardar_prioridad_semana(lunes_de(semana), order, dept_id)
+    msg = "Prioridad manual guardada" if order else "Prioridad restablecida a automática"
+    return ok(message=msg)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # API — LA: ASIGNAR EN FECHA ESPECÍFICA
@@ -959,6 +1020,84 @@ def api_meta():
         "total_la_pendientes":  total_la,
         "año": date.today().year,
     })
+
+# ─── COVERAGE POR TEMPORADA ──────────────────────────────────────────────────
+
+@app.route("/api/coverage", methods=["GET"])
+@login_requerido
+def api_coverage_get():
+    """Devuelve la configuración completa de coverage de un departamento:
+    todos los perfiles y cuál está activo."""
+    dept_id = request.args.get("dept", "recepcion")
+    if dept_id not in ("recepcion", "mozos"):
+        dept_id = "recepcion"
+    config   = cargar_coverage_config()
+    dept_cfg = config.get(dept_id, {})
+    return ok({
+        "dept":     dept_id,
+        "activo":   dept_cfg.get("activo", "normal"),
+        "perfiles": dept_cfg.get("perfiles", {}),
+    })
+
+
+@app.route("/api/coverage/activo", methods=["PUT"])
+@permiso_requerido("generar_horario")
+def api_coverage_set_activo():
+    """Cambia el perfil activo para un departamento.
+    Body: {dept, perfil}"""
+    body    = request.json or {}
+    dept_id = body.get("dept", "recepcion")
+    if dept_id not in ("recepcion", "mozos"):
+        dept_id = "recepcion"
+    perfil = body.get("perfil", "").strip()
+    if not perfil:
+        return err("El campo 'perfil' es obligatorio")
+
+    config   = cargar_coverage_config()
+    dept_cfg = config.get(dept_id, {})
+    if perfil not in dept_cfg.get("perfiles", {}):
+        nombres = list(dept_cfg.get("perfiles", {}).keys())
+        return err(f"Perfil '{perfil}' no existe. Perfiles disponibles: {nombres}")
+
+    dept_cfg["activo"] = perfil
+    config[dept_id]    = dept_cfg
+    guardar_coverage_config(config)
+    registrar_accion("COVERAGE_ACTIVO", f"Dept:{dept_id} Perfil:{perfil}")
+    return ok({"dept": dept_id, "activo": perfil})
+
+
+@app.route("/api/coverage/perfil", methods=["PUT"])
+@permiso_requerido("generar_horario")
+def api_coverage_edit_perfil():
+    """Crea o edita un perfil de cobertura para un departamento.
+    Body: {dept, perfil_id, min_coverage, max_coverage}"""
+    body      = request.json or {}
+    dept_id   = body.get("dept", "recepcion")
+    if dept_id not in ("recepcion", "mozos"):
+        dept_id = "recepcion"
+    perfil_id = body.get("perfil_id", "").strip()
+    if not perfil_id:
+        return err("El campo 'perfil_id' es obligatorio")
+
+    datos = {
+        "min_coverage": body.get("min_coverage"),
+        "max_coverage": body.get("max_coverage"),
+    }
+    if datos["min_coverage"] is None or datos["max_coverage"] is None:
+        return err("Se requieren 'min_coverage' y 'max_coverage'")
+
+    errores = validar_coverage_perfil(datos)
+    if errores:
+        return err("Datos de cobertura inválidos: " + "; ".join(errores))
+
+    config             = cargar_coverage_config()
+    dept_cfg           = config.setdefault(dept_id, {"perfiles": {}, "activo": "normal"})
+    dept_cfg.setdefault("perfiles", {})[perfil_id] = datos
+    config[dept_id]    = dept_cfg
+    guardar_coverage_config(config)
+    registrar_accion("COVERAGE_PERFIL", f"Dept:{dept_id} Perfil:{perfil_id}")
+    return ok({"dept": dept_id, "perfil_id": perfil_id, "datos": datos})
+
 
 # ─── ARRANCAR ────────────────────────────────────────────────────────────────
 

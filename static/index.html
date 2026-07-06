@@ -211,6 +211,7 @@ function closeModal(id){
     <div class="nav-item" data-sec="asistente"><span class="nav-icon">✦</span>Asistente IA</div>
     <div class="nav-section admin-only">Administración</div>
     <div class="nav-item admin-only" data-sec="categorias"><span class="nav-icon">🏷</span>Categorías</div>
+    <div class="nav-item admin-only" data-sec="temporadas"><span class="nav-icon">◑</span>Temporadas</div>
     <div class="nav-item admin-only" data-sec="usuarios"><span class="nav-icon">◉</span>Usuarios</div>
     <div class="nav-item admin-only" data-sec="log"><span class="nav-icon">◎</span>Log actividad</div>
   </nav>
@@ -386,6 +387,92 @@ function closeModal(id){
     </div>
 
     <!-- ═══ USUARIOS ═══ -->
+    <!-- ═══ TEMPORADAS ═══ -->
+    <div class="section" id="sec-temporadas">
+      <div class="alert info" id="tmp-viabilidad-alert" style="display:none"></div>
+
+      <!-- Selector de departamento y perfil activo -->
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+        <label style="font-size:13px;font-weight:500">Departamento:</label>
+        <select id="tmp-dept" class="inp" style="width:140px;padding:6px 10px;font-size:13px"
+                onchange="loadTemporadas()">
+          <option value="recepcion">Recepción</option>
+          <option value="mozos">Mozos</option>
+        </select>
+        <span style="font-size:13px;color:var(--text-2)">Perfil activo:</span>
+        <select id="tmp-activo" class="inp" style="width:120px;padding:6px 10px;font-size:13px"
+                onchange="cambiarPerfilActivo()">
+          <option value="normal">Normal</option>
+          <option value="alta">Temporada alta</option>
+          <option value="baja">Temporada baja</option>
+        </select>
+      </div>
+
+      <!-- Tabla de perfiles con sus límites -->
+      <div class="card" style="overflow-x:auto;margin-bottom:16px">
+        <table class="tbl" style="min-width:480px">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding-left:12px">Perfil</th>
+              <th>Mañana mín</th><th>Mañana máx</th>
+              <th>Tarde mín</th><th>Tarde máx</th>
+              <th>Noche mín</th><th>Noche máx</th>
+              <th>Partido mín</th><th>Partido máx</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tmp-table-body">
+            <tr><td colspan="10" style="padding:16px;color:var(--text-2)">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Formulario de edición de perfil -->
+      <div class="card" id="tmp-edit-panel" style="display:none">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px" id="tmp-edit-title">Editar perfil</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px">
+          <div>
+            <label style="font-size:12px;color:var(--text-2);display:block;margin-bottom:4px">Nombre del perfil</label>
+            <input type="text" id="tmp-edit-id" class="inp" style="width:100%;padding:6px 10px;font-size:13px" placeholder="ej: verano">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-2);display:block;margin-bottom:4px">Mañana mín / máx</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" id="tmp-min-man" class="inp" min="0" max="10" style="width:60px;padding:6px 8px;font-size:13px">
+              <input type="number" id="tmp-max-man" class="inp" min="0" max="10" style="width:60px;padding:6px 8px;font-size:13px">
+            </div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-2);display:block;margin-bottom:4px">Tarde mín / máx</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" id="tmp-min-tar" class="inp" min="0" max="10" style="width:60px;padding:6px 8px;font-size:13px">
+              <input type="number" id="tmp-max-tar" class="inp" min="0" max="10" style="width:60px;padding:6px 8px;font-size:13px">
+            </div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-2);display:block;margin-bottom:4px">Noche mín / máx</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" id="tmp-min-noc" class="inp" min="1" max="10" style="width:60px;padding:6px 8px;font-size:13px">
+              <input type="number" id="tmp-max-noc" class="inp" min="1" max="10" style="width:60px;padding:6px 8px;font-size:13px">
+            </div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-2);display:block;margin-bottom:4px">Partido mín / máx</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" id="tmp-min-par" class="inp" min="0" max="10" style="width:60px;padding:6px 8px;font-size:13px">
+              <input type="number" id="tmp-max-par" class="inp" min="0" max="10" style="width:60px;padding:6px 8px;font-size:13px">
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn pri sm" onclick="guardarPerfil()">Guardar perfil</button>
+          <button class="btn sm" onclick="cerrarEditPerfil()">Cancelar</button>
+        </div>
+      </div>
+
+      <button class="btn sm" style="margin-top:8px" onclick="abrirNuevoPerfil()">+ Nuevo perfil</button>
+    </div>
+
     <div class="section" id="sec-usuarios">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <span style="font-size:13px;color:var(--text-2)" id="usr-count"></span>
@@ -617,7 +704,7 @@ function closeModal(id){
 <div class="overlay hidden" id="modal-pet">
   <div class="modal">
     <div class="modal-hd"><span>Nueva petición de libre</span><button class="btn ghost" onclick="closeModal('modal-pet')">✕</button></div>
-    <div class="fr"><label>Empleado</label><select id="m-pet-emp"></select></div>
+    <div class="fr" id="m-pet-emp-row"><label>Empleado</label><select id="m-pet-emp"></select></div>
     <div class="fr"><label>Semana (lunes)</label><input id="m-pet-week" type="date"></div>
     <div class="fr"><label>Días solicitados</label>
       <div class="pill-sel" id="m-pet-dias">
@@ -629,6 +716,9 @@ function closeModal(id){
         <div class="pill" data-v="Sábado">Sábado</div>
         <div class="pill" data-v="Domingo">Domingo</div>
       </div>
+    </div>
+    <div class="fr"><label>Motivo <span style="font-weight:400;color:var(--text-2)">(opcional)</span></label>
+      <textarea id="m-pet-motivo" rows="2" placeholder="Ej: cita médica, asunto personal…" style="resize:vertical;font-family:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--border-strong);border-radius:var(--rs);width:100%;box-sizing:border-box"></textarea>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
       <button class="btn" onclick="closeModal('modal-pet')">Cancelar</button>
@@ -1452,7 +1542,10 @@ document.getElementById('ai-input').addEventListener('keydown',e=>{
 });
 
 // ── PETICIONES ───────────────────────────────────────────────────────────────
-let petWeekOffset = 0;
+let petWeekOffset  = 0;
+let petEntriesData = {};   // datos completos del servidor: {nombre: {dias,la,motivo}}
+let petManualOrder = null; // orden manual guardado en servidor (array o null)
+let petOrderDraft  = null; // orden en edición aún no guardado (array o null)
 
 function updatePetWeekLabel(){
   const dates = weekDates(petWeekOffset);
@@ -1469,26 +1562,140 @@ async function loadPeticiones(){
   const r = await api('GET',`/peticiones?semana=${semana}&dept=${currentDept}`);
   const el = document.getElementById('pet-list');
   if(!r.ok){ el.innerHTML='<div style="padding:16px;color:var(--text-2)">Error cargando</div>'; return; }
-  const data = r.data || {};
-  const entries = Object.entries(data);
-  if(!entries.length){
-    el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No hay peticiones para esta semana</div>';
+  petEntriesData = r.data || {};
+  petManualOrder = r.priority_order || null;
+  petOrderDraft  = null;
+  renderPetList();
+}
+
+function _petDisplayOrder(){
+  if(petOrderDraft)  return [...petOrderDraft];
+  if(petManualOrder) return [...petManualOrder];
+  return Object.keys(petEntriesData);
+}
+
+function _petItemHtml(nombre, entrada, semana, idx, total, showReorder){
+  const dias   = Array.isArray(entrada) ? entrada : (entrada.dias||[]);
+  const la     = Array.isArray(entrada) ? [] : (entrada.la||[]);
+  const motivo = Array.isArray(entrada) ? '' : (entrada.motivo||'');
+  const diasStr   = dias.length ? `Libre: <strong>${dias.join(', ')}</strong>` : '';
+  const laStr     = la.length   ? `&nbsp;· LA extra: <strong>${la.join(', ')}</strong>` : '';
+  const motivoStr = motivo
+    ? `<div style="font-size:11.5px;color:var(--text-2);margin-top:3px;font-style:italic">${motivo.replace(/</g,'&lt;')}</div>` : '';
+  const reorderHtml = showReorder ? `
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <button class="btn ghost" style="padding:1px 6px;font-size:14px;line-height:1" ${idx===0?'disabled':''} onclick="movePet('${nombre}',-1)" title="Subir prioridad">↑</button>
+      <button class="btn ghost" style="padding:1px 6px;font-size:14px;line-height:1" ${idx===total-1?'disabled':''} onclick="movePet('${nombre}',1)" title="Bajar prioridad">↓</button>
+    </div>` : '';
+  const numBadge = showReorder
+    ? `<div style="min-width:22px;text-align:center;font-size:12px;font-weight:600;color:var(--text-2)">#${idx+1}</div>` : '';
+  return `<div style="display:flex;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border);gap:10px">
+    ${numBadge}
+    <div class="avatar" style="width:30px;height:30px;font-size:10px">${initials(nombre)}</div>
+    <div style="flex:1">
+      <div style="font-size:13.5px;font-weight:500">${nombre}</div>
+      <div style="font-size:12px;color:var(--text-2);margin-top:2px">${diasStr}${laStr}</div>
+      ${motivoStr}
+    </div>
+    ${reorderHtml}
+    <button class="btn danger sm" onclick="deletePeticion('${semana}','${nombre}')">Eliminar</button>
+  </div>`;
+}
+
+function renderPetList(){
+  const el     = document.getElementById('pet-list');
+  const semana = isoDate(getMonday(petWeekOffset));
+  const isEmpleado = currentUser?.rol === 'empleado';
+
+  if(isEmpleado){
+    const vinculado = currentUser?.vinculado;
+    const entrada   = vinculado ? petEntriesData[vinculado] : null;
+    if(!entrada){
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No tienes ninguna petición para esta semana.</div>';
+    } else {
+      el.innerHTML = _petItemHtml(vinculado, entrada, semana, 0, 1, false);
+    }
     return;
   }
-  el.innerHTML = entries.map(([nombre, entrada])=>{
-    const dias = Array.isArray(entrada) ? entrada : (entrada.dias||[]);
-    const la   = Array.isArray(entrada) ? [] : (entrada.la||[]);
-    const diasStr = dias.length ? `Libre: <strong>${dias.join(', ')}</strong>` : '';
-    const laStr   = la.length   ? `&nbsp;· LA extra: <strong>${la.join(', ')}</strong>` : '';
-    return `<div style="display:flex;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border);gap:10px">
-      <div class="avatar" style="width:30px;height:30px;font-size:10px">${initials(nombre)}</div>
-      <div style="flex:1">
-        <div style="font-size:13.5px;font-weight:500">${nombre}</div>
-        <div style="font-size:12px;color:var(--text-2);margin-top:2px">${diasStr}${laStr}</div>
-      </div>
-      <button class="btn danger sm" onclick="deletePeticion('${semana}','${nombre}')">Eliminar</button>
+
+  // Vista admin / encargado
+  const order = _petDisplayOrder();
+  if(!order.length){
+    el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No hay peticiones para esta semana.</div>';
+    return;
+  }
+
+  const isDirty  = petOrderDraft !== null;
+  const isManual = petManualOrder !== null;
+  const total    = order.length;
+
+  let headerHtml = '';
+  if(total > 1){
+    let statusLabel = '';
+    if(isDirty){
+      statusLabel = `<span style="font-size:12px;color:var(--accent)">Orden modificado — sin guardar</span>`;
+    } else if(isManual){
+      statusLabel = `<span style="font-size:12px;color:#059669;font-weight:500">Prioridad manual activa</span>`;
+    } else {
+      statusLabel = `<span style="font-size:12px;color:var(--text-2)">Prioridad automática (por historial)</span>`;
+    }
+    const actionBtns = isDirty
+      ? `<button class="btn pri sm" onclick="savePetOrder()">Guardar orden</button>
+         <button class="btn sm" onclick="cancelPetOrder()">Cancelar</button>`
+      : (isManual
+          ? `<button class="btn sm" onclick="resetPetOrder()">Restablecer automática</button>`
+          : '');
+    headerHtml = `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 14px;background:var(--surface-2,#f8f8f8);border-bottom:1px solid var(--border);font-size:12px">
+      ${statusLabel}
+      <div style="display:flex;gap:6px">${actionBtns}</div>
     </div>`;
+  }
+
+  const listHtml = order.map((nombre,idx)=>{
+    const entrada = petEntriesData[nombre];
+    if(!entrada) return '';
+    return _petItemHtml(nombre, entrada, semana, idx, total, total > 1);
   }).join('');
+
+  el.innerHTML = headerHtml + listHtml;
+}
+
+function movePet(nombre, dir){
+  const order = _petDisplayOrder();
+  const idx   = order.indexOf(nombre);
+  if(idx < 0) return;
+  const newIdx = idx + dir;
+  if(newIdx < 0 || newIdx >= order.length) return;
+  [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
+  petOrderDraft = order;
+  renderPetList();
+}
+
+async function savePetOrder(){
+  if(!petOrderDraft) return;
+  const semana = isoDate(getMonday(petWeekOffset));
+  const r = await api('PUT',`/peticiones/${semana}/prioridad`,{order: petOrderDraft, dept: currentDept});
+  if(!r.ok){ toast(r.error,'err'); return; }
+  petManualOrder = petOrderDraft;
+  petOrderDraft  = null;
+  toast('Orden de prioridad guardado');
+  renderPetList();
+}
+
+function cancelPetOrder(){
+  petOrderDraft = null;
+  renderPetList();
+}
+
+async function resetPetOrder(){
+  if(!confirm('¿Restablecer la prioridad automática basada en historial?')) return;
+  const semana = isoDate(getMonday(petWeekOffset));
+  const r = await api('PUT',`/peticiones/${semana}/prioridad`,{order: null, dept: currentDept});
+  if(!r.ok){ toast(r.error,'err'); return; }
+  petManualOrder = null;
+  petOrderDraft  = null;
+  toast('Prioridad restablecida a automática');
+  renderPetList();
 }
 
 let petModalReady = false;
@@ -1500,9 +1707,10 @@ function initPetModal(){
     const nombre = document.getElementById('m-pet-emp').value;
     const semana = document.getElementById('m-pet-week').value;
     const dias = [...document.querySelectorAll('#m-pet-dias .pill.on')].map(p=>p.dataset.v);
+    const motivo = document.getElementById('m-pet-motivo').value.trim();
     if(!semana){ toast('Selecciona una semana','err'); return; }
     if(!dias.length){ toast('Selecciona al menos un día','err'); return; }
-    const r = await api('POST','/peticiones',{nombre, semana, dias, dept: currentDept});
+    const r = await api('POST','/peticiones',{nombre, semana, dias, motivo: motivo||null, dept: currentDept});
     if(!r.ok){ toast(r.error,'err'); return; }
     closeModal('modal-pet');
     toast('Petición guardada');
@@ -1511,12 +1719,24 @@ function initPetModal(){
 }
 
 document.getElementById('btn-add-pet').onclick = async ()=>{
+  const isEmpleado = currentUser?.rol === 'empleado';
+  if(isEmpleado && !currentUser?.vinculado){
+    toast('Tu cuenta no está vinculada a ningún empleado de la plantilla','err'); return;
+  }
   initPetModal();
-  const r = await api('GET',`/plantilla?dept=${currentDept}`);
-  const sel = document.getElementById('m-pet-emp');
-  sel.innerHTML = (r.data||[]).map(e=>`<option>${e.name}</option>`).join('');
+  const empRow = document.getElementById('m-pet-emp-row');
+  const sel    = document.getElementById('m-pet-emp');
+  if(isEmpleado){
+    empRow.style.display = 'none';
+    sel.innerHTML = `<option>${currentUser.vinculado}</option>`;
+  } else {
+    empRow.style.display = '';
+    const r = await api('GET',`/plantilla?dept=${currentDept}`);
+    sel.innerHTML = (r.data||[]).map(e=>`<option>${e.name}</option>`).join('');
+  }
   document.getElementById('m-pet-week').value = isoDate(getMonday(petWeekOffset));
   document.querySelectorAll('#m-pet-dias .pill').forEach(p=>p.classList.remove('on'));
+  document.getElementById('m-pet-motivo').value = '';
   document.getElementById('modal-pet').classList.remove('hidden');
 };
 
@@ -1831,18 +2051,25 @@ document.querySelectorAll('.nav-item[data-sec]').forEach(el=>{
     if(sec==='categorias')loadCategorias();
     if(sec==='festivos')loadFestivos();
     if(sec==='compensaciones')loadCompensaciones();
-    if(sec==='peticiones'){petWeekOffset=0;updatePetWeekLabel();loadPeticiones();}
+    if(sec==='peticiones'){
+      petWeekOffset=0;updatePetWeekLabel();
+      document.getElementById('btn-add-pet').textContent =
+        currentUser?.rol==='empleado' ? '+ Solicitar día libre' : '+ Nueva petición';
+      loadPeticiones();
+    }
     if(sec==='vacaciones')loadVacaciones();
     if(sec==='estadisticas')loadEstadisticas();
     if(sec==='historial')loadHistorial();
     if(sec==='asistente')setupAsistente();
     if(sec==='usuarios')loadUsuarios();
     if(sec==='log')loadLog();
+    if(sec==='temporadas')loadTemporadas();
   });
 });
 
-SECS['usuarios'] = ['Usuarios','Gestión de acceso'];
-SECS['log']      = ['Log de actividad','Registro de acciones'];
+SECS['usuarios']    = ['Usuarios','Gestión de acceso'];
+SECS['log']         = ['Log de actividad','Registro de acciones'];
+SECS['temporadas']  = ['Temporadas','Cobertura mínima y máxima por perfil'];
 
 // ── LIMPIAR HISTORIAL (admin) ─────────────────────────────────────
 function confirmarLimpiarHistorial(){
@@ -1862,6 +2089,119 @@ async function ejecutarLimpiarHistorial(){
     loadHistorial();
   } else {
     toast(r.error || 'Error al limpiar el historial','err');
+  }
+}
+
+// ── TEMPORADAS — cobertura mínima/máxima por perfil ─────────────────
+const TURNOS_ORDER = ['Mañana','Tarde','Noche','Partido'];
+const TURNO_KEYS   = {Mañana:'man', Tarde:'tar', Noche:'noc', Partido:'par'};
+
+let tmpPerfilesCache = {};  // {perfil_id: {min_coverage, max_coverage}}
+let tmpActivoCache   = '';
+
+async function loadTemporadas(){
+  const dept = document.getElementById('tmp-dept').value;
+  const r    = await api('GET', `/coverage?dept=${dept}`);
+  if(!r.ok){ toast(r.error||'Error al cargar temporadas','err'); return; }
+  tmpPerfilesCache = r.data.perfiles || {};
+  tmpActivoCache   = r.data.activo   || 'normal';
+
+  // Actualizar selector de perfil activo
+  const sel = document.getElementById('tmp-activo');
+  sel.innerHTML = '';
+  Object.keys(tmpPerfilesCache).forEach(pid=>{
+    const opt = document.createElement('option');
+    opt.value = pid;
+    opt.textContent = pid.charAt(0).toUpperCase()+pid.slice(1);
+    opt.selected = (pid===tmpActivoCache);
+    sel.appendChild(opt);
+  });
+
+  // Renderizar tabla de perfiles
+  const tbody = document.getElementById('tmp-table-body');
+  tbody.innerHTML = '';
+  Object.entries(tmpPerfilesCache).forEach(([pid, p])=>{
+    const esActivo = (pid===tmpActivoCache);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="padding-left:12px;font-weight:${esActivo?'600':'400'}">
+        ${pid}${esActivo?' <span style="font-size:11px;color:var(--accent);background:rgba(16,185,129,.12);padding:1px 6px;border-radius:10px">activo</span>':''}
+      </td>
+      ${TURNOS_ORDER.map(t=>`
+        <td style="text-align:center">${p.min_coverage[t]??'—'}</td>
+        <td style="text-align:center">${p.max_coverage[t]??'—'}</td>
+      `).join('')}
+      <td style="text-align:right;padding-right:10px">
+        <button class="btn sm" style="font-size:12px" onclick="abrirEditPerfil('${pid}')">Editar</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  cerrarEditPerfil();
+}
+
+async function cambiarPerfilActivo(){
+  const dept   = document.getElementById('tmp-dept').value;
+  const perfil = document.getElementById('tmp-activo').value;
+  const r = await api('PUT','/coverage/activo',{dept, perfil});
+  if(r.ok){
+    tmpActivoCache = perfil;
+    toast(`Perfil activo → ${perfil}`);
+    loadTemporadas();
+  } else {
+    toast(r.error||'Error al cambiar perfil','err');
+    document.getElementById('tmp-activo').value = tmpActivoCache;
+  }
+}
+
+function abrirEditPerfil(pid){
+  const p = tmpPerfilesCache[pid];
+  if(!p) return;
+  document.getElementById('tmp-edit-title').textContent = `Editar perfil "${pid}"`;
+  document.getElementById('tmp-edit-id').value        = pid;
+  document.getElementById('tmp-edit-id').readOnly     = true;  // no renombrar perfil existente
+  TURNOS_ORDER.forEach(t=>{
+    const k = TURNO_KEYS[t];
+    document.getElementById(`tmp-min-${k}`).value = p.min_coverage[t]??0;
+    document.getElementById(`tmp-max-${k}`).value = p.max_coverage[t]??0;
+  });
+  document.getElementById('tmp-edit-panel').style.display = '';
+}
+
+function abrirNuevoPerfil(){
+  document.getElementById('tmp-edit-title').textContent = 'Nuevo perfil';
+  document.getElementById('tmp-edit-id').value          = '';
+  document.getElementById('tmp-edit-id').readOnly       = false;
+  TURNOS_ORDER.forEach(t=>{
+    const k = TURNO_KEYS[t];
+    document.getElementById(`tmp-min-${k}`).value = t==='Noche'?1:0;
+    document.getElementById(`tmp-max-${k}`).value = t==='Noche'?1:t==='Partido'?1:3;
+  });
+  document.getElementById('tmp-edit-panel').style.display = '';
+}
+
+function cerrarEditPerfil(){
+  document.getElementById('tmp-edit-panel').style.display = 'none';
+}
+
+async function guardarPerfil(){
+  const dept      = document.getElementById('tmp-dept').value;
+  const perfil_id = document.getElementById('tmp-edit-id').value.trim().toLowerCase();
+  if(!perfil_id){ toast('El nombre del perfil no puede estar vacío','err'); return; }
+
+  const min_coverage = {}, max_coverage = {};
+  TURNOS_ORDER.forEach(t=>{
+    const k = TURNO_KEYS[t];
+    min_coverage[t] = parseInt(document.getElementById(`tmp-min-${k}`).value, 10);
+    max_coverage[t] = parseInt(document.getElementById(`tmp-max-${k}`).value, 10);
+  });
+
+  const r = await api('PUT','/coverage/perfil',{dept, perfil_id, min_coverage, max_coverage});
+  if(r.ok){
+    toast(`Perfil "${perfil_id}" guardado`);
+    loadTemporadas();
+  } else {
+    toast(r.error||'Error al guardar perfil','err');
   }
 }
 

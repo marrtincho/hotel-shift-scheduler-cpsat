@@ -55,12 +55,12 @@ def _generar(data_dir):
     (full_schedule, staff_final, night_cover)."""
     import herramientas  # noqa: F401 — asegura que DATA_DIR ya está parcheado
     from modelo_recepcion import RECEPCION_CONFIG
-    from modelo_base import generate_schedule
+    from modelo_base import generate_schedule_valido
 
     cfg        = copy.deepcopy(RECEPCION_CONFIG)
     staff_list = copy.deepcopy(PLANTILLA_TEST)
 
-    full_schedule, staff_final, _, night_cover, _ = generate_schedule(
+    full_schedule, staff_final, _, night_cover, _, _ = generate_schedule_valido(
         staff_list=staff_list,
         week_start=SEMANA_PRUEBA,
         cfg=cfg,
@@ -156,7 +156,7 @@ def test_cruce_domingo_lunes(data_dir):
     prev_sunday = {"Emp1": "Noche"}
 
     staff_list = copy.deepcopy(PLANTILLA_TEST)
-    full_schedule, staff_final, _, _, _ = generate_schedule(
+    full_schedule, staff_final, _, _, _, _ = generate_schedule(
         staff_list=staff_list,
         week_start=SEMANA_PRUEBA,
         cfg=cfg,
