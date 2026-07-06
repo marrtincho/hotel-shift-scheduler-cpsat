@@ -404,6 +404,25 @@ def _semana_bloqueada(semana: date) -> bool:
     """Las semanas anteriores a la actual quedan fijas; solo el admin puede regenerarlas."""
     return semana < lunes_de(date.today().isoformat())
 
+def _calcular_prev_last_shifts(schedule_semana_anterior: dict, staff_list: list) -> dict:
+    """Para cada persona devuelve (último turno trabajado, si terminó librando).
+    Itera el schedule del domingo al lunes. Usado para prev_last_shifts."""
+    resultado = {}
+    for p in staff_list:
+        turnos = schedule_semana_anterior.get(p["name"], [])
+        ult, tras_libre = None, False
+        for t in reversed(turnos):
+            if t == "Libre":
+                tras_libre = True
+                continue
+            if t and t not in ("SIN_ASIGNAR", ""):
+                ult = t
+                break
+        if ult is not None:
+            resultado[p["name"]] = (ult, tras_libre)
+    return resultado
+
+
 def _calcular_advertencias(full_schedule: dict, staff_final: list[dict], cfg) -> list[str]:
     advertencias = []
     for shift in ["Mañana", "Tarde", "Noche", "Partido"]:
@@ -489,9 +508,11 @@ def api_generar():
     historial_prev = cargar_historial(dept_id)
     prev_sem_key = _semana_str(semana - timedelta(weeks=1))
     prev_sunday_shifts = {}
+    prev_last_shifts   = {}
     if prev_sem_key in historial_prev:
         prev_sched = historial_prev[prev_sem_key].get("schedule", {})
         prev_sunday_shifts = {nombre: turnos[6] for nombre, turnos in prev_sched.items() if len(turnos) == 7}
+        prev_last_shifts   = _calcular_prev_last_shifts(prev_sched, staff)
 
     from modelo_base import generate_schedule_valido
     full_schedule, staff_final, ws_date, night_cover, this_week_covers, violaciones = \
@@ -501,6 +522,7 @@ def api_generar():
             cfg=cfg,
             prev_week_covers=prev_week_covers,
             prev_sunday_shifts=prev_sunday_shifts,
+            prev_last_shifts=prev_last_shifts,
         )
 
     import json as _j

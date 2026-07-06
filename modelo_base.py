@@ -51,6 +51,27 @@ def _turno_anterior(person_name, day_idx, schedule, prev_sunday_shifts=None):
 def can_work_morning(person_name, day_idx, schedule, prev_sunday_shifts=None):
     return _turno_anterior(person_name, day_idx, schedule, prev_sunday_shifts) not in NO_MORNING_AFTER
 
+def _turno_referencia(name, day_idx, schedule, prev_last_shifts=None):
+    """Devuelve (ultimo_turno_trabajado, hubo_libre_en_medio).
+
+    hubo_libre_en_medio=False → tirada abierta: mantener turno.
+    hubo_libre_en_medio=True  → acaba de librar: rotar de turno.
+    Cruza semana anterior via prev_last_shifts: dict {nombre: (turno, hubo_libre)}
+    o {nombre: str} para compatibilidad con prev_sunday_shifts existente.
+    """
+    hubo_libre = False
+    for i in range(day_idx - 1, -1, -1):
+        t = schedule[name][i]
+        if t == "Libre":
+            hubo_libre = True
+            continue
+        if t and t != "SIN_ASIGNAR":
+            return t, hubo_libre
+    prev = (prev_last_shifts or {}).get(name)
+    if isinstance(prev, (tuple, list)):
+        return prev[0], hubo_libre or prev[1]
+    return prev, hubo_libre
+
 def _get_weekend_ratios(dept_id: str, staff_actual: list) -> dict:
     """
     Calcula el ratio finde-libre/semanas-trabajadas para cada persona del staff actual.
@@ -686,7 +707,7 @@ def _morning_coverage_ok(shift, day_idx, person_name, schedule, staff_list, cfg)
 
 def assign_shifts(staff_list: list, days_off_schedule: dict,
                   night_cover: dict, cfg: DeptConfig, prev_sunday_shifts: dict = None,
-                  shift_history: dict = None) -> tuple:
+                  shift_history: dict = None, prev_last_shifts: dict = None) -> tuple:
     """Asigna turnos y devuelve (schedule, violaciones).
     Si una persona no tiene ningún turno legal disponible, su celda queda como
     'SIN_ASIGNAR' y se registra en la lista de violaciones."""
@@ -727,8 +748,24 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
                     needed.extend([shift] * deficit)
             return needed
 
-        # Sub-pass A: fill deficits — usa conteos históricos para escoger
-        # qué turno de déficit cubrir (mismo criterio que sub-pass B).
+        def _coste_turno(person, s):
+            """(coste_continuidad, coste_historico).
+            Preferencia blanda: dentro de tirada mantener turno;
+            al volver de librar rotar turno. Noche nunca penaliza."""
+            ult, tras_libre = _turno_referencia(
+                person["name"], day_idx, schedule, prev_last_shifts)
+            hist       = (shift_history or {}).get(person["name"], {})
+            prefs      = set(person.get("preferences", []))
+            coste_hist = hist.get(s, 0) + (-0.5 if s in prefs else 0)
+            if ult is None or s == "Noche":
+                return (0, coste_hist)
+            if not tras_libre:
+                # Tirada abierta → mantener turno
+                return (0 if s == ult else 1, coste_hist)
+            # Tras librar → rotar; entre los distintos gana el menos hecho
+            return (1 if s == ult else 0, coste_hist)
+
+        # Sub-pass A: fill deficits — usa _coste_turno para escoger.
         for person in list(available):
             needed = unfilled()
             if not needed:
@@ -738,26 +775,19 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
                         if _morning_coverage_ok(s, day_idx, person["name"], schedule, staff_list, cfg)]
             if not fillable:
                 continue
-            hist  = (shift_history or {}).get(person["name"], {})
-            prefs = set(person.get("preferences", []))
-            chosen = min(fillable,
-                         key=lambda s: hist.get(s, 0) + (-0.5 if s in prefs else 0))
+            chosen = min(fillable, key=lambda s: _coste_turno(person, s))
             schedule[person["name"]][day_idx] = chosen
             coverage[chosen] += 1
             available.remove(person)
 
-        # Sub-pass B: heurística more-constrained-first + coste histórico.
-        # Quien tiene menos opciones legales va primero para evitar el caso
-        # "la última persona ya no tiene turno válido cuando sí existía solución
-        # reordenando". Entre personas con igual número de opciones, el histórico
-        # desempata (quien lleva menos de ese turno escoge antes).
+        # Sub-pass B: heurística more-constrained-first; _b_priority (coste mínimo
+        # de la mejor opción) desempata. Quien tiene menos opciones va primero.
         def _b_priority(p):
-            h     = (shift_history or {}).get(p["name"], {})
-            prefs = set(p.get("preferences", []))
-            tracked = (set(h.keys()) | prefs) & {"Mañana", "Tarde", "Partido"}
-            if not tracked:
-                tracked = {"Mañana", "Tarde", "Partido"}
-            return min(h.get(s, 0) + (-0.5 if s in prefs else 0) for s in tracked)
+            opts_p = [s for s in allowed_shifts(p, day_idx, schedule, coverage,
+                                                 cfg, prev_sunday_shifts)
+                      if _morning_coverage_ok(s, day_idx, p["name"],
+                                              schedule, staff_list, cfg)]
+            return min((_coste_turno(p, s) for s in opts_p), default=(9, 9))
 
         def _b_n_opciones(p):
             """Número de turnos legales disponibles (incluyendo look-ahead)."""
@@ -778,10 +808,7 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
                     f"{DAYS[day_idx]}: {person['name']} sin turno asignable"
                 )
                 continue
-            hist  = (shift_history or {}).get(person["name"], {})
-            prefs = set(person.get("preferences", []))
-            chosen = min(opts,
-                         key=lambda s: hist.get(s, 0) + (-0.5 if s in prefs else 0))
+            chosen = min(opts, key=lambda s: _coste_turno(person, s))
             schedule[person["name"]][day_idx] = chosen
             coverage[chosen] = coverage.get(chosen, 0) + 1
 
@@ -791,15 +818,16 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
 
 def generate_schedule(staff_list: list, week_start: date, cfg: DeptConfig,
                       prev_week_covers: dict = None, prev_sunday_shifts: dict = None,
-                      _save_night_state: bool = True):
+                      _save_night_state: bool = True, prev_last_shifts: dict = None):
     """
     Main schedule generation function.
     prev_week_covers: {name: True} (mozos) o {name: [día,...]} (recepción) —
     quién cubrió noches la semana pasada y debe descansar esos días esta semana,
     porque su descanso de compensación cayó tras el fin de la semana anterior.
     prev_sunday_shifts: {name: turno} — turno del domingo de la semana anterior,
-    para que las reglas de descanso (no Mañana tras Tarde/Noche, descanso tras Noche)
-    no se reinicien al cambiar de semana.
+    para la regla no-Mañana-tras-Tarde/Noche entre semanas.
+    prev_last_shifts: {name: (turno, hubo_libre)} — último turno trabajado y si
+    terminó librando, para las reglas de continuidad de tirada y rotación de turno.
     _save_night_state: si True (defecto), persiste el historial nocturno al final.
     generate_schedule_valido lo llama con False para evitar guardar en cada reintento.
     """
@@ -833,7 +861,8 @@ def generate_schedule(staff_list: list, week_start: date, cfg: DeptConfig,
 
     days_off_sched = assign_days_off(staff_list, night_cover, cfg)
     full_schedule, _ = assign_shifts(staff_list, days_off_sched, night_cover, cfg,
-                                     prev_sunday_shifts, shift_history=shift_history)
+                                     prev_sunday_shifts, shift_history=shift_history,
+                                     prev_last_shifts=prev_last_shifts)
 
     # Registrar quién necesita descanso de compensación la semana que viene.
     this_week_covers = {}
@@ -904,22 +933,64 @@ def validar_schedule(schedule: dict, staff_list: list, cfg: DeptConfig,
     return violaciones
 
 
+def _contar_penalizaciones(schedule, staff_list, prev_last_shifts=None):
+    """Penaliza: cambio dentro de tirada + repetición de turno al volver de librar.
+    Cuanto menor, mejor. Noche y SIN_ASIGNAR no cuentan."""
+    pen = 0
+    for p in staff_list:
+        prev = (prev_last_shifts or {}).get(p["name"])
+        if isinstance(prev, (tuple, list)):
+            ult, tras_libre = prev[0], prev[1]
+        else:
+            ult, tras_libre = prev, False
+        for t in schedule[p["name"]]:
+            if t in ("", "SIN_ASIGNAR", "Noche"):
+                continue
+            if t == "Libre":
+                tras_libre = True
+                continue
+            if ult is not None:
+                if not tras_libre and t != ult:
+                    pen += 1      # rompió la tirada
+                elif tras_libre and t == ult:
+                    pen += 1      # volvió de librar al mismo turno
+            ult, tras_libre = t, False
+    return pen
+
+
 def generate_schedule_valido(staff_list, week_start, cfg,
                               prev_week_covers=None, prev_sunday_shifts=None,
-                              max_intentos=50):
-    mejor_resultado, mejor_violaciones, mejor_estado = None, None, None
+                              max_intentos=50, prev_last_shifts=None):
+    candidato_valido    = None
+    mejor_pen_valido    = None
+    mejor_estado_valido = None
+    mejor_resultado     = None
+    mejor_violaciones   = None
+    mejor_estado        = None
+
     for _ in range(max_intentos):
         *resultado, noches_estado = generate_schedule(
             staff_list, week_start, cfg, prev_week_covers, prev_sunday_shifts,
-            _save_night_state=False)
+            _save_night_state=False, prev_last_shifts=prev_last_shifts)
         violaciones = validar_schedule(resultado[0], resultado[1], cfg, prev_sunday_shifts)
         if not violaciones:
-            history_dict, rotation_key = noches_estado
-            _save_night_history(rotation_key, history_dict)
-            return (*resultado, [])
-        if mejor_violaciones is None or len(violaciones) < len(mejor_violaciones):
+            pen = _contar_penalizaciones(resultado[0], resultado[1], prev_last_shifts)
+            if pen == 0:
+                history_dict, rotation_key = noches_estado
+                _save_night_history(rotation_key, history_dict)
+                return (*resultado, [])
+            if mejor_pen_valido is None or pen < mejor_pen_valido:
+                candidato_valido    = resultado
+                mejor_pen_valido    = pen
+                mejor_estado_valido = noches_estado
+        elif mejor_violaciones is None or len(violaciones) < len(mejor_violaciones):
             mejor_resultado, mejor_violaciones = resultado, violaciones
             mejor_estado = noches_estado
+
+    if candidato_valido is not None:
+        history_dict, rotation_key = mejor_estado_valido
+        _save_night_history(rotation_key, history_dict)
+        return (*candidato_valido, [])
     if mejor_estado is not None:
         history_dict, rotation_key = mejor_estado
         _save_night_history(rotation_key, history_dict)
