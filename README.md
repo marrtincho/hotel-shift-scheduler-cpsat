@@ -123,14 +123,14 @@ Log de actividad persistente para todas las acciones relevantes.
 ## Licencia y uso
 
 Este repositorio se publica con fines de portfolio y demostración técnica.
-Todos los derechos reservados © 2026 Martín [tu apellido].
+Todos los derechos reservados © 2026 Martín Ropero.
 
 No se autoriza el uso, copia, modificación, distribución o despliegue de este
 código, total o parcial, con fines comerciales o de producción sin permiso
 expreso y por escrito del autor.
 
 Si tu empresa está interesada en usar esta herramienta o en contratar
-servicios de desarrollo relacionados, contactame: [tu email o LinkedIn].
+servicios de desarrollo relacionados, contáctame: mropero21@gmail.com.
 
 ---
 
