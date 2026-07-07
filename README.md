@@ -6,7 +6,7 @@ Aplicación web interna para la gestión automatizada de horarios de personal ho
 
 ---
 
-## El problema
+## El problema 
 
 Planificar los turnos semanales de recepción y mozos en un hotel implica manejar simultáneamente docenas de restricciones que, a mano, consumen horas cada semana y generan errores frecuentes:
 
