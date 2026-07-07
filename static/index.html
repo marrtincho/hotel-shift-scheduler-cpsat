@@ -322,16 +322,52 @@ function closeModal(id){
 
     <!-- ═══ PETICIONES ═══ -->
     <div class="section" id="sec-peticiones">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
         <div class="week-nav">
           <button class="btn sm ghost" id="pet-prev">← Ant</button>
           <span class="week-lbl" id="pet-week-lbl">—</span>
           <button class="btn sm ghost" id="pet-next">Sig →</button>
         </div>
-        <button class="btn pri sm" id="btn-add-pet">+ Nueva petición</button>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span id="pet-cupo-info" style="font-size:12.5px;color:var(--text-2);font-weight:500"></span>
+          <button class="btn pri sm" id="btn-add-pet">+ Nueva petición</button>
+        </div>
       </div>
-      <div class="alert info" style="font-size:12px">ℹ Las peticiones de días libres se aplican al generar el horario de esa semana. Se pueden añadir o eliminar antes de generar.</div>
+      <div class="alert info" style="font-size:12px">ℹ Las peticiones de días libres se aplican al generar el horario de esa semana. Cada empleado tiene un cupo mensual de peticiones propias; el encargado/admin puede ampliarlo o gestionar días manualmente sin límite.</div>
       <div class="card0" id="pet-list"></div>
+
+      <div class="card0" id="pet-cupo-panel" style="margin-top:18px;display:none">
+        <div class="card-hd">Cupo extra de peticiones</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:14px">
+          <div>
+            <label style="font-size:12px;color:var(--text-2);display:block;margin-bottom:4px">Empleado</label>
+            <select id="cupo-extra-emp" class="inp" style="padding:6px 10px;font-size:13px;min-width:140px"></select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-2);display:block;margin-bottom:4px">Mes</label>
+            <input type="month" id="cupo-extra-mes" class="inp" style="padding:6px 10px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-2);display:block;margin-bottom:4px">Peticiones extra este mes</label>
+            <input type="number" id="cupo-extra-valor" class="inp" min="0" step="1" style="width:80px;padding:6px 10px;font-size:13px">
+          </div>
+          <button class="btn pri sm" id="btn-guardar-cupo-extra">Guardar</button>
+        </div>
+      </div>
+
+      <div class="card0" id="pet-transparencia-panel" style="margin-top:18px;display:none;overflow-x:auto">
+        <div class="card-hd">Transparencia de cupos</div>
+        <table class="tbl" id="cupo-transparencia-tbl" style="min-width:520px">
+          <thead>
+            <tr>
+              <th class="nl" style="padding-left:12px">Empleado</th>
+              <th id="cupo-th-actual">Mes actual</th>
+              <th id="cupo-th-siguiente">Mes siguiente</th>
+            </tr>
+          </thead>
+          <tbody id="cupo-transparencia-body"><tr><td colspan="3" style="padding:16px;color:var(--text-2)">Cargando…</td></tr></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- ═══ ESTADÍSTICAS ═══ -->
@@ -1566,6 +1602,7 @@ async function loadPeticiones(){
   petManualOrder = r.priority_order || null;
   petOrderDraft  = null;
   renderPetList();
+  loadPetCupoInfo();
 }
 
 function _petDisplayOrder(){
@@ -1578,10 +1615,13 @@ function _petItemHtml(nombre, entrada, semana, idx, total, showReorder){
   const dias   = Array.isArray(entrada) ? entrada : (entrada.dias||[]);
   const la     = Array.isArray(entrada) ? [] : (entrada.la||[]);
   const motivo = Array.isArray(entrada) ? '' : (entrada.motivo||'');
+  const origen = Array.isArray(entrada) ? 'jefe' : (entrada.origen||'jefe');
   const diasStr   = dias.length ? `Libre: <strong>${dias.join(', ')}</strong>` : '';
   const laStr     = la.length   ? `&nbsp;· LA extra: <strong>${la.join(', ')}</strong>` : '';
   const motivoStr = motivo
     ? `<div style="font-size:11.5px;color:var(--text-2);margin-top:3px;font-style:italic">${motivo.replace(/</g,'&lt;')}</div>` : '';
+  const origenBadge = origen === 'jefe'
+    ? `<span class="tag" style="font-size:10px;margin-left:6px" title="Creada/gestionada por encargado o admin">👑 jefe</span>` : '';
   const reorderHtml = showReorder ? `
     <div style="display:flex;flex-direction:column;gap:2px">
       <button class="btn ghost" style="padding:1px 6px;font-size:14px;line-height:1" ${idx===0?'disabled':''} onclick="movePet('${nombre}',-1)" title="Subir prioridad">↑</button>
@@ -1589,16 +1629,20 @@ function _petItemHtml(nombre, entrada, semana, idx, total, showReorder){
     </div>` : '';
   const numBadge = showReorder
     ? `<div style="min-width:22px;text-align:center;font-size:12px;font-weight:600;color:var(--text-2)">#${idx+1}</div>` : '';
+  const isEmpleado = currentUser?.rol === 'empleado';
+  const modificarBtn = isEmpleado ? '' :
+    `<button class="btn sm" onclick="modificarPeticion('${semana}','${nombre}')">Modificar</button>`;
   return `<div style="display:flex;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border);gap:10px">
     ${numBadge}
     <div class="avatar" style="width:30px;height:30px;font-size:10px">${initials(nombre)}</div>
     <div style="flex:1">
-      <div style="font-size:13.5px;font-weight:500">${nombre}</div>
+      <div style="font-size:13.5px;font-weight:500">${nombre}${origenBadge}</div>
       <div style="font-size:12px;color:var(--text-2);margin-top:2px">${diasStr}${laStr}</div>
       ${motivoStr}
     </div>
     ${reorderHtml}
-    <button class="btn danger sm" onclick="deletePeticion('${semana}','${nombre}')">Eliminar</button>
+    ${modificarBtn}
+    <button class="btn danger sm" onclick="deletePeticion('${semana}','${nombre}')">Cancelar</button>
   </div>`;
 }
 
@@ -1741,11 +1785,104 @@ document.getElementById('btn-add-pet').onclick = async ()=>{
 };
 
 async function deletePeticion(semana, nombre){
-  if(!confirm(`¿Eliminar petición de ${nombre}?`)) return;
+  if(!confirm(`¿Cancelar la petición de ${nombre}?`)) return;
   const r = await api('DELETE',`/peticiones/${semana}/${encodeURIComponent(nombre)}?dept=${currentDept}`);
-  if(r.ok){ toast('Petición eliminada'); loadPeticiones(); }
+  if(r.ok){ toast('Petición cancelada'); loadPeticiones(); }
   else toast(r.error,'err');
 }
+
+async function modificarPeticion(semana, nombre){
+  const entrada = petEntriesData[nombre];
+  if(!entrada) return;
+  const diasActuales = (entrada.dias||[]).join(', ');
+  const respuesta = prompt(
+    `Días de libre para ${nombre} (separados por coma: Lunes, Martes, ...)`,
+    diasActuales);
+  if(respuesta === null) return;
+  const dias = respuesta.split(',').map(d=>d.trim()).filter(Boolean);
+  if(!dias.length){ toast('Debes indicar al menos un día','err'); return; }
+  const nuevoNombre = prompt('Empleado de la petición (déjalo igual si no cambia):', nombre);
+  if(nuevoNombre === null) return;
+  const body = {dias, dept: currentDept};
+  if(nuevoNombre.trim() && nuevoNombre.trim() !== nombre) body.nombre = nuevoNombre.trim();
+  const r = await api('PUT',`/peticiones/${semana}/${encodeURIComponent(nombre)}`, body);
+  if(!r.ok){ toast(r.error,'err'); return; }
+  toast('Petición modificada');
+  loadPeticiones();
+}
+
+// ── CUPOS DE PETICIONES ───────────────────────────────────────────────────────
+
+async function loadPetCupoInfo(){
+  const info = document.getElementById('pet-cupo-info');
+  if(currentUser?.rol !== 'empleado' || !currentUser?.vinculado){ info.textContent=''; return; }
+  const semana = isoDate(getMonday(petWeekOffset));
+  const r = await api('GET',`/cupos/mio?semana=${semana}&dept=${currentDept}`);
+  if(!r.ok){ info.textContent=''; return; }
+  const {usadas, total, mes} = r.data;
+  info.textContent = `Peticiones ${mes}: ${usadas} de ${total} usadas`;
+}
+
+let cupoExtraEmpleados = [];
+
+async function loadCuposPanelManager(){
+  const isEmpleado = currentUser?.rol === 'empleado';
+  document.getElementById('pet-cupo-panel').style.display          = isEmpleado ? 'none' : '';
+  document.getElementById('pet-transparencia-panel').style.display = isEmpleado ? 'none' : '';
+  if(isEmpleado) return;
+
+  const [rPlantilla, rResumen] = await Promise.all([
+    api('GET', `/plantilla?dept=${currentDept}`),
+    api('GET', `/cupos/resumen?dept=${currentDept}`),
+  ]);
+
+  if(rPlantilla.ok){
+    cupoExtraEmpleados = rPlantilla.data || [];
+    const sel = document.getElementById('cupo-extra-emp');
+    sel.innerHTML = cupoExtraEmpleados.map(e=>`<option>${e.name}</option>`).join('');
+  }
+  if(!document.getElementById('cupo-extra-mes').value){
+    document.getElementById('cupo-extra-mes').value = new Date().toISOString().slice(0,7);
+  }
+
+  const tbody = document.getElementById('cupo-transparencia-body');
+  if(!rResumen.ok){
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:16px;color:var(--text-2)">Error cargando cupos</td></tr>';
+    return;
+  }
+  const filas = rResumen.data || [];
+  if(!filas.length){
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:16px;color:var(--text-2)">Sin empleados</td></tr>';
+    return;
+  }
+  document.getElementById('cupo-th-actual').textContent    = `Mes actual (${filas[0].mes_actual.mes})`;
+  document.getElementById('cupo-th-siguiente').textContent = `Mes siguiente (${filas[0].mes_siguiente.mes})`;
+  const celda = c => {
+    const excede = c.usadas > c.total;
+    return `<span style="${excede?'color:#B91C1C;font-weight:600':''}">${c.usadas} / ${c.total}</span>`;
+  };
+  tbody.innerHTML = filas.map(f=>`<tr>
+    <td class="nl" style="padding:8px 10px">
+      <div style="display:flex;align-items:center;gap:7px">
+        <div class="avatar" style="width:26px;height:26px;font-size:9px">${initials(f.nombre)}</div>
+        <span style="font-size:12.5px;font-weight:500">${f.nombre}</span>
+      </div>
+    </td>
+    <td style="text-align:center;font-size:12.5px">${celda(f.mes_actual)}</td>
+    <td style="text-align:center;font-size:12.5px">${celda(f.mes_siguiente)}</td>
+  </tr>`).join('');
+}
+
+document.getElementById('btn-guardar-cupo-extra').onclick = async ()=>{
+  const nombre = document.getElementById('cupo-extra-emp').value;
+  const mes    = document.getElementById('cupo-extra-mes').value;
+  const extra  = document.getElementById('cupo-extra-valor').value;
+  if(!nombre || !mes){ toast('Selecciona empleado y mes','err'); return; }
+  const r = await api('PUT','/cupos/extra',{nombre, mes, extra: Number(extra), dept: currentDept});
+  if(!r.ok){ toast(r.error,'err'); return; }
+  toast('Cupo extra guardado');
+  loadCuposPanelManager();
+};
 
 // ── ESTADÍSTICAS ─────────────────────────────────────────────────────────────
 const COMP_LABEL = {cobrar:'Cobra',librar_mismo_dia:'Libra ese día',dia_libre_eleccion:'Acumula LA'};
@@ -2056,6 +2193,7 @@ document.querySelectorAll('.nav-item[data-sec]').forEach(el=>{
       document.getElementById('btn-add-pet').textContent =
         currentUser?.rol==='empleado' ? '+ Solicitar día libre' : '+ Nueva petición';
       loadPeticiones();
+      loadCuposPanelManager();
     }
     if(sec==='vacaciones')loadVacaciones();
     if(sec==='estadisticas')loadEstadisticas();

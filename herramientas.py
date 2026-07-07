@@ -125,8 +125,43 @@ def validar_plantilla(staff: list[dict], excluir_idx: int = None,
 # MÓDULO 2 — PETICIONES SEMANALES
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _migrar_formato_peticiones(peticiones: dict) -> bool:
+    """
+    Añade a cada petición existente los campos del sistema de cupos
+    ('origen', 'estado', 'creada_en') si no los tiene, y normaliza el formato
+    antiguo de lista a dict. Las peticiones migradas se marcan origen='jefe'
+    para que nunca computen retroactivamente en el cupo de empleado
+    (grandfathering de las peticiones creadas antes de este sistema).
+    Devuelve True si se modificó algo (para decidir si hay que guardar).
+    """
+    cambiado = False
+    hoy = date.today().isoformat()
+    for semana_key, entradas in peticiones.items():
+        if semana_key == "_prioridad" or not isinstance(entradas, dict):
+            continue
+        for nombre, entrada in list(entradas.items()):
+            if isinstance(entrada, list):
+                entrada = {"dias": entrada, "la": []}
+                entradas[nombre] = entrada
+                cambiado = True
+            if not isinstance(entrada, dict):
+                continue
+            if "origen" not in entrada:
+                entrada["origen"] = "jefe"
+                cambiado = True
+            if "estado" not in entrada:
+                entrada["estado"] = "activa"
+                cambiado = True
+            if "creada_en" not in entrada:
+                entrada["creada_en"] = hoy
+                cambiado = True
+    return cambiado
+
 def cargar_peticiones(dept_id: str = "recepcion") -> dict:
-    return _cargar_json(_dept_file("peticiones.json", dept_id), {})
+    peticiones = _cargar_json(_dept_file("peticiones.json", dept_id), {})
+    if _migrar_formato_peticiones(peticiones):
+        guardar_peticiones(peticiones, dept_id)
+    return peticiones
 
 def guardar_peticiones(peticiones: dict, dept_id: str = "recepcion"):
     _guardar_json(_dept_file("peticiones.json", dept_id), peticiones)
@@ -170,6 +205,8 @@ def aplicar_peticiones(staff_list: list[dict], week_start: date, dept_id: str = 
             # Formato antiguo — solo días regulares
             dias_regulares, dias_la = entrada, []
         elif isinstance(entrada, dict):
+            if entrada.get("estado", "activa") != "activa":
+                continue
             dias_regulares = entrada.get("dias", [])
             dias_la        = entrada.get("la",   [])
         else:
@@ -197,6 +234,8 @@ def contar_peticiones_concedidas(dept_id: str = "recepcion") -> dict:
             if isinstance(pet, list):
                 dias = pet
             elif isinstance(pet, dict):
+                if pet.get("estado", "activa") != "activa":
+                    continue
                 dias = pet.get("dias", [])
             else:
                 continue
@@ -239,6 +278,8 @@ def aplicar_peticiones_con_prioridad(staff_list: list, week_start: date,
         if isinstance(entrada, list):
             dias = entrada
         elif isinstance(entrada, dict):
+            if entrada.get("estado", "activa") != "activa":
+                continue
             dias = entrada.get("dias", [])
         else:
             continue
@@ -274,6 +315,8 @@ def aplicar_peticiones_con_prioridad(staff_list: list, week_start: date,
     # Los días LA (libres extra) se aplican siempre, sin restricción de cobertura
     for nombre, entrada in peticiones.items():
         if not isinstance(entrada, dict):
+            continue
+        if entrada.get("estado", "activa") != "activa":
             continue
         dias_la = entrada.get("la", [])
         if not dias_la:

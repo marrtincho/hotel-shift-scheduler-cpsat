@@ -29,7 +29,7 @@ from herramientas import (
     cargar_roles, crear_rol, editar_rol, eliminar_rol,
     cargar_coverage_config, guardar_coverage_config,
     cargar_coverage_activa, validar_coverage_perfil,
-    _semana_str,
+    _semana_str, DIAS_SEMANA,
 )
 from auth import (
     inicializar_usuarios, autenticar, usuario_actual,
@@ -38,6 +38,11 @@ from auth import (
     login_requerido, permiso_requerido, tiene_permiso,
     registrar_accion, obtener_log,
     PERMISOS, ROLES_LABEL,
+)
+from cupos import (
+    CUPO_MENSUAL_DEFAULT, cupo_total, cupo_usado, cupo_extra,
+    cargar_cupos_extra, guardar_cupos_extra, validar_valor_cupo_extra,
+    semana_generada, validar_nueva_peticion, peticiones_activas_de,
 )
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
@@ -711,10 +716,17 @@ def api_get_peticiones():
     result  = {}
     for nombre, entrada in raw.items():
         if isinstance(entrada, list):
-            result[nombre] = {"dias": entrada, "la": [], "motivo": None}
-        elif isinstance(entrada, dict):
-            result[nombre] = {"dias": entrada.get("dias",[]), "la": entrada.get("la",[]),
-                              "motivo": entrada.get("motivo") or None}
+            entrada = {"dias": entrada, "la": []}
+        if not isinstance(entrada, dict):
+            continue
+        if entrada.get("estado", "activa") != "activa":
+            continue
+        result[nombre] = {
+            "dias": entrada.get("dias",[]), "la": entrada.get("la",[]),
+            "motivo": entrada.get("motivo") or None,
+            "origen": entrada.get("origen", "jefe"),
+            "creada_en": entrada.get("creada_en"),
+        }
     if u and u.get("rol") == "empleado":
         vinculado = u.get("vinculado")
         result = {k: v for k, v in result.items() if k == vinculado} if vinculado else {}
@@ -743,7 +755,11 @@ def api_add_peticion():
             return err("Tu cuenta no está vinculada a ningún empleado de la plantilla", 403)
         if nombre != vinculado:
             return err("Solo puedes crear peticiones para ti mismo", 403)
-    semana = lunes_de(fecha)
+    semana      = lunes_de(fecha)
+    rol_usuario = "empleado" if es_propia else u["rol"]
+    ok_cupo, msg_cupo = validar_nueva_peticion(nombre, semana, dias, rol_usuario, dept_id)
+    if not ok_cupo:
+        return err(msg_cupo)
     pet    = cargar_peticiones(dept_id)
     key    = _semana_str(semana)
     if key not in pet:
@@ -756,34 +772,87 @@ def api_add_peticion():
         existing["motivo"] = motivo
     elif "motivo" in existing:
         del existing["motivo"]
+    existing["origen"] = "empleado" if rol_usuario == "empleado" else "jefe"
+    existing["estado"] = "activa"
+    existing.setdefault("creada_en", date.today().isoformat())
     pet[key][nombre] = existing
     guardar_peticiones(pet, dept_id)
+    registrar_accion("CREAR_PETICION", f"Dept:{dept_id} {nombre} semana {key} ({existing['origen']})")
     return ok(message="Petición guardada")
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# API — PETICIONES (DELETE individual)
+# API — PETICIONES (cancelar / modificar individual)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/api/peticiones/<semana>/<nombre>", methods=["DELETE"])
 @login_requerido
 def api_delete_peticion(semana, nombre):
+    """Cancela una petición activa (estado -> 'cancelada'). Nunca se borra
+    físicamente, para conservar el histórico a efectos de cupo y auditoría."""
     u = usuario_actual()
     es_propia = tiene_permiso("editar_peticiones_propias") and not tiene_permiso("editar_peticiones")
     if not tiene_permiso("editar_peticiones") and not tiene_permiso("editar_peticiones_propias"):
         return err("Sin permisos", 403)
     if es_propia and nombre != u.get("vinculado"):
-        return err("Solo puedes eliminar tus propias peticiones", 403)
+        return err("Solo puedes cancelar tus propias peticiones", 403)
     dept_id  = request.args.get("dept","recepcion")
-    pet      = cargar_peticiones(dept_id)
     semana_d = lunes_de(semana)
+    if semana_generada(semana_d, dept_id):
+        return err("Esa semana ya está publicada; habla con el encargado para un cambio manual.")
+    pet      = cargar_peticiones(dept_id)
     key = _semana_str(semana_d)
     if key not in pet or nombre not in pet[key]:
         return err("Petición no encontrada", 404)
-    del pet[key][nombre]
-    if not pet[key]:
-        del pet[key]
+    entrada = pet[key][nombre]
+    if isinstance(entrada, list):
+        entrada = {"dias": entrada, "la": []}
+    entrada["estado"] = "cancelada"
+    pet[key][nombre] = entrada
     guardar_peticiones(pet, dept_id)
-    return ok(message="Petición eliminada")
+    registrar_accion("CANCELAR_PETICION", f"Dept:{dept_id} {nombre} semana {key}")
+    return ok(message="Petición cancelada")
+
+@app.route("/api/peticiones/<semana>/<nombre>", methods=["PUT"])
+@permiso_requerido("editar_peticiones")
+def api_modificar_peticion(semana, nombre):
+    """Modifica días y/o el empleado de una petición existente. Solo jefe/admin.
+    Al pasar por gestión manual, la petición queda marcada origen='jefe'."""
+    body     = request.json or {}
+    dept_id  = body.get("dept","recepcion")
+    semana_d = lunes_de(semana)
+    pet      = cargar_peticiones(dept_id)
+    key      = _semana_str(semana_d)
+    if key not in pet or nombre not in pet[key]:
+        return err("Petición no encontrada", 404)
+    if semana_generada(semana_d, dept_id):
+        return err("Esa semana ya está publicada; habla con el encargado para un cambio manual.")
+
+    entrada = pet[key][nombre]
+    if isinstance(entrada, list):
+        entrada = {"dias": entrada, "la": []}
+
+    if "dias" in body:
+        dias_nuevos = body.get("dias") or []
+        if not dias_nuevos:
+            return err("Debes indicar al menos un día")
+        for dia in dias_nuevos:
+            if dia not in DIAS_SEMANA:
+                return err(f"Día inválido: {dia}")
+        entrada["dias"] = dias_nuevos
+    if "motivo" in body:
+        motivo = (body.get("motivo") or "").strip() or None
+        if motivo is not None:
+            entrada["motivo"] = motivo
+        elif "motivo" in entrada:
+            del entrada["motivo"]
+
+    nuevo_nombre = (body.get("nombre") or "").strip() or nombre
+    entrada["origen"] = "jefe"
+    del pet[key][nombre]
+    pet[key][nuevo_nombre] = entrada
+    guardar_peticiones(pet, dept_id)
+    registrar_accion("MODIFICAR_PETICION", f"Dept:{dept_id} {nombre}->{nuevo_nombre} semana {key}")
+    return ok(message="Petición modificada")
 
 @app.route("/api/peticiones/<semana>/prioridad", methods=["PUT"])
 @permiso_requerido("editar_peticiones")
@@ -796,6 +865,87 @@ def api_set_prioridad_peticiones(semana):
     guardar_prioridad_semana(lunes_de(semana), order, dept_id)
     msg = "Prioridad manual guardada" if order else "Prioridad restablecida a automática"
     return ok(message=msg)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# API — CUPOS DE PETICIONES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _mes_actual_y_siguiente() -> tuple:
+    hoy = date.today()
+    if hoy.month == 12:
+        siguiente = date(hoy.year + 1, 1, 1)
+    else:
+        siguiente = date(hoy.year, hoy.month + 1, 1)
+    return hoy.strftime("%Y-%m"), siguiente.strftime("%Y-%m")
+
+@app.route("/api/cupos/resumen", methods=["GET"])
+@login_requerido
+def api_cupos_resumen():
+    """Transparencia de cupos: para cada empleado, mes actual y siguiente,
+    peticiones usadas/cupo total y lista de peticiones activas.
+    Visible para cualquier usuario autenticado."""
+    dept_id = request.args.get("dept","recepcion")
+    staff   = cargar_plantilla(dept_id)
+    mes_actual, mes_siguiente = _mes_actual_y_siguiente()
+    resultado = []
+    for p in staff:
+        nombre = p["name"]
+        fila = {"nombre": nombre}
+        for etiqueta, mes in (("mes_actual", mes_actual), ("mes_siguiente", mes_siguiente)):
+            fila[etiqueta] = {
+                "mes":    mes,
+                "usadas": cupo_usado(nombre, mes, dept_id),
+                "total":  cupo_total(nombre, mes),
+            }
+        fila["activas"] = peticiones_activas_de(nombre, dept_id)
+        resultado.append(fila)
+    return ok(resultado)
+
+@app.route("/api/cupos/mio", methods=["GET"])
+@login_requerido
+def api_cupos_mio():
+    """Cupo del empleado vinculado al usuario actual, para el mes de la semana
+    indicada. Alimenta el aviso 'Peticiones <mes>: X de Y usadas' del
+    formulario de petición del empleado."""
+    u = usuario_actual()
+    vinculado = u.get("vinculado")
+    if not vinculado:
+        return err("Tu cuenta no está vinculada a ningún empleado de la plantilla", 403)
+    dept_id = request.args.get("dept","recepcion")
+    fecha   = request.args.get("semana", date.today().isoformat())
+    semana  = lunes_de(fecha)
+    mes     = semana.strftime("%Y-%m")
+    return ok({
+        "nombre": vinculado, "mes": mes,
+        "usadas": cupo_usado(vinculado, mes, dept_id),
+        "total":  cupo_total(vinculado, mes),
+    })
+
+@app.route("/api/cupos/extra", methods=["GET"])
+@permiso_requerido("editar_peticiones")
+def api_get_cupos_extra():
+    return ok(cargar_cupos_extra())
+
+@app.route("/api/cupos/extra", methods=["PUT"])
+@permiso_requerido("editar_peticiones")
+def api_set_cupo_extra():
+    body   = request.json or {}
+    nombre = (body.get("nombre") or "").strip()
+    mes    = (body.get("mes") or "").strip()
+    if not nombre or not mes:
+        return err("Faltan nombre o mes")
+    try:
+        date.fromisoformat(mes + "-01")
+    except ValueError:
+        return err("Formato de mes inválido, usa AAAA-MM")
+    ok_valor, extra, msg_valor = validar_valor_cupo_extra(body.get("extra"))
+    if not ok_valor:
+        return err(msg_valor)
+    cupos = cargar_cupos_extra()
+    cupos.setdefault(nombre, {})[mes] = extra
+    guardar_cupos_extra(cupos)
+    registrar_accion("CUPO_EXTRA", f"{nombre} {mes}: {extra}")
+    return ok({"nombre": nombre, "mes": mes, "extra": extra})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # API — LA: ASIGNAR EN FECHA ESPECÍFICA
@@ -828,6 +978,9 @@ def api_usar_la(nombre):
     if dia not in la_dias:
         la_dias.append(dia)
     entry["la"] = la_dias
+    entry.setdefault("origen", "jefe")
+    entry.setdefault("estado", "activa")
+    entry.setdefault("creada_en", date.today().isoformat())
     pet[key][nombre] = entry
     guardar_peticiones(pet, dept_id)
 
