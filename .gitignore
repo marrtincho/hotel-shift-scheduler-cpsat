@@ -15,3 +15,18 @@ __pycache__/
 
 # Backups
 *.bak
+
+# Artefacto accidental de redirecciones estilo Windows (2>nul) ejecutadas
+# en shells Unix; "nul" es además un nombre reservado en Windows.
+/nul
+
+# Datos reales de producción: nombres de empleados, hashes de contraseñas
+# (usuarios.json), clave de firma de sesión Flask (.secret_key) y logs de
+# actividad. Se autogeneran al arrancar la app (ver data/README.md); nunca
+# deben versionarse. Usa data-ejemplo/ (datos ficticios) para el repo público.
+/data/*
+!/data/README.md
+
+# Configuración local de Claude Code (permisos de sesión), no relevante
+# para el repositorio público.
+/.claude/settings.local.json
