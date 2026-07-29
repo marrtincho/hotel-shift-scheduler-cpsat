@@ -25,9 +25,19 @@ from flask import session, request, jsonify
 # ─── RUTAS ────────────────────────────────────────────────────────────────────
 
 try:
-    from herramientas import DATA_DIR
+    from herramientas import DATA_DIR, guardar_json_atomico
 except ImportError:
-    DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    DATA_DIR = os.environ.get(
+        "DATA_DIR",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"),
+    )
+    def guardar_json_atomico(path: str, data):
+        """Fallback local si herramientas no está disponible: mismo
+        comportamiento atómico (escribe a .tmp y luego os.replace())."""
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -48,9 +58,10 @@ PERMISOS = {
         "ver_peticiones", "editar_peticiones",
         "ver_estadisticas",
         "ver_propio_horario",
+        "ver_auditoria",
     },
     "encargado": {
-        "ver_plantilla",
+        "ver_plantilla", "editar_plantilla",
         "generar_horario", "exportar_horario",
         "ver_historial",
         "ver_festivos", "ver_compensaciones", "editar_compensaciones",
@@ -298,8 +309,7 @@ def registrar_accion(accion: str, detalle: str = "", usuario: dict = None):
     # Guardar solo los últimos 1000 registros
     if len(log) > 1000:
         log = log[-1000:]
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
-        json.dump(log, f, ensure_ascii=False, indent=2)
+    guardar_json_atomico(LOG_FILE, log)
 
 def obtener_log(limite: int = 100) -> list[dict]:
     log = _cargar_log()

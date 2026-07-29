@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hotel Manager</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
@@ -15,7 +16,11 @@
   --noche:#B8D4F8;--noche-t:#0A3A6E;
   --partido:#FFD9A0;--partido-t:#7A4800;
   --libre:#F5C6C6;--libre-t:#8B1A1A;
+  --vacaciones:#C7D2FE;--vacaciones-t:#3730A3;
   --festivo:#E8D5F8;--festivo-t:#5A1A8A;
+  /* Auditoría: tonos fríos neutros a propósito — nunca rojo/verde, para no
+     inducir una lectura de "culpable/inocente" en un gráfico comparativo. */
+  --aud-fav:#4FA3B5;--aud-desfav:#7C86C9;--aud-jefe:#5B8DB8;
   --r:10px;--rs:6px;
   font-family:'DM Sans',sans-serif;font-size:14px;color:var(--text);
 }
@@ -24,7 +29,7 @@ body{background:var(--bg);min-height:100vh;display:flex}
 /* LOGIN PAGE */
 .login-page{display:none;width:100%;min-height:100vh;align-items:center;justify-content:center;background:var(--accent)}
 .login-page.active{display:flex}
-.login-box{background:var(--surface);border-radius:14px;padding:36px 40px;width:360px;box-shadow:0 12px 48px rgba(0,0,0,.2)}
+.login-box{background:var(--surface);border-radius:14px;padding:36px 40px;width:360px;max-width:92vw;box-shadow:0 12px 48px rgba(0,0,0,.2)}
 .login-logo{font-size:13px;font-weight:600;color:var(--text-2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
 .login-title{font-size:22px;font-weight:600;margin-bottom:28px}
 .login-err{background:#FEF2F2;color:#B91C1C;border:1px solid #FECACA;padding:9px 12px;border-radius:var(--rs);font-size:12.5px;margin-bottom:14px;display:none}
@@ -58,6 +63,116 @@ nav{padding:10px 0;flex:1}
 .topbar-left .sub{font-size:11px;color:var(--text-2);margin-top:1px}
 .topbar-right{display:flex;gap:8px;align-items:center}
 .content{padding:20px 24px;flex:1;overflow-y:auto}
+
+/* RESPONSIVE — menú oculto tras botón hamburguesa en móvil, panel deslizante */
+.hamburger-btn{display:none}
+.sidebar-overlay{display:none}
+@media (max-width: 768px){
+  body{flex-direction:column}
+
+  .hamburger-btn{
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+    width:34px;height:34px;border-radius:var(--rs);border:1px solid var(--border-strong);
+    background:var(--surface);color:var(--text);font-size:18px;cursor:pointer;
+  }
+
+  /* Sidebar pasa a panel deslizante oculto por defecto */
+  .sidebar{
+    position:fixed;top:0;left:0;z-index:110;
+    width:240px;max-width:80vw;min-width:0;height:100vh;
+    flex-direction:column;align-items:stretch;
+    overflow-x:hidden;overflow-y:auto;padding:0;
+    transform:translateX(-100%);transition:transform .2s ease;
+    box-shadow:2px 0 16px rgba(0,0,0,.25);
+  }
+  .sidebar.open{transform:translateX(0)}
+  .sidebar .logo{display:block}
+  .sidebar nav{display:flex;flex-direction:column;padding:10px 0;flex:1;overflow-x:visible}
+  .sidebar .nav-section{display:block}
+  .nav-item{border-left:3px solid transparent;border-bottom:none;white-space:normal;padding:9px 18px;flex-shrink:0}
+  .nav-item.active{border-left-color:rgba(255,255,255,.5);border-bottom-color:transparent}
+  .sidebar>div:last-child{border-top:1px solid rgba(255,255,255,.1);flex-shrink:0;padding:12px 14px}
+  .sidebar>div:last-child button{white-space:normal;padding:7px 9px}
+
+  /* Overlay para cerrar el menú al tocar fuera */
+  .sidebar-overlay{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;
+  }
+  .sidebar-overlay.active{display:block}
+
+  .topbar{flex-wrap:wrap;row-gap:8px;padding:10px 12px}
+  .content{padding:12px}
+  .g4{grid-template-columns:repeat(2,1fr)}
+  .g2{grid-template-columns:1fr}
+}
+
+/* ═══ MI PANEL (EMPLEADO) — mobile-first: base = móvil, se amplía con breakpoints ═══ */
+#dash-root{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.dash-blk-ahora,.dash-blk-semana,.dash-blk-contadores,.dash-blk-peticiones,.dash-blk-historico,.dash-blk-equidad{margin-bottom:0}
+.dash-eyebrow{font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em}
+.dash-ahora-hoy-col{padding:18px 16px 16px}
+.dash-ahora-manana-col{padding:10px 16px;border-top:1px solid var(--border)}
+.dash-turno-badge{font-size:19px;padding:9px 18px;min-width:auto}
+#dash-semana-tira{display:flex;padding:10px;gap:4px}
+.dash-day{flex:1;text-align:center;cursor:pointer;padding:6px 2px;border-radius:8px}
+.dash-day-horario{display:none;font-size:10px;color:var(--text-2);margin-top:4px;white-space:nowrap}
+.dash-blk-contadores{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+#dash-btn-ics{width:100%;justify-content:center;padding:12px;margin-bottom:8px}
+
+/* MI EQUIDAD — barra horizontal simple, sin rojo/verde de aprobación */
+.equidad-metric{margin-bottom:16px}
+.equidad-metric:last-child{margin-bottom:0}
+.equidad-metric-hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;gap:8px}
+.equidad-metric-lbl{font-size:12.5px;font-weight:500;color:var(--text)}
+.equidad-metric-val{font-size:15px;font-weight:600;color:var(--text);white-space:nowrap}
+.equidad-bar-track{position:relative;height:8px;border-radius:4px;background:var(--bg);margin-bottom:6px}
+.equidad-bar-fill{height:100%;border-radius:4px;background:var(--noche);transition:width .2s}
+.equidad-bar-media{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text-3)}
+.equidad-metric-txt{font-size:12px;color:var(--text-2);line-height:1.5}
+
+/* Tablet: 768px+ — más aire, contadores en fila de 4 */
+@media (min-width:768px){
+  #dash-root{max-width:680px;gap:16px}
+  #dash-semana-tira{padding:14px;gap:6px}
+  .dash-day{padding:8px 4px}
+  .dash-blk-contadores{grid-template-columns:repeat(4,1fr)}
+  #dash-chart{height:150px}
+}
+
+/* Escritorio: 1024px+ — layout de 2 columnas, detalle visible sin tocar */
+@media (min-width:1024px){
+  #dash-root{
+    max-width:1200px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    grid-template-areas:
+      "ahora       contadores"
+      "semana      semana"
+      "peticiones  historico"
+      "ics         ics";
+    gap:18px;
+    align-items:start;
+  }
+  .dash-blk-ahora{grid-area:ahora}
+  .dash-blk-contadores{grid-area:contadores;grid-template-columns:repeat(4,1fr)}
+  .dash-blk-semana{grid-area:semana}
+  .dash-blk-peticiones{grid-area:peticiones}
+  .dash-blk-historico{grid-area:historico}
+  #dash-btn-ics{grid-area:ics;width:auto;max-width:320px;justify-self:center;margin-bottom:0}
+
+  /* Bloque 1 — turno de hoy y de mañana lado a lado */
+  .dash-ahora-hoy-wrap{display:grid;grid-template-columns:1fr 1fr;align-items:stretch}
+  .dash-ahora-hoy-col{padding:20px}
+  .dash-ahora-manana-col{padding:20px;border-top:none;border-left:1px solid var(--border)}
+  .dash-turno-badge{font-size:17px}
+
+  /* Bloque 2 — columnas de día más anchas, horario concreto visible sin tocar */
+  .dash-day{padding:10px 4px}
+  .dash-day-horario{display:block}
+
+  /* Bloque 5 — el gráfico respira más con más ancho disponible */
+  #dash-chart{height:170px}
+}
 
 /* BUTTONS */
 .btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:var(--rs);font-size:12.5px;font-weight:500;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);cursor:pointer;transition:all .13s;font-family:inherit}
@@ -102,7 +217,9 @@ nav{padding:10px 0;flex:1}
 .sc.Noche{background:var(--noche);color:var(--noche-t)}
 .sc.Partido{background:var(--partido);color:var(--partido-t)}
 .sc.Libre{background:var(--libre);color:var(--libre-t)}
+.sc.Vacaciones{background:var(--vacaciones);color:var(--vacaciones-t)}
 .sc.fest{box-shadow:0 0 0 2px var(--festivo-t)}
+.sc.celda-conflicto{outline:2.5px solid #F97316;outline-offset:1px}
 .sc.editable{cursor:pointer}
 .sc.editable:hover{box-shadow:0 0 0 2px var(--text-3)}
 .sc-edit-sel{font-size:11px;font-weight:500;min-width:70px;border-radius:4px;border:1px solid var(--text-3);padding:2px}
@@ -114,6 +231,7 @@ nav{padding:10px 0;flex:1}
 .badge.Noche,.badge.noche{background:var(--noche);color:var(--noche-t)}
 .badge.Partido,.badge.partido{background:var(--partido);color:var(--partido-t)}
 .badge.libre{background:var(--libre);color:var(--libre-t)}
+.badge.vacaciones{background:var(--vacaciones);color:var(--vacaciones-t)}
 
 /* FORM */
 .fr{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
@@ -127,6 +245,11 @@ nav{padding:10px 0;flex:1}
 .alert.warn{background:#FFFBEB;color:#92400E;border:1px solid #FDE68A}
 .alert.ok{background:#F0FDF4;color:#166534;border:1px solid #BBF7D0}
 .alert.err{background:#FEF2F2;color:#B91C1C;border:1px solid #FECACA}
+
+/* ADVERTENCIAS DE HORARIO */
+.advertencias-lista{list-style:none;padding:12px 16px;margin:0;border-top:1px solid var(--border);font-size:12px;color:var(--text-2)}
+.advertencias-lista li{padding:3px 0;display:flex;align-items:baseline;gap:6px}
+.advertencias-lista li::before{content:'●';color:#F97316;font-size:8px}
 
 /* MODAL */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:200}
@@ -190,6 +313,9 @@ function closeModal(id){
 
 <div class="app" id="app" style="display:none">
 
+<!-- Overlay del menú móvil -->
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
+
 <!-- SIDEBAR -->
 <aside class="sidebar">
   <div class="logo">
@@ -198,6 +324,7 @@ function closeModal(id){
   </div>
   <nav>
     <div class="nav-section">Principal</div>
+    <div class="nav-item empleado-only" data-sec="dashboard" style="display:none"><span class="nav-icon">★</span>Mi panel</div>
     <div class="nav-item active" data-sec="horario"><span class="nav-icon">▦</span>Horario semanal</div>
     <div class="nav-item" data-sec="empleados"><span class="nav-icon">◎</span>Empleados</div>
     <div class="nav-section">Gestión</div>
@@ -214,6 +341,7 @@ function closeModal(id){
     <div class="nav-item admin-only" data-sec="temporadas"><span class="nav-icon">◑</span>Temporadas</div>
     <div class="nav-item admin-only" data-sec="usuarios"><span class="nav-icon">◉</span>Usuarios</div>
     <div class="nav-item admin-only" data-sec="log"><span class="nav-icon">◎</span>Log actividad</div>
+    <div class="nav-item admin-only" data-sec="auditoria"><span class="nav-icon">⚖</span>Auditoría</div>
   </nav>
   <div style="padding:12px 14px;border-top:1px solid rgba(255,255,255,.1)">
     <button class="btn sm" id="btn-logout" style="width:100%;justify-content:center;color:#fff;border-color:rgba(255,255,255,.35);background:rgba(255,255,255,.1);font-weight:500">⏻ Cerrar sesión</button>
@@ -223,9 +351,12 @@ function closeModal(id){
 <!-- MAIN -->
 <div class="main">
   <div class="topbar">
-    <div class="topbar-left">
-      <div class="title" id="topbar-title">Horario semanal</div>
-      <div class="sub" id="topbar-sub"></div>
+    <div class="topbar-left" style="display:flex;align-items:center;gap:10px">
+      <button class="hamburger-btn" id="btn-hamburger" aria-label="Abrir menú" title="Menú">☰</button>
+      <div>
+        <div class="title" id="topbar-title">Horario semanal</div>
+        <div class="sub" id="topbar-sub"></div>
+      </div>
     </div>
     <div class="topbar-right" id="topbar-right">
       <div style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--rs);border:1px solid var(--border);background:var(--bg)">
@@ -248,6 +379,63 @@ function closeModal(id){
 
   <div class="content">
 
+    <!-- ═══ MI PANEL (EMPLEADO) — diseño mobile-first, una columna ═══ -->
+    <div class="section" id="sec-dashboard">
+      <div id="dash-root">
+
+        <!-- 1. AHORA MISMO -->
+        <div class="card0 dash-blk-ahora" id="dash-ahora"></div>
+
+        <!-- 2. MI SEMANA -->
+        <div class="card0 dash-blk-semana">
+          <div class="card-hd">
+            <span>Mi semana</span>
+            <span id="dash-semana-lbl" style="font-size:11px;color:var(--text-2)"></span>
+          </div>
+          <div id="dash-semana-tira"></div>
+          <div id="dash-semana-detalle"></div>
+        </div>
+
+        <!-- 3. MIS CONTADORES -->
+        <div class="dash-blk-contadores" id="dash-contadores"></div>
+
+        <!-- 4. MIS PETICIONES -->
+        <div class="card0 dash-blk-peticiones">
+          <div class="card-hd">
+            <span>Mis peticiones</span>
+            <button class="btn pri sm" id="dash-btn-nueva-peticion">+ Solicitar día libre</button>
+          </div>
+          <div id="dash-peticiones-cupo" style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-2)"></div>
+          <div id="dash-peticiones-lista"></div>
+        </div>
+
+        <!-- 5. MI HISTÓRICO -->
+        <div class="card0 dash-blk-historico">
+          <div class="card-hd">
+            <span>Mi histórico</span>
+            <select id="dash-periodo" style="font-size:11.5px;border:1px solid var(--border-strong);border-radius:6px;padding:3px 6px;background:var(--surface);color:var(--text);font-family:inherit">
+              <option value="3m">Últimos 3 meses</option>
+              <option value="anio" selected>Año en curso</option>
+            </select>
+          </div>
+          <div style="padding:14px 16px">
+            <svg id="dash-chart" width="100%" height="130" viewBox="0 0 300 130" style="display:block;margin-bottom:12px"></svg>
+            <div class="g3" id="dash-historico-extra"></div>
+          </div>
+        </div>
+
+        <!-- 5b. MI EQUIDAD -->
+        <div class="card0 dash-blk-equidad">
+          <div class="card-hd"><span>Mi equidad</span></div>
+          <div id="dash-equidad-body" style="padding:14px 16px"></div>
+        </div>
+
+        <!-- 6. EXPORTAR .ICS -->
+        <button class="btn" id="dash-btn-ics">⬇ Exportar mis turnos (.ics)</button>
+
+      </div>
+    </div>
+
     <!-- ═══ HORARIO ═══ -->
     <div class="section active" id="sec-horario">
       <div class="g4" style="margin-bottom:16px" id="horario-stats"></div>
@@ -269,6 +457,7 @@ function closeModal(id){
             <tbody id="schedule-body"></tbody>
           </table>
         </div>
+        <div id="horario-advertencias-lista"></div>
       </div>
     </div>
 
@@ -539,6 +728,72 @@ function closeModal(id){
       </div>
     </div>
 
+    <!-- ═══ AUDITORÍA (solo admin) ═══ -->
+    <div class="section" id="sec-auditoria">
+      <div class="alert info" style="margin-bottom:14px">
+        ℹ La clasificación favorable/desfavorable es <strong>automática y orientativa</strong>
+        (heurística sobre el tipo de cambio de turno), no un juicio. La mayoría de
+        intervenciones manuales son operativas y legítimas: este panel es para detectar
+        patrones que merezcan una conversación, no para señalar a nadie.
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+        <div class="fr" style="margin:0"><label>Desde</label><input id="aud-desde" type="date"></div>
+        <div class="fr" style="margin:0"><label>Hasta</label><input id="aud-hasta" type="date"></div>
+        <div class="fr" style="margin:0"><label>Departamento</label>
+          <select id="aud-dept"><option value="recepcion">Recepción</option><option value="mozos">Mozos</option></select>
+        </div>
+        <button class="btn pri sm" onclick="loadAuditoria()">Aplicar</button>
+      </div>
+      <div class="g4" style="margin-bottom:16px" id="aud-totales"></div>
+      <div class="card0" style="overflow-x:auto;margin-bottom:16px">
+        <div class="card-hd"><span>Resumen por empleado</span></div>
+        <table class="tbl" id="aud-resumen-tbl" style="min-width:820px">
+          <thead><tr id="aud-resumen-head"></tr></thead>
+          <tbody id="aud-resumen-body"></tbody>
+        </table>
+      </div>
+      <div class="alert warn" style="margin-bottom:10px">
+        ⚠ Filas resaltadas: desviación respecto a la media del equipo (más del doble de la
+        media en algún indicador). Es una señal de atención, no una conclusión.
+      </div>
+
+      <div class="card0" style="margin-bottom:16px">
+        <div class="card-hd"><span>Ediciones de turno — favorables vs. desfavorables</span></div>
+        <div style="padding:14px 14px 4px" id="aud-chart-divergente-wrap">
+          <svg id="aud-chart-divergente" width="100%" style="display:block"></svg>
+          <div id="aud-chart-divergente-empty" style="display:none;padding:24px;text-align:center;color:var(--text-2);font-size:13px">
+            Sin intervenciones manuales registradas en este periodo.
+          </div>
+        </div>
+        <div class="alert info" style="margin:6px 14px 14px;font-size:11.5px">
+          ℹ Tasas por semana presente en plantilla, para poder comparar a quien lleva
+          poco tiempo con quien lleva mucho. Las intervenciones manuales son parte normal
+          del trabajo del encargado (bajas, imprevistos); la clasificación
+          favorable/desfavorable es automática y orientativa. Lo relevante no es el
+          volumen sino una concentración sostenida en las mismas personas.
+        </div>
+      </div>
+
+      <div class="card0" style="margin-bottom:16px">
+        <div class="card-hd"><span>Peticiones de origen jefe</span></div>
+        <div style="padding:14px 14px 4px" id="aud-chart-peticiones-wrap">
+          <svg id="aud-chart-peticiones" width="100%" style="display:block"></svg>
+          <div id="aud-chart-peticiones-empty" style="display:none;padding:24px;text-align:center;color:var(--text-2);font-size:13px">
+            Sin intervenciones manuales registradas en este periodo.
+          </div>
+        </div>
+        <div class="alert info" style="margin:6px 14px 14px;font-size:11.5px">
+          ℹ Es la señal más directa de trato preferente: a diferencia de una edición de
+          turno, una petición concedida por el jefe siempre beneficia a quien la recibe.
+        </div>
+      </div>
+
+      <div class="card0">
+        <div class="card-hd"><span>Detalle de intervenciones</span></div>
+        <div id="aud-detalle-list"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 </div>
@@ -604,7 +859,7 @@ function closeModal(id){
 
 <!-- MODAL CAMBIAR CONTRASEÑA PROPIA -->
 <div class="overlay hidden" id="modal-pass">
-  <div class="modal" style="width:360px">
+  <div class="modal" style="width:360px;max-width:92vw">
     <div class="modal-hd"><span>Cambiar contraseña</span><button class="btn ghost" onclick="closeModal('modal-pass')">✕</button></div>
     <div class="fr"><label>Contraseña actual</label><input id="p-actual" type="password"></div>
     <div class="fr"><label>Nueva contraseña</label><input id="p-nueva" type="password"></div>
@@ -690,6 +945,34 @@ function closeModal(id){
       <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="m-cat-sin-noches"> Sin noches (no cubre al fijo de noche)</label>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="m-cat-unico"> Única persona con esta categoría</label>
     </div>
+    <div class="fr"><label>Cubre la ausencia del rol</label>
+      <select id="m-cat-cubre-rol">
+        <option value="">— ninguno —</option>
+      </select>
+    </div>
+    <div class="fr" id="m-cat-cobertura-total-wrap" style="display:none">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="m-cat-cobertura-total"> Cobertura de semana completa (presencia en fin de semana)</label>
+      <div style="font-size:11.5px;color:var(--text-2);margin-top:2px">
+        Desactivada: cubre solo los días sueltos en que el rol cubierto está ausente.
+        Activada: además, si la ausencia es de semana completa, este rol también trabaja
+        el fin de semana (nunca libra Sábado+Domingo esa semana).
+      </div>
+    </div>
+    <div class="fr" id="m-cat-libres-fijos-wrap" style="display:none">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="m-cat-libres-fijos"> Cubrir también los días libres fijos del rol cubierto (fines de semana)</label>
+      <div style="font-size:11.5px;color:var(--text-2);margin-top:2px">
+        Si se activa, esta categoría trabajará en el turno fijo del rol cubierto durante
+        sus días libres fijos (normalmente sábado y domingo) de forma permanente, y sus
+        propios días libres pasarán a ser entre semana.
+        Es independiente de "Cobertura de semana completa": solo esta activa = cubre el
+        finde siempre y las ausencias puntuales entre semana; solo la otra = presencia
+        total únicamente cuando la ausencia es de semana entera; ambas = las dos cosas
+        a la vez.
+      </div>
+    </div>
+    <div class="fr">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="m-cat-excluir-equidad"> Excluir del balanceo de equidad (findes y turnos)</label>
+    </div>
     <div class="alert warn" id="m-cat-protegido-alert" style="display:none">ℹ Categoría protegida del sistema: algunos campos no se pueden modificar y no se puede eliminar.</div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px">
       <button class="btn danger" id="btn-delete-cat" style="display:none">Eliminar</button>
@@ -756,6 +1039,10 @@ function closeModal(id){
     <div class="fr"><label>Motivo <span style="font-weight:400;color:var(--text-2)">(opcional)</span></label>
       <textarea id="m-pet-motivo" rows="2" placeholder="Ej: cita médica, asunto personal…" style="resize:vertical;font-family:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--border-strong);border-radius:var(--rs);width:100%;box-sizing:border-box"></textarea>
     </div>
+    <div class="fr" id="m-pet-justif-row" style="display:none">
+      <label>Justificación <span style="font-weight:400;color:var(--text-2)">(obligatoria: la ves tú y el admin, no queda pública)</span></label>
+      <input id="m-pet-justif" type="text" maxlength="200" placeholder="Motivo de esta petición creada en nombre del empleado (mín. 5 caracteres)">
+    </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
       <button class="btn" onclick="closeModal('modal-pet')">Cancelar</button>
       <button class="btn pri" id="btn-save-pet">Guardar petición</button>
@@ -765,16 +1052,29 @@ function closeModal(id){
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-// ROLES y ROLES_BY_DEPT se cargan dinámicamente desde /api/roles (ver
+// ROLES_BY_DEPT se carga dinámicamente desde /api/roles (ver
 // cargarRolesDept/cargarRolesTodosDepts más abajo) — antes estaban
-// hardcodeados aquí. Se mantienen como objetos mutables con la misma forma
-// para no romper renderSchedule/loadEmpleados/loadCompensaciones/modal-emp.
-let ROLES = {};
+// hardcodeados aquí. Es la ÚNICA fuente de verdad para resolver
+// etiqueta/icono de un rol: NO existe un mapa plano compartido entre
+// departamentos, porque el mismo id de rol (p.ej. "normal") tiene labels
+// distintos en recepción y en mozos — un mapa plano hace que el último
+// departamento cargado pise la etiqueta del otro. Toda resolución de
+// etiqueta debe pasar por etiquetaRol(dept, rolId) más abajo, indicando
+// explícitamente el departamento del dato que se está pintando.
 let ROLES_BY_DEPT = {};
 let rolesCache = {};
+
+// Única función de resolución de etiqueta de rol. Requiere el dept del
+// dato que se está pintando (nunca currentDept implícito, que puede haber
+// cambiado). Si el id no existe en ese departamento, devuelve el propio id
+// como fallback visible — nunca la etiqueta de otro departamento.
+function etiquetaRol(dept, rolId){
+  const info = (ROLES_BY_DEPT[dept] || []).find(r => r.v === rolId);
+  return info ? info.l : rolId;
+}
 const COMP  = {cobrar:'Cobra festivo',librar_mismo_dia:'Libra ese día',dia_libre_eleccion:'Acumula LA'};
 const DAYS  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
-const SECS  = {horario:['Horario semanal',''],empleados:['Empleados','Gestión de plantilla'],categorias:['Categorías','Configuración de roles de empleado'],festivos:['Festivos','Valencia ciudad 2026'],compensaciones:['Compensaciones (LA)','Libres adicionales y festivos trabajados'],peticiones:['Peticiones','Días libres solicitados por empleado'],vacaciones:['Vacaciones','Periodos registrados'],estadisticas:['Estadísticas','Acumulado histórico por empleado'],historial:['Historial','Semanas guardadas'],asistente:['Asistente IA','Consultas sobre el equipo']};
+const SECS  = {dashboard:['Mi panel','Tu semana, festivos y estadísticas'],horario:['Horario semanal',''],empleados:['Empleados','Gestión de plantilla'],categorias:['Categorías','Configuración de roles de empleado'],festivos:['Festivos','Valencia ciudad 2026'],compensaciones:['Compensaciones (LA)','Libres adicionales y festivos trabajados'],peticiones:['Peticiones','Días libres solicitados por empleado'],vacaciones:['Vacaciones','Periodos registrados'],estadisticas:['Estadísticas','Acumulado histórico por empleado'],historial:['Historial','Semanas guardadas'],asistente:['Asistente IA','Consultas sobre el equipo'],auditoria:['Auditoría','Intervenciones manuales sobre horario y plantilla']};
 
 async function cargarRolesDept(dept){
   const r = await api('GET', `/roles?dept=${dept}`);
@@ -783,9 +1083,6 @@ async function cargarRolesDept(dept){
   ROLES_BY_DEPT[dept] = Object.entries(r.data).map(([v,info])=>(
     {v, l: `${info.label}${info.icon?' '+info.icon:''}`}
   ));
-  Object.entries(r.data).forEach(([v,info])=>{
-    ROLES[v] = `${info.label}${info.icon?' '+info.icon:''}`;
-  });
 }
 
 async function cargarRolesTodosDepts(){
@@ -863,6 +1160,302 @@ function updateGenerarState(){
   }
 }
 
+// ── MI PANEL (EMPLEADO) — mobile-first, bloques 1-6 ──────────────────────
+let dashData = null;
+let dashDetalleAbierto = null;
+
+const DASH_COLOR = {Mañana:'var(--mañana)',Tarde:'var(--tarde)',Noche:'var(--noche)',Partido:'var(--partido)',Libre:'var(--libre)',Vacaciones:'var(--vacaciones)'};
+const DASH_TEXT  = {Mañana:'var(--mañana-t)',Tarde:'var(--tarde-t)',Noche:'var(--noche-t)',Partido:'var(--partido-t)',Libre:'var(--libre-t)',Vacaciones:'var(--vacaciones-t)'};
+const DASH_DIA_CORTO = {Lunes:'L',Martes:'M',Miércoles:'X',Jueves:'J',Viernes:'V',Sábado:'S',Domingo:'D'};
+// "Libre" y "Vacaciones" son ambos días sin trabajar de cara al dashboard;
+// "Vacaciones" es solo la etiqueta de presentación para un "Libre" por vacaciones.
+const DASH_LIBRE_LIKE = new Set(['Libre','Vacaciones']);
+
+function dashHorarioTxt(tramos){
+  if(!tramos || !tramos.length) return '';
+  return tramos.map(t=>`${t.inicio}–${t.fin}`).join(' y ');
+}
+
+async function cargarDashboard(){
+  const r = await api('GET','/dashboard');
+  if(!r.ok){
+    document.getElementById('dash-ahora').innerHTML = `<div style="padding:16px"><div class="alert err" style="margin:0">${r.error}</div></div>`;
+    ['dash-semana-tira','dash-semana-detalle','dash-contadores','dash-peticiones-cupo','dash-peticiones-lista','dash-historico-extra','dash-equidad-body'].forEach(id=>{
+      document.getElementById(id).innerHTML = '';
+    });
+    document.getElementById('dash-chart').innerHTML = '';
+    return;
+  }
+  dashData = r.data;
+  dashDetalleAbierto = null;
+  renderDashAhora();
+  renderDashSemana();
+  renderDashContadores();
+  renderDashPeticiones();
+  renderDashHistorico();
+  renderDashEquidad();
+}
+
+// 1. AHORA MISMO
+function renderDashAhora(){
+  const d = dashData.ahora_mismo;
+  const el = document.getElementById('dash-ahora');
+  if(!d.existe_horario){
+    el.innerHTML = `<div style="padding:16px">
+      <div class="dash-eyebrow">Hoy · ${d.dia}</div>
+      <div class="alert info" style="margin:8px 0 0">ℹ Aún no se ha generado el horario de esta semana.</div>
+    </div>`;
+    return;
+  }
+  const esLibre = DASH_LIBRE_LIKE.has(d.turno_hoy);
+  let cuerpo;
+  if(esLibre){
+    const esVacaciones = d.turno_hoy === 'Vacaciones';
+    const prefijo = esVacaciones ? 'De vacaciones — vuelves' : 'Vuelves';
+    const msg = d.regreso
+      ? `${prefijo} el ${d.regreso.dia.toLowerCase()} de ${d.regreso.turno}`
+      : (esVacaciones ? 'De vacaciones — todavía no hay horario para saber cuándo vuelves' : 'Todavía no hay horario para saber cuándo vuelves');
+    cuerpo = `<span class="sc ${d.turno_hoy} dash-turno-badge">${d.turno_hoy}</span>
+      <div style="font-size:12.5px;color:var(--text-2);margin-top:8px">${msg}</div>`;
+  }else{
+    const companeros = d.companeros_hoy.length
+      ? `Hoy trabajas con: <strong>${d.companeros_hoy.join(', ')}</strong>`
+      : 'Trabajas solo/a hoy';
+    cuerpo = `<span class="sc ${d.turno_hoy} dash-turno-badge">${d.turno_hoy}</span>
+      <div style="font-size:13px;color:var(--text-2);margin-top:8px">${dashHorarioTxt(d.horario_hoy)}</div>
+      <div style="font-size:12px;color:var(--text-3);margin-top:8px">${companeros}</div>`;
+  }
+  const mananaTxt = d.turno_manana === null
+    ? '<span style="color:var(--text-3);font-size:12px">Sin horario todavía</span>'
+    : `<span class="sc ${d.turno_manana}" style="font-size:11px">${d.turno_manana}</span>
+       ${!DASH_LIBRE_LIKE.has(d.turno_manana) ? `<span style="font-size:11.5px;color:var(--text-2)">${dashHorarioTxt(d.horario_manana)}</span>` : ''}`;
+
+  el.innerHTML = `
+    <div class="dash-ahora-hoy-wrap">
+      <div class="dash-ahora-hoy-col">
+        <div class="dash-eyebrow">Hoy · ${d.dia}</div>
+        <div style="margin-top:8px">${cuerpo}</div>
+      </div>
+      <div class="dash-ahora-manana-col" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="dash-eyebrow" style="white-space:nowrap">Mañana:</span> ${mananaTxt}
+      </div>
+    </div>`;
+}
+
+// 2. MI SEMANA
+function renderDashSemana(){
+  document.getElementById('dash-semana-lbl').textContent = dashData.semana.key;
+  const tira = document.getElementById('dash-semana-tira');
+  tira.innerHTML = dashData.semana.dias.map((dia,i)=>{
+    const corto = DASH_DIA_CORTO[dia.dia] || dia.dia.substring(0,1);
+    const sinTurno = !dia.turno;
+    const scStyle = sinTurno
+      ? 'background:transparent;color:var(--text-3);border:1px dashed var(--border-strong)'
+      : '';
+    const hoyStyle = dia.hoy ? 'background:var(--bg);box-shadow:inset 0 0 0 1px var(--border-strong)' : '';
+    const horarioLine = (!sinTurno && !DASH_LIBRE_LIKE.has(dia.turno))
+      ? `<div class="dash-day-horario">${dashHorarioTxt(dia.horario)}</div>` : '';
+    const cortoTurno = dia.turno==='Libre' ? 'Lib' : (dia.turno==='Vacaciones' ? 'Vac' : dia.turno.substring(0,3));
+    return `<div class="dash-day" data-idx="${i}" style="${hoyStyle}">
+      <div style="font-size:10px;color:var(--text-2);margin-bottom:4px">${corto}${dia.es_regreso?' ↩':''}</div>
+      <span class="sc ${dia.turno||''}" style="font-size:10px;padding:5px 2px;min-width:auto;display:block;${scStyle}">${sinTurno?'?':cortoTurno}</span>
+      ${horarioLine}
+    </div>`;
+  }).join('');
+  tira.querySelectorAll('.dash-day').forEach(elDay=>{
+    elDay.onclick = ()=> toggleDashDetalle(parseInt(elDay.dataset.idx, 10));
+  });
+  document.getElementById('dash-semana-detalle').innerHTML = '';
+}
+
+function toggleDashDetalle(idx){
+  const cont = document.getElementById('dash-semana-detalle');
+  if(dashDetalleAbierto === idx){ dashDetalleAbierto = null; cont.innerHTML = ''; return; }
+  dashDetalleAbierto = idx;
+  const dia = dashData.semana.dias[idx];
+  if(!dia.turno){
+    cont.innerHTML = `<div style="padding:10px 14px;border-top:1px solid var(--border);color:var(--text-2);font-size:12.5px">${dia.dia}: sin horario generado todavía.</div>`;
+    return;
+  }
+  const companeros = DASH_LIBRE_LIKE.has(dia.turno) ? '—' : (dia.companeros.length ? dia.companeros.join(', ') : 'trabajas solo/a');
+  cont.innerHTML = `<div style="padding:12px 14px;border-top:1px solid var(--border)">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <strong style="font-size:13px">${dia.dia}</strong>
+      <span class="sc ${dia.turno}">${dia.turno}</span>
+      ${dia.es_regreso ? '<span class="badge" style="background:#EEF2FF;color:#3730A3">Vuelves de tus libres</span>' : ''}
+    </div>
+    ${!DASH_LIBRE_LIKE.has(dia.turno) ? `<div style="font-size:12.5px;color:var(--text-2)">Horario: ${dashHorarioTxt(dia.horario)}</div>` : ''}
+    <div style="font-size:12.5px;color:var(--text-2);margin-top:4px">Compañeros: ${companeros}</div>
+  </div>`;
+}
+
+// 3. MIS CONTADORES
+function renderDashContadores(){
+  const c = dashData.contadores;
+  document.getElementById('dash-contadores').innerHTML = `
+    <div class="stat"><div class="stat-lbl">Peticiones ${c.peticiones_mes.mes}</div><div class="stat-val">${c.peticiones_mes.usadas}/${c.peticiones_mes.total}</div></div>
+    <div class="stat"><div class="stat-lbl">Vacaciones restantes</div><div class="stat-val">${c.vacaciones.restantes}</div><div class="stat-sub">de ${c.vacaciones.dotacion} días ${c.vacaciones.año}</div></div>
+    <div class="stat"><div class="stat-lbl">Festivos trabajados</div><div class="stat-val">${c.festivos_trabajados_anio}</div><div class="stat-sub">este año</div></div>
+    <div class="stat"><div class="stat-lbl">Días LA pendientes</div><div class="stat-val">${c.la_saldo}</div><div class="stat-sub">${c.modalidad_compensacion==='cobrar'?'modalidad: cobrar':'modalidad: LA'}</div></div>`;
+}
+
+// 4. MIS PETICIONES
+function renderDashPeticiones(){
+  const p = dashData.peticiones;
+  document.getElementById('dash-peticiones-cupo').textContent =
+    `Cupo ${p.cupo.mes_actual.mes}: ${p.cupo.mes_actual.usadas}/${p.cupo.mes_actual.total} · ${p.cupo.mes_siguiente.mes}: ${p.cupo.mes_siguiente.usadas}/${p.cupo.mes_siguiente.total}`;
+  const lista = document.getElementById('dash-peticiones-lista');
+  if(!p.activas.length){
+    lista.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-2);font-size:12.5px">No tienes peticiones activas.</div>`;
+    return;
+  }
+  lista.innerHTML = p.activas.map(a=>`
+    <div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div>
+        <div style="font-size:12.5px;font-weight:500">${a.semana} — ${a.dias.join(', ')}</div>
+        <div style="font-size:11px;color:var(--text-2)">${a.origen==='empleado'?'Solicitada por ti':'Gestionada por el encargado'}${a.motivo?' · '+a.motivo:''}</div>
+      </div>
+      <button class="btn sm" onclick="cancelarPeticionDash('${a.semana}')">Cancelar</button>
+    </div>`).join('');
+}
+
+async function cancelarPeticionDash(semana){
+  if(!confirm('¿Cancelar esta petición?')) return;
+  const r = await api('DELETE', `/peticiones/${semana}/${encodeURIComponent(dashData.nombre)}?dept=${dashData.dept}`);
+  if(r.ok){ toast('Petición cancelada'); cargarDashboard(); }
+  else toast(r.error || 'Error al cancelar', 'err');
+}
+
+document.getElementById('dash-btn-nueva-peticion').onclick = ()=>{
+  document.getElementById('btn-add-pet').click();
+};
+
+// 5. MI HISTÓRICO — barras SVG a mano, sin librerías nuevas
+function renderDashHistorico(){
+  const periodo = document.getElementById('dash-periodo').value;
+  const h = dashData.historico[periodo];
+  const turnos  = ['Mañana','Tarde','Noche','Partido'];
+  const valores = turnos.map(t=>h.turnos[t]||0);
+  const max = Math.max(1, ...valores);
+  const W=300, H=130, padBottom=20, padTop=16, barW=46, gap=20;
+  const barsHTML = turnos.map((t,i)=>{
+    const v = valores[i];
+    const barH = Math.round((v/max) * (H-padBottom-padTop));
+    const x = gap + i*(barW+gap);
+    const y = H - padBottom - barH;
+    return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(barH,1)}" rx="4" style="fill:${DASH_COLOR[t]}"></rect>
+      <text x="${x+barW/2}" y="${Math.max(y-6,12)}" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">${v}</text>
+      <text x="${x+barW/2}" y="${H-5}" text-anchor="middle" font-size="10" fill="var(--text-2)">${t}</text>`;
+  }).join('');
+  const svg = document.getElementById('dash-chart');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = barsHTML;
+
+  document.getElementById('dash-historico-extra').innerHTML = `
+    <div class="stat"><div class="stat-lbl">Findes libres</div><div class="stat-val">${h.findes}</div></div>
+    <div class="stat"><div class="stat-lbl">Noches cubiertas</div><div class="stat-val">${h.noches}</div></div>
+    <div class="stat"><div class="stat-lbl">Festivos</div><div class="stat-val">${h.festivos}</div></div>`;
+}
+document.getElementById('dash-periodo').onchange = ()=>{ if(dashData) renderDashHistorico(); };
+
+// 5b. MI EQUIDAD — nunca muestra nombres ni datos de otros compañeros, solo
+// el propio dato y la media agregada del equipo (ver equidad_de en
+// estadisticas.py). Tono neutro y explicativo, nunca competitivo.
+const EQUIDAD_POSICION_TXT = {
+  en_media:   'Estás en la media del equipo.',
+  por_encima: 'Estás por encima de la media del equipo.',
+  por_debajo: 'Estás por debajo de la media del equipo.',
+};
+
+function _fmtEquidad(n, decimales=2){
+  return Number(n).toLocaleString('es-ES', {minimumFractionDigits:decimales, maximumFractionDigits:decimales});
+}
+
+function _equidadContadoresSinComparar(eq){
+  return `<div class="g3">
+    <div class="stat"><div class="stat-lbl">Findes libres</div><div class="stat-val">${eq.findes.propios}</div></div>
+    <div class="stat"><div class="stat-lbl">Noches cubiertas</div><div class="stat-val">${eq.noches.propias}</div></div>
+    <div class="stat"><div class="stat-lbl">Festivos trabajados</div><div class="stat-val">${eq.festivos.propios}</div></div>
+  </div>`;
+}
+
+function _renderEquidadBarra(lbl, valorMostrado, propio, media, posicion, texto){
+  const tope = Math.max(propio, media, 0.0001) * 1.25;
+  const pctPropio = Math.min(100, (propio / tope) * 100);
+  const pctMedia  = Math.min(100, (media  / tope) * 100);
+  return `<div class="equidad-metric">
+    <div class="equidad-metric-hd">
+      <span class="equidad-metric-lbl">${lbl}</span>
+      <span class="equidad-metric-val">${valorMostrado}</span>
+    </div>
+    <div class="equidad-bar-track">
+      <div class="equidad-bar-fill" style="width:${pctPropio}%"></div>
+      <div class="equidad-bar-media" style="left:${pctMedia}%" title="Media del equipo"></div>
+    </div>
+    <div class="equidad-metric-txt">${texto}</div>
+  </div>`;
+}
+
+function renderDashEquidad(){
+  const eq   = dashData.equidad;
+  const cont = document.getElementById('dash-equidad-body');
+  if(!eq){ cont.innerHTML = ''; return; }
+
+  if(eq.excluido_de_balanceo){
+    cont.innerHTML = `
+      <div class="alert info" style="margin-bottom:12px">
+        ℹ Tu categoría tiene funciones de cobertura fija y por eso no entra en el reparto
+        automático de equidad — aquí ves tus contadores, sin comparación con el equipo.
+      </div>
+      ${_equidadContadoresSinComparar(eq)}`;
+    return;
+  }
+
+  if(eq.datos_insuficientes){
+    cont.innerHTML = `
+      <div class="alert info" style="margin-bottom:12px">
+        ℹ Todavía no llevas suficientes semanas activas (menos de 4) para que la comparación con
+        el equipo sea representativa. De momento se muestran solo tus contadores.
+      </div>
+      ${_equidadContadoresSinComparar(eq)}`;
+    return;
+  }
+
+  const semanas = eq.findes.semanas;
+  const bloques = [
+    _renderEquidadBarra(
+      'Fines de semana libres', eq.findes.propios,
+      eq.findes.ratio, eq.findes.media_equipo, eq.findes.posicion,
+      `Llevas ${eq.findes.propios} fines de semana libres en ${semanas} semanas (${_fmtEquidad(eq.findes.ratio)}). `+
+      `La media del equipo es ${_fmtEquidad(eq.findes.media_equipo)}. ${EQUIDAD_POSICION_TXT[eq.findes.posicion]}`
+    ),
+    _renderEquidadBarra(
+      'Noches cubiertas', eq.noches.propias,
+      eq.noches.propias, eq.noches.media_equipo, eq.noches.posicion,
+      `Has cubierto ${eq.noches.propias} noches en tus últimas ${semanas} semanas activas. `+
+      `La media del equipo es ${_fmtEquidad(eq.noches.media_equipo)}. ${EQUIDAD_POSICION_TXT[eq.noches.posicion]}`
+    ),
+    _renderEquidadBarra(
+      'Festivos trabajados', eq.festivos.propios,
+      eq.festivos.propios, eq.festivos.media_equipo, eq.festivos.posicion,
+      `Has trabajado ${eq.festivos.propios} festivos en tus últimas ${semanas} semanas activas. `+
+      `La media del equipo es ${_fmtEquidad(eq.festivos.media_equipo)}. ${EQUIDAD_POSICION_TXT[eq.festivos.posicion]}`
+    ),
+  ];
+
+  cont.innerHTML = bloques.join('') + `
+    <div class="alert info" style="margin-top:2px;font-size:11.5px">
+      ℹ El reparto se hace de forma proporcional al tiempo trabajado por cada persona, no en
+      cifras absolutas. Las diferencias pequeñas son normales — no todas las semanas permiten un
+      reparto exacto — y el sistema tiende a compensarlas en las semanas siguientes.
+    </div>`;
+}
+
+// 6. EXPORTAR .ICS
+document.getElementById('dash-btn-ics').onclick = ()=>{
+  window.location.href = '/api/dashboard/ics';
+};
+
 async function cargarHorarioSemana(){
   const semana = isoDate(getMonday(weekOffset));
   updateGenerarState();
@@ -870,7 +1463,7 @@ async function cargarHorarioSemana(){
   if(!r.ok){ showAlert('err', r.error); return; }
   if(!r.data.existe){
     lastSchedule = null; lastStaff = null; lastFestivos = []; lastAdvertencias = [];
-    renderSchedule({staff:[], schedule:{}, festivos:[], advertencias:[]});
+    renderSchedule({staff:[], schedule:{}, festivos:[], advertencias:[], dept: currentDept});
     showAlert('info', semanaBloqueadaParaGenerar(weekOffset)
       ? 'Esta semana pasó sin generarse y quedó fija. Solo un administrador puede generarla.'
       : 'Aún no se ha generado el horario de esta semana. Pulsa "Generar".');
@@ -882,7 +1475,7 @@ async function cargarHorarioSemana(){
   lastAdvertencias = r.data.advertencias||[];
   renderSchedule(r.data);
   if(r.data.advertencias.length)
-    showAlert('warn','Advertencias: '+r.data.advertencias.join(' · '));
+    showAlert('warn',`${r.data.advertencias.length} advertencia(s) en el horario — celdas resaltadas, detalle debajo de la parrilla.`);
   else
     showAlert('ok', isPastWeek(weekOffset) ? 'Horario fijo de esta semana.' : 'Horario vigente de esta semana.');
 }
@@ -908,19 +1501,43 @@ document.getElementById('btn-generar').onclick = async ()=>{
   lastAdvertencias = r.data.advertencias||[];
   renderSchedule(r.data);
   if(r.data.advertencias.length)
-    showAlert('warn','Advertencias: '+r.data.advertencias.join(' · '));
+    showAlert('warn',`${r.data.advertencias.length} advertencia(s) en el horario — celdas resaltadas, detalle debajo de la parrilla.`);
   else
     showAlert('ok','Horario generado correctamente — sin infracciones.');
 };
 
 document.getElementById('btn-exportar').onclick = async ()=>{
+  // No se usa api() aquí: esa función asume una respuesta JSON, pero este
+  // endpoint devuelve el .xlsx binario directamente para descargar.
   const btn = document.getElementById('btn-exportar');
   btn.textContent = '↓ Exportando...'; btn.disabled=true;
   const semana = isoDate(getMonday(weekOffset));
-  const r = await api('POST','/horario/exportar',{semana, dept: currentDept});
-  btn.textContent = '↓ Excel'; btn.disabled=false;
-  if(r.ok) toast('Excel guardado en la carpeta del proyecto');
-  else toast(r.error,'err');
+  try{
+    const resp = await fetch('/api/horario/exportar', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({semana, dept: currentDept}),
+    });
+    if(!resp.ok){
+      const d = await resp.json().catch(()=>({}));
+      if(d.login){ showLogin(); return; }
+      toast(d.error || 'Error al exportar', 'err');
+      return;
+    }
+    const disposition = resp.headers.get('Content-Disposition') || '';
+    const nombre = disposition.match(/filename="?([^"]+)"?/)?.[1] || `horario_${semana}.xlsx`;
+    const blob = await resp.blob();
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = nombre;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast('Excel descargado');
+  } catch(e){
+    toast('Error de red al exportar', 'err');
+  } finally {
+    btn.textContent = '↓ Excel'; btn.disabled=false;
+  }
 };
 
 // La semana vigente y futuras: encargado y admin pueden editar turnos a mano.
@@ -937,25 +1554,33 @@ function abrirEditorTurno(span){
   const dia    = Number(span.dataset.day);
   const actual = span.dataset.value;
 
+  // "Vacaciones" es solo una etiqueta de presentación sobre "Libre": al
+  // editar el turno, el valor interno real de esa celda sigue siendo "Libre".
+  const actualInterno = actual === 'Vacaciones' ? 'Libre' : actual;
   const sel = document.createElement('select');
   sel.className = 'sc-edit-sel';
   TURNOS_EDITABLES.forEach(t=>{
     const opt = document.createElement('option');
     opt.value = t; opt.textContent = t;
-    if(t === actual) opt.selected = true;
+    if(t === actualInterno) opt.selected = true;
     sel.appendChild(opt);
   });
   sel.onclick = e => e.stopPropagation();
-  const cerrar = ()=> renderSchedule({staff:lastStaff||[], schedule:lastSchedule||{}, festivos:lastFestivos, advertencias:lastAdvertencias});
+  const cerrar = ()=> renderSchedule({staff:lastStaff||[], schedule:lastSchedule||{}, festivos:lastFestivos, advertencias:lastAdvertencias, dept: currentDept});
   sel.onblur = cerrar;
   sel.onchange = async ()=>{
     const turno  = sel.value;
+    if(turno === actualInterno){ cerrar(); return; }  // sin cambio real, no pedir justificación
+    // Justificación obligatoria de la intervención manual: un único paso
+    // (prompt nativo), sin abrir un modal aparte para no añadir fricción.
+    const justificacion = (prompt(`Justificación para cambiar el turno de ${nombre} (mínimo 5 caracteres):`) || '').trim();
+    if(justificacion.length < 5){ toast('Edición cancelada: falta justificación (mínimo 5 caracteres)','err'); cerrar(); return; }
     const semana = isoDate(getMonday(weekOffset));
-    const r = await api('PUT','/horario/turno',{dept: currentDept, semana, nombre, dia_idx: dia, turno});
+    const r = await api('PUT','/horario/turno',{dept: currentDept, semana, nombre, dia_idx: dia, turno, justificacion});
     if(!r.ok){ toast(r.error,'err'); cerrar(); return; }
     lastSchedule    = r.data.schedule;
     lastAdvertencias = r.data.advertencias||[];
-    renderSchedule({staff:lastStaff, schedule:lastSchedule, festivos:lastFestivos, advertencias:lastAdvertencias});
+    renderSchedule({staff:lastStaff, schedule:lastSchedule, festivos:lastFestivos, advertencias:lastAdvertencias, dept: currentDept});
     toast(`Turno de ${nombre} actualizado`);
   };
   span.replaceWith(sel);
@@ -963,8 +1588,17 @@ function abrirEditorTurno(span){
 }
 
 function renderSchedule(data){
+  // Dept del dato que se está pintando, no una variable global que puede
+  // haber cambiado entre la petición y el render (ver etiquetaRol arriba).
+  const dept = data.dept || currentDept;
   const dates = weekDates(weekOffset);
   const festDates = new Set((data.festivos||[]).map(f=>f.fecha));
+  const advertencias = data.advertencias||[];
+  // Set de "nombre|dia_idx" con todas las celdas en conflicto, de todas las
+  // advertencias, para poder resaltarlas de un vistazo en la parrilla.
+  const celdasConflicto = new Set(
+    advertencias.flatMap(a => (a.celdas||[]).map(c => `${c.nombre}|${c.dia_idx}`))
+  );
 
   const head = document.getElementById('schedule-head');
   head.innerHTML = '<th class="nl">Empleado</th>';
@@ -984,12 +1618,13 @@ function renderSchedule(data){
     let html = `<td class="nl"><div style="display:flex;align-items:center;gap:8px">
       <div class="avatar" style="width:28px;height:28px;font-size:10px">${initials(p.name)}</div>
       <div><div style="font-size:12.5px;font-weight:500">${p.name}</div>
-      <div style="font-size:10px;color:var(--text-2)">${ROLES[p.role]||p.role}</div></div></div></td>`;
+      <div style="font-size:10px;color:var(--text-2)">${etiquetaRol(dept, p.role)}</div></div></div></td>`;
     const editable = puedeEditarTurnos();
     shifts.forEach((s,i)=>{
       const iso = isoDate(dates[i]);
-      const fest = festDates.has(iso) && s!=='Libre';
-      const cls = `sc ${s}${fest?' fest':''}${editable?' editable':''}`;
+      const fest = festDates.has(iso) && s!=='Libre' && s!=='Vacaciones';
+      const conflicto = celdasConflicto.has(`${p.name}|${i}`);
+      const cls = `sc ${s}${fest?' fest':''}${conflicto?' celda-conflicto':''}${editable?' editable':''}`;
       html += editable
         ? `<td><span class="${cls}" data-name="${p.name}" data-day="${i}" data-value="${s}" onclick="abrirEditorTurno(this)">${s}</span></td>`
         : `<td><span class="${cls}">${s}</span></td>`;
@@ -1003,8 +1638,14 @@ function renderSchedule(data){
   stats.innerHTML = `
     <div class="stat"><div class="stat-lbl">Empleados</div><div class="stat-val">${total}</div></div>
     <div class="stat"><div class="stat-lbl">Festivos semana</div><div class="stat-val">${(data.festivos||[]).length}</div></div>
-    <div class="stat"><div class="stat-lbl">Advertencias</div><div class="stat-val">${(data.advertencias||[]).length}</div><div class="stat-sub">${(data.advertencias||[]).length===0?'Todo correcto':''}</div></div>
+    <div class="stat"><div class="stat-lbl">Advertencias</div><div class="stat-val">${advertencias.length}</div><div class="stat-sub">${advertencias.length===0?'Todo correcto':''}</div></div>
     <div class="stat"><div class="stat-lbl">Semana</div><div class="stat-val">${weekOffset===0?'Actual':weekOffset>0?'+'+weekOffset:weekOffset}</div><div class="stat-sub">${isoDate(getMonday(weekOffset))}</div></div>`;
+
+  // Lista de advertencias bajo la parrilla: sin bloque si no hay ninguna,
+  // para no meter ruido visual en el caso normal (sin conflictos).
+  document.getElementById('horario-advertencias-lista').innerHTML = advertencias.length
+    ? `<ul class="advertencias-lista">${advertencias.map(a=>`<li>${a.mensaje}</li>`).join('')}</ul>`
+    : '';
 }
 
 function showAlert(type, msg){
@@ -1025,7 +1666,7 @@ async function loadEmpleados(){
       <div class="avatar" style="width:34px;height:34px;font-size:12px">${initials(e.name)}</div>
       <div style="flex:1">
         <div style="font-size:13.5px;font-weight:500">${e.name}</div>
-        <div style="font-size:11px;color:var(--text-2)">${(ROLES_BY_DEPT[currentDept]||ROLES_BY_DEPT.recepcion).find(x=>x.v===e.role)?.l||e.role}</div>
+        <div style="font-size:11px;color:var(--text-2)">${etiquetaRol(currentDept, e.role)}</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">
           ${(e.preferences||[]).map(p=>`<span class="badge ${p}">${p}</span>`).join('')}
           <span class="tag">${COMP[e.comp]||e.comp}</span>
@@ -1041,7 +1682,7 @@ document.getElementById('btn-add-emp').onclick = ()=>{
   editEmpIdx = null;
   document.getElementById('m-emp-title').textContent = 'Añadir empleado';
   document.getElementById('m-name').value='';
-  const roles = ROLES_BY_DEPT[currentDept] || ROLES_BY_DEPT.recepcion;
+  const roles = ROLES_BY_DEPT[currentDept] || [];  // nunca caer a otro dept: mismo id, distinto label
   document.getElementById('m-role').innerHTML = roles.map(r=>`<option value="${r.v}">${r.l}</option>`).join('');
   document.getElementById('m-comp').value='cobrar';
   document.querySelectorAll('#m-prefs .pill').forEach(p=>p.classList.remove('on'));
@@ -1054,7 +1695,7 @@ function openEditEmp(i){
   const e = staffCache[i];
   document.getElementById('m-emp-title').textContent = 'Editar empleado';
   document.getElementById('m-name').value = e.name;
-  const roles = ROLES_BY_DEPT[currentDept] || ROLES_BY_DEPT.recepcion;
+  const roles = ROLES_BY_DEPT[currentDept] || [];  // nunca caer a otro dept: mismo id, distinto label
   document.getElementById('m-role').innerHTML = roles.map(r=>`<option value="${r.v}" ${e.role===r.v?'selected':''}>${r.l}</option>`).join('');
   document.getElementById('m-comp').value = e.comp||'cobrar';
   document.querySelectorAll('#m-prefs .pill').forEach(p=>{
@@ -1117,12 +1758,38 @@ async function loadCategorias(){
           ${c.dias_libres_fijos ? ' · Libra: '+c.dias_libres_fijos.map(d=>DAYS[d].substring(0,3)).join('+') : ''}
           ${c.sin_noches ? ' · Sin noches' : ''}
           ${c.unico ? ' · Única persona' : ''}
+          ${c.cubre_ausencia_de ? ' · Cubre a: '+(r.data[c.cubre_ausencia_de]?.label||c.cubre_ausencia_de)+(c.cobertura_semana_completa?' (semana completa)':'') : ''}
+          ${c.excluir_de_equidad ? ' · Excluida de equidad' : ''}
           · En uso: ${c.en_uso}
         </div>
       </div>
       <span style="color:var(--text-3)">›</span>
     </div>`).join('');
 }
+
+// Rellena el desplegable "Cubre la ausencia del rol" con las categorías del
+// departamento actual, excluyendo la propia (un rol no puede cubrirse a sí
+// mismo — ver validar_rol en herramientas.py).
+function _poblarCubreRolSelect(excluirId){
+  const sel = document.getElementById('m-cat-cubre-rol');
+  const roles = rolesCache[currentDept] || {};
+  sel.innerHTML = '<option value="">— ninguno —</option>' +
+    Object.entries(roles)
+      .filter(([id])=> id !== excluirId)
+      .map(([id,c])=>`<option value="${id}">${c.label}</option>`).join('');
+}
+
+function _actualizarCoberturaTotalWrap(){
+  const tieneRol = !!document.getElementById('m-cat-cubre-rol').value;
+  document.getElementById('m-cat-cobertura-total-wrap').style.display = tieneRol ? '' : 'none';
+  document.getElementById('m-cat-libres-fijos-wrap').style.display = tieneRol ? '' : 'none';
+  if(!tieneRol){
+    document.getElementById('m-cat-cobertura-total').checked = false;
+    document.getElementById('m-cat-libres-fijos').checked = false;
+  }
+}
+
+document.getElementById('m-cat-cubre-rol').onchange = _actualizarCoberturaTotalWrap;
 
 function _resetCatModal(){
   const idInput = document.getElementById('m-cat-id');
@@ -1135,6 +1802,13 @@ function _resetCatModal(){
   document.getElementById('m-cat-sustituto-wrap').style.display = 'none';
   document.getElementById('m-cat-sin-noches').checked = false;
   document.getElementById('m-cat-unico').checked = false;
+  _poblarCubreRolSelect(editCatId);
+  document.getElementById('m-cat-cubre-rol').value = '';
+  document.getElementById('m-cat-cobertura-total').checked = false;
+  document.getElementById('m-cat-cobertura-total-wrap').style.display = 'none';
+  document.getElementById('m-cat-libres-fijos').checked = false;
+  document.getElementById('m-cat-libres-fijos-wrap').style.display = 'none';
+  document.getElementById('m-cat-excluir-equidad').checked = false;
   document.getElementById('m-cat-protegido-alert').style.display = 'none';
   document.getElementById('btn-delete-cat').style.display = 'none';
 }
@@ -1161,6 +1835,11 @@ function openEditCat(id){
   });
   document.getElementById('m-cat-sin-noches').checked = !!c.sin_noches;
   document.getElementById('m-cat-unico').checked = !!c.unico;
+  document.getElementById('m-cat-cubre-rol').value = c.cubre_ausencia_de || '';
+  document.getElementById('m-cat-cobertura-total').checked = !!c.cobertura_semana_completa;
+  document.getElementById('m-cat-libres-fijos').checked = !!c.cubrir_dias_libres_fijos;
+  document.getElementById('m-cat-excluir-equidad').checked = !!c.excluir_de_equidad;
+  _actualizarCoberturaTotalWrap();
 
   if(id === 'night_fixed'){
     document.getElementById('m-cat-turno').disabled = true;
@@ -1240,6 +1919,10 @@ document.getElementById('btn-save-cat').onclick = async ()=>{
     dias_libres_fijos: diasFijos,
     sin_noches: document.getElementById('m-cat-sin-noches').checked,
     unico: document.getElementById('m-cat-unico').checked,
+    cubre_ausencia_de: document.getElementById('m-cat-cubre-rol').value || null,
+    cobertura_semana_completa: document.getElementById('m-cat-cobertura-total').checked,
+    cubrir_dias_libres_fijos: document.getElementById('m-cat-libres-fijos').checked,
+    excluir_de_equidad: document.getElementById('m-cat-excluir-equidad').checked,
   };
 
   const r = editCatId === null
@@ -1322,7 +2005,7 @@ async function loadCompensaciones(){
         <div class="avatar" style="width:30px;height:30px;font-size:10px">${initials(e.nombre)}</div>
         <div style="flex:1">
           <div style="font-size:13.5px;font-weight:500">${e.nombre}</div>
-          <div style="font-size:11px;color:var(--text-2)">${ROLES[e.role]||''} · ${COMP[e.modalidad]||e.modalidad}</div>
+          <div style="font-size:11px;color:var(--text-2)">${etiquetaRol(currentDept, e.role)} · ${COMP[e.modalidad]||e.modalidad}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           ${e.la_saldo>0?`<span class="badge" style="background:#EEF2FF;color:#3730A3">LA: ${e.la_saldo}</span>`:'<span style="font-size:12px;color:var(--text-3)">Sin LA</span>'}
@@ -1489,8 +2172,8 @@ async function previewSemana(semana){
   const titulo = `${d.toLocaleDateString('es-ES',{day:'2-digit',month:'short'})} – ${fin.toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'})}`;
 
   const cols = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-  const shiftColors = {Mañana:'var(--mañana)',Tarde:'var(--tarde)',Noche:'var(--noche)',Partido:'var(--partido)',Libre:'var(--libre)'};
-  const shiftText = {Mañana:'var(--mañana-t)',Tarde:'var(--tarde-t)',Noche:'var(--noche-t)',Partido:'var(--partido-t)',Libre:'var(--libre-t)'};
+  const shiftColors = {Mañana:'var(--mañana)',Tarde:'var(--tarde)',Noche:'var(--noche)',Partido:'var(--partido)',Libre:'var(--libre)',Vacaciones:'var(--vacaciones)'};
+  const shiftText = {Mañana:'var(--mañana-t)',Tarde:'var(--tarde-t)',Noche:'var(--noche-t)',Partido:'var(--partido-t)',Libre:'var(--libre-t)',Vacaciones:'var(--vacaciones-t)'};
 
   const headerCells = cols.map(c=>`<th style="padding:6px 8px;font-size:11px;font-weight:500;color:var(--text-2);border-bottom:1px solid var(--border);text-align:center">${c}</th>`).join('');
   const rows = (entrada.staff||[]).map(p=>{
@@ -1752,13 +2435,20 @@ function initPetModal(){
     const semana = document.getElementById('m-pet-week').value;
     const dias = [...document.querySelectorAll('#m-pet-dias .pill.on')].map(p=>p.dataset.v);
     const motivo = document.getElementById('m-pet-motivo').value.trim();
+    const esOrigenJefe = currentUser?.rol !== 'empleado';
+    const justificacion = document.getElementById('m-pet-justif').value.trim();
     if(!semana){ toast('Selecciona una semana','err'); return; }
     if(!dias.length){ toast('Selecciona al menos un día','err'); return; }
-    const r = await api('POST','/peticiones',{nombre, semana, dias, motivo: motivo||null, dept: currentDept});
+    if(esOrigenJefe && justificacion.length < 5){
+      toast('La justificación es obligatoria (mínimo 5 caracteres) al crear una petición en nombre de otro empleado','err');
+      return;
+    }
+    const r = await api('POST','/peticiones',{nombre, semana, dias, motivo: motivo||null, justificacion, dept: currentDept});
     if(!r.ok){ toast(r.error,'err'); return; }
     closeModal('modal-pet');
     toast('Petición guardada');
     loadPeticiones();
+    if(document.getElementById('sec-dashboard').classList.contains('active')) cargarDashboard();
   };
 }
 
@@ -1778,6 +2468,9 @@ document.getElementById('btn-add-pet').onclick = async ()=>{
     const r = await api('GET',`/plantilla?dept=${currentDept}`);
     sel.innerHTML = (r.data||[]).map(e=>`<option>${e.name}</option>`).join('');
   }
+  // Justificación obligatoria solo cuando la petición no es propia (origen "jefe").
+  document.getElementById('m-pet-justif-row').style.display = isEmpleado ? 'none' : '';
+  document.getElementById('m-pet-justif').value = '';
   document.getElementById('m-pet-week').value = isoDate(getMonday(petWeekOffset));
   document.querySelectorAll('#m-pet-dias .pill').forEach(p=>p.classList.remove('on'));
   document.getElementById('m-pet-motivo').value = '';
@@ -1973,18 +2666,20 @@ async function showApp(user){
   document.querySelectorAll('.admin-only').forEach(el=>{
     el.style.display = user.rol==='admin' ? '' : 'none';
   });
+  document.querySelectorAll('.empleado-only').forEach(el=>{
+    el.style.display = user.rol==='empleado' ? '' : 'none';
+  });
 
   applyNavPermissions();
   updateWeekLabel();
-  if(document.querySelector('.nav-item.active')?.dataset.sec === 'horario'){
-    document.getElementById('topbar-right').style.display = 'flex';
-    cargarHorarioSemana();
-  }
+  // Página de aterrizaje según rol: el empleado entra directo a su panel
+  // personal; jefe/encargado/admin mantienen el horario semanal de siempre.
+  irASeccion(user.rol === 'empleado' ? 'dashboard' : 'horario');
 }
 
 function applyNavPermissions(){
   if(currentUser?.rol === 'empleado'){
-    const allowed = ['horario','peticiones'];
+    const allowed = ['dashboard','horario','peticiones'];
     document.querySelectorAll('.nav-item[data-sec]').forEach(el=>{
       el.style.display = allowed.includes(el.dataset.sec) ? '' : 'none';
     });
@@ -2171,39 +2866,305 @@ async function loadLog(){
   }).join('');
 }
 
-// ── NAVIGATION ──────────────────────────────────────────────────────
-document.querySelectorAll('.nav-item[data-sec]').forEach(el=>{
-  el.addEventListener('click',()=>{
-    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-    el.classList.add('active');
-    const sec = el.dataset.sec;
-    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-    document.getElementById('sec-'+sec).classList.add('active');
-    const [t,s]=SECS[sec]||['',''];
-    document.getElementById('topbar-title').textContent = t;
-    document.getElementById('topbar-sub').textContent = s;
-    document.getElementById('topbar-right').style.display = sec==='horario'?'flex':'none';
-    if(sec==='horario'){ updateWeekLabel(); cargarHorarioSemana(); }
-    if(sec==='empleados')loadEmpleados();
-    if(sec==='categorias')loadCategorias();
-    if(sec==='festivos')loadFestivos();
-    if(sec==='compensaciones')loadCompensaciones();
-    if(sec==='peticiones'){
-      petWeekOffset=0;updatePetWeekLabel();
-      document.getElementById('btn-add-pet').textContent =
-        currentUser?.rol==='empleado' ? '+ Solicitar día libre' : '+ Nueva petición';
-      loadPeticiones();
-      loadCuposPanelManager();
-    }
-    if(sec==='vacaciones')loadVacaciones();
-    if(sec==='estadisticas')loadEstadisticas();
-    if(sec==='historial')loadHistorial();
-    if(sec==='asistente')setupAsistente();
-    if(sec==='usuarios')loadUsuarios();
-    if(sec==='log')loadLog();
-    if(sec==='temporadas')loadTemporadas();
+// ── AUDITORÍA DE INTERVENCIONES (solo admin) ─────────────────────────────
+let auditoriaData = null;
+let audSortCol = 'peticiones_origen_jefe';
+let audSortAsc = false;
+
+const AUD_COLUMNAS = [
+  {key:'empleado', label:'Empleado'},
+  {key:'ediciones_turno_favorables', label:'Favorables'},
+  {key:'ediciones_turno_desfavorables', label:'Desfavorables'},
+  {key:'ediciones_turno_neutras', label:'Neutras'},
+  {key:'ediciones_en_finde', label:'En finde'},
+  {key:'peticiones_origen_jefe', label:'Peticiones jefe'},
+  {key:'cupo_extra_total_otorgado', label:'Cupo extra'},
+  {key:'cambios_de_rol', label:'Cambios de rol'},
+];
+
+const AUD_TOTALES_LABEL = {
+  ediciones_turno_favorables:'Ediciones favorables', ediciones_turno_desfavorables:'Ediciones desfavorables',
+  ediciones_turno_neutras:'Ediciones neutras', ediciones_en_finde:'Ediciones en finde',
+  peticiones_origen_jefe:'Peticiones origen jefe', cupo_extra_total_otorgado:'Cupo extra otorgado',
+  cambios_de_rol:'Cambios de rol',
+};
+
+const AUD_TIPO_LABEL = {
+  edicion_turno:'Edición de turno', peticion_jefe:'Petición (origen jefe)',
+  cupo_extra:'Cupo extra', cambio_rol_plantilla:'Cambio de rol',
+};
+
+// Campos sobre los que se calcula la desviación respecto a la media del
+// equipo (señal de atención, no una acusación — ver nota en la interfaz).
+const AUD_CAMPOS_DESVIACION = ['peticiones_origen_jefe', 'ediciones_turno_favorables'];
+
+function _mediaCampo(filas, campo){
+  if(!filas.length) return 0;
+  return filas.reduce((s,f)=>s+f[campo], 0) / filas.length;
+}
+
+async function loadAuditoria(){
+  const desdeEl = document.getElementById('aud-desde');
+  const hastaEl = document.getElementById('aud-hasta');
+  if(!desdeEl.value){
+    const hoy = new Date();
+    const hace3m = new Date(hoy); hace3m.setMonth(hace3m.getMonth() - 3);
+    desdeEl.value = isoDate(hace3m);
+    hastaEl.value = isoDate(hoy);
+  }
+  if(!document.getElementById('aud-dept').value || document.getElementById('aud-dept').dataset.tocado !== '1'){
+    document.getElementById('aud-dept').value = currentDept;
+  }
+  const params = new URLSearchParams({
+    dept: document.getElementById('aud-dept').value,
+    desde: desdeEl.value, hasta: hastaEl.value,
   });
+  const r = await api('GET', `/auditoria/intervenciones?${params}`);
+  if(!r.ok){ toast(r.error, 'err'); return; }
+  auditoriaData = r.data;
+  renderAuditoriaTotales();
+  renderAuditoriaResumen();
+  renderAuditoriaCharts();
+  renderAuditoriaDetalle();
+}
+
+document.getElementById('aud-dept').addEventListener('change', e=>{ e.target.dataset.tocado = '1'; });
+
+function renderAuditoriaTotales(){
+  const t = auditoriaData.totales_periodo;
+  document.getElementById('aud-totales').innerHTML = Object.entries(AUD_TOTALES_LABEL).map(([k,l])=>
+    `<div class="stat"><div class="stat-lbl">${l}</div><div class="stat-val">${t[k]}</div></div>`
+  ).join('');
+}
+
+function renderAuditoriaResumen(){
+  const filas = [...auditoriaData.resumen_por_empleado];
+  const medias = {};
+  AUD_CAMPOS_DESVIACION.forEach(c => medias[c] = _mediaCampo(filas, c));
+
+  filas.sort((a,b)=>{
+    const va = a[audSortCol], vb = b[audSortCol];
+    if(typeof va === 'string') return audSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return audSortAsc ? va - vb : vb - va;
+  });
+
+  document.getElementById('aud-resumen-head').innerHTML = AUD_COLUMNAS.map(c=>
+    `<th style="cursor:pointer;text-align:${c.key==='empleado'?'left':'center'};${c.key==='empleado'?'padding-left:12px':''}" onclick="ordenarAuditoria('${c.key}')">
+      ${c.label}${audSortCol===c.key ? (audSortAsc?' ▲':' ▼') : ''}
+    </th>`
+  ).join('');
+
+  const tbody = document.getElementById('aud-resumen-body');
+  if(!filas.length){
+    tbody.innerHTML = `<tr><td colspan="${AUD_COLUMNAS.length}" style="padding:16px;color:var(--text-2)">Sin empleados en este departamento.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filas.map(f=>{
+    const desviado = AUD_CAMPOS_DESVIACION.some(c => medias[c] > 0 && f[c] > medias[c] * 2);
+    return `<tr style="${desviado?'background:#FFFBEB':''}">
+      <td style="padding:7px 12px;font-weight:500">${f.empleado}${desviado?' <span title="Desviación respecto a la media del equipo">⚠</span>':''}</td>
+      <td style="text-align:center">${f.ediciones_turno_favorables}</td>
+      <td style="text-align:center">${f.ediciones_turno_desfavorables}</td>
+      <td style="text-align:center">${f.ediciones_turno_neutras}</td>
+      <td style="text-align:center">${f.ediciones_en_finde}</td>
+      <td style="text-align:center">${f.peticiones_origen_jefe}</td>
+      <td style="text-align:center">${f.cupo_extra_total_otorgado}</td>
+      <td style="text-align:center">${f.cambios_de_rol}</td>
+    </tr>`;
+  }).join('');
+}
+
+function ordenarAuditoria(col){
+  if(audSortCol === col) audSortAsc = !audSortAsc;
+  else { audSortCol = col; audSortAsc = false; }
+  renderAuditoriaResumen();
+}
+
+// ── GRÁFICOS COMPARATIVOS (barras SVG a mano, mismo enfoque que dash-chart) ──
+// Colores fríos neutros (--aud-fav/--aud-desfav/--aud-jefe): nunca rojo de
+// alarma ni verde de aprobación, para no inducir una lectura de
+// "culpable/inocente" — ver nota fija bajo cada gráfico en el HTML.
+
+function _nombreCortoAuditoria(nombre){
+  if(window.innerWidth > 480 || nombre.length <= 10) return nombre;
+  return nombre.slice(0, 9) + '…';
+}
+
+function renderAuditoriaCharts(){
+  const filas = auditoriaData.resumen_por_empleado || [];
+  const hayIntervenciones = (auditoriaData.detalle || []).length > 0;
+
+  document.getElementById('aud-chart-divergente').style.display   = hayIntervenciones ? '' : 'none';
+  document.getElementById('aud-chart-divergente-empty').style.display = hayIntervenciones ? 'none' : '';
+  document.getElementById('aud-chart-peticiones').style.display   = hayIntervenciones ? '' : 'none';
+  document.getElementById('aud-chart-peticiones-empty').style.display = hayIntervenciones ? 'none' : '';
+  if(!hayIntervenciones) return;
+
+  renderAuditoriaChartDivergente(filas);
+  renderAuditoriaChartPeticiones(filas);
+}
+
+function renderAuditoriaChartDivergente(filas){
+  const ref = (auditoriaData.totales_periodo.referencia_equipo || {});
+  const mediaFav  = ref.tasa_favorables?.media    || 0;
+  const mediaDesf = ref.tasa_desfavorables?.media || 0;
+
+  const ordenadas = [...filas].sort((a,b)=> b.tasa_favorables - a.tasa_favorables);
+  const rowH = 30, gap = 6, padTop = 32, padBottom = 8, nameW = 96, rightPad = 16;
+  const W = 640;
+  const chartL = nameW, chartR = W - rightPad;
+  const centerX = chartL + (chartR - chartL) / 2;
+  const halfW   = (chartR - chartL) / 2 - 6;
+  const maxMag  = Math.max(0.05, mediaFav, mediaDesf,
+    ...ordenadas.flatMap(f=>[f.tasa_favorables, f.tasa_desfavorables]));
+  const H = padTop + ordenadas.length * (rowH + gap) + padBottom;
+
+  const mediaFavX  = centerX + (mediaFav  / maxMag) * halfW;
+  const mediaDesfX = centerX - (mediaDesf / maxMag) * halfW;
+
+  const filasSvg = ordenadas.map((f,i)=>{
+    const y = padTop + i * (rowH + gap);
+    const insuf = f.semanas_presentes < 4;
+    const favW  = (f.tasa_favorables    / maxMag) * halfW;
+    const desfW = (f.tasa_desfavorables / maxMag) * halfW;
+    return `<g opacity="${insuf ? 0.4 : 1}">
+      <text x="${nameW-8}" y="${y+rowH/2+4}" text-anchor="end" font-size="11" fill="var(--text)">${_nombreCortoAuditoria(f.empleado)}</text>
+      ${insuf ? `<text x="${nameW-8}" y="${y+rowH/2+16}" text-anchor="end" font-size="8.5" fill="var(--text-3)">muestra insuficiente</text>` : ''}
+      <rect x="${centerX}" y="${y}" width="${Math.max(favW,0)}" height="${rowH}" rx="3" style="fill:var(--aud-fav)">
+        <title>${f.empleado}: ${f.ediciones_turno_favorables} favorables (tasa ${f.tasa_favorables.toFixed(2)}/semana, ${f.semanas_presentes} semanas presente)</title>
+      </rect>
+      <rect x="${centerX-desfW}" y="${y}" width="${Math.max(desfW,0)}" height="${rowH}" rx="3" style="fill:var(--aud-desfav)">
+        <title>${f.empleado}: ${f.ediciones_turno_desfavorables} desfavorables (tasa ${f.tasa_desfavorables.toFixed(2)}/semana, ${f.semanas_presentes} semanas presente)</title>
+      </rect>
+      ${favW>2 ? `<text x="${centerX+favW+4}" y="${y+rowH/2+4}" font-size="10" fill="var(--text-2)">${f.ediciones_turno_favorables}</text>` : ''}
+      ${desfW>2 ? `<text x="${centerX-desfW-4}" y="${y+rowH/2+4}" text-anchor="end" font-size="10" fill="var(--text-2)">${f.ediciones_turno_desfavorables}</text>` : ''}
+    </g>`;
+  }).join('');
+
+  const leyenda = `<g font-size="10.5">
+    <rect x="${chartL}" y="4" width="10" height="10" rx="2" style="fill:var(--aud-fav)"></rect>
+    <text x="${chartL+14}" y="13" fill="var(--text-2)">Favorables</text>
+    <rect x="${chartL+92}" y="4" width="10" height="10" rx="2" style="fill:var(--aud-desfav)"></rect>
+    <text x="${chartL+106}" y="13" fill="var(--text-2)">Desfavorables</text>
+  </g>`;
+
+  const lineas = `
+    <line x1="${centerX}" y1="${padTop-4}" x2="${centerX}" y2="${H-padBottom}" stroke="var(--border-strong)" stroke-width="1"></line>
+    <line x1="${mediaFavX}" y1="${padTop-4}" x2="${mediaFavX}" y2="${H-padBottom}" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3,3"></line>
+    <text x="${mediaFavX}" y="${padTop-8}" text-anchor="middle" font-size="8.5" fill="var(--text-3)">media del equipo</text>
+    <line x1="${mediaDesfX}" y1="${padTop-4}" x2="${mediaDesfX}" y2="${H-padBottom}" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3,3"></line>
+    <text x="${mediaDesfX}" y="${padTop-8}" text-anchor="middle" font-size="8.5" fill="var(--text-3)">media del equipo</text>`;
+
+  const svg = document.getElementById('aud-chart-divergente');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('height', H);
+  svg.innerHTML = leyenda + lineas + filasSvg;
+}
+
+function renderAuditoriaChartPeticiones(filas){
+  const ref    = (auditoriaData.totales_periodo.referencia_equipo || {});
+  const media  = ref.tasa_peticiones_jefe?.media || 0;
+
+  const ordenadas = [...filas].sort((a,b)=> b.tasa_peticiones_jefe - a.tasa_peticiones_jefe);
+  const rowH = 26, gap = 6, padTop = 16, padBottom = 8, nameW = 96, rightPad = 44;
+  const W = 640;
+  const barL = nameW, barR = W - rightPad;
+  const maxTasa = Math.max(0.05, media, ...ordenadas.map(f=>f.tasa_peticiones_jefe));
+  const H = padTop + ordenadas.length * (rowH + gap) + padBottom;
+  const mediaX = barL + (media / maxTasa) * (barR - barL);
+
+  const filasSvg = ordenadas.map((f,i)=>{
+    const y = padTop + i * (rowH + gap);
+    const insuf = f.semanas_presentes < 4;
+    const w = (f.tasa_peticiones_jefe / maxTasa) * (barR - barL);
+    return `<g opacity="${insuf ? 0.4 : 1}">
+      <text x="${nameW-8}" y="${y+rowH/2+4}" text-anchor="end" font-size="11" fill="var(--text)">${_nombreCortoAuditoria(f.empleado)}</text>
+      ${insuf ? `<text x="${nameW-8}" y="${y+rowH/2+15}" text-anchor="end" font-size="8.5" fill="var(--text-3)">muestra insuficiente</text>` : ''}
+      <rect x="${barL}" y="${y}" width="${Math.max(w,0)}" height="${rowH}" rx="3" style="fill:var(--aud-jefe)">
+        <title>${f.empleado}: ${f.peticiones_origen_jefe} peticiones de origen jefe (tasa ${f.tasa_peticiones_jefe.toFixed(2)}/semana, ${f.semanas_presentes} semanas presente)</title>
+      </rect>
+      ${w>2 ? `<text x="${barL+w+4}" y="${y+rowH/2+4}" font-size="10" fill="var(--text-2)">${f.peticiones_origen_jefe}</text>` : ''}
+    </g>`;
+  }).join('');
+
+  const linea = `
+    <line x1="${mediaX}" y1="${padTop-4}" x2="${mediaX}" y2="${H-padBottom}" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3,3"></line>
+    <text x="${mediaX}" y="${padTop-8}" text-anchor="middle" font-size="8.5" fill="var(--text-3)">media del equipo</text>`;
+
+  const svg = document.getElementById('aud-chart-peticiones');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('height', H);
+  svg.innerHTML = linea + filasSvg;
+}
+
+function renderAuditoriaDetalle(){
+  const cont = document.getElementById('aud-detalle-list');
+  const det  = auditoriaData.detalle;
+  if(!det.length){
+    cont.innerHTML = `<div style="padding:16px;color:var(--text-2);text-align:center">Sin intervenciones en este periodo.</div>`;
+    return;
+  }
+  cont.innerHTML = det.map(i=>{
+    const fecha  = (i.ts||'').replace('T',' ').slice(0,16);
+    const cambio = (i.valor_anterior!=null || i.valor_nuevo!=null)
+      ? `${i.valor_anterior ?? '—'} → ${i.valor_nuevo ?? '—'}` : '—';
+    return `<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:12.5px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <span><strong>${i.empleado_afectado||'—'}</strong> · ${AUD_TIPO_LABEL[i.tipo]||i.tipo} · ${cambio}</span>
+        <span style="color:var(--text-3);font-family:'DM Mono',monospace;font-size:11px">${fecha}</span>
+      </div>
+      <div style="color:var(--text-2);margin-top:3px">Por: ${i.usuario} (${i.rol_usuario})${i.justificacion?' — '+i.justificacion:''}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── NAVIGATION ──────────────────────────────────────────────────────
+function irASeccion(sec){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.querySelector(`.nav-item[data-sec="${sec}"]`)?.classList.add('active');
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('sec-'+sec).classList.add('active');
+  const [t,s]=SECS[sec]||['',''];
+  document.getElementById('topbar-title').textContent = t;
+  document.getElementById('topbar-sub').textContent = s;
+  document.getElementById('topbar-right').style.display = sec==='horario'?'flex':'none';
+  if(sec==='dashboard')cargarDashboard();
+  if(sec==='horario'){ updateWeekLabel(); cargarHorarioSemana(); }
+  if(sec==='empleados')loadEmpleados();
+  if(sec==='categorias')loadCategorias();
+  if(sec==='festivos')loadFestivos();
+  if(sec==='compensaciones')loadCompensaciones();
+  if(sec==='peticiones'){
+    petWeekOffset=0;updatePetWeekLabel();
+    document.getElementById('btn-add-pet').textContent =
+      currentUser?.rol==='empleado' ? '+ Solicitar día libre' : '+ Nueva petición';
+    loadPeticiones();
+    loadCuposPanelManager();
+  }
+  if(sec==='vacaciones')loadVacaciones();
+  if(sec==='estadisticas')loadEstadisticas();
+  if(sec==='historial')loadHistorial();
+  if(sec==='asistente')setupAsistente();
+  if(sec==='usuarios')loadUsuarios();
+  if(sec==='log')loadLog();
+  if(sec==='temporadas')loadTemporadas();
+  if(sec==='auditoria')loadAuditoria();
+  cerrarMenuMovil();
+}
+
+document.querySelectorAll('.nav-item[data-sec]').forEach(el=>{
+  el.addEventListener('click',()=> irASeccion(el.dataset.sec));
 });
+
+// ── MENÚ MÓVIL (hamburguesa) ──────────────────────────────────────
+const sidebarEl = document.querySelector('.sidebar');
+const sidebarOverlayEl = document.getElementById('sidebar-overlay');
+function abrirMenuMovil(){ sidebarEl.classList.add('open'); sidebarOverlayEl.classList.add('active'); }
+function cerrarMenuMovil(){ sidebarEl.classList.remove('open'); sidebarOverlayEl.classList.remove('active'); }
+document.getElementById('btn-hamburger').onclick = ()=>{
+  sidebarEl.classList.contains('open') ? cerrarMenuMovil() : abrirMenuMovil();
+};
+sidebarOverlayEl.onclick = cerrarMenuMovil;
 
 SECS['usuarios']    = ['Usuarios','Gestión de acceso'];
 SECS['log']         = ['Log de actividad','Registro de acciones'];

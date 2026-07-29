@@ -38,7 +38,7 @@ def main():
     print(f"\nGenerando datos de ejemplo en: {DESTINO}\n")
 
     # Plantillas ficticias (copiadas de PLANTILLA_DEFAULT, ya son ficticias)
-    for dept_id, plantilla in PLANTILLA_DEFAULT.items():
+    for dept_id, plantilla in PLANTILLA_DEFAULTa.items():
         nombre_archivo = "plantilla.json" if dept_id == "recepcion" else f"{dept_id}_plantilla.json"
         guardar(os.path.join(DESTINO, nombre_archivo), copy.deepcopy(plantilla))
 

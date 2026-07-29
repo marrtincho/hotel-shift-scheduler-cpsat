@@ -20,6 +20,7 @@ Todas las pruebas usan semanas en el futuro lejano y tmp_path para datos.
 """
 
 import copy
+import json
 from datetime import date, timedelta
 
 import pytest
@@ -331,3 +332,160 @@ def test_noche_normal_sin_cambios_con_night_fixed_activo(data_dir):
         "Problemas detectados con night_fixed activo:\n" +
         "\n".join(f"  · {i}" for i in infractores)
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 6. Corrección: bloque de 5 noches no debe dejar libres no consecutivos
+#    (Lunes + Domingo) cuando cfg.cover_consecutive es True.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _staff_simple(nombres: list[str]) -> list:
+    """Plantilla mínima de empleados 'normal' sin restricciones, para probar
+    _plan_noches_bloques de forma aislada (sin pasar por generate_schedule)."""
+    return [{"name": n, "role": "normal", "preferences": []} for n in nombres]
+
+
+def _seed_estado_bloques(data_dir, rotation_key: str, estado: dict):
+    """Escribe directamente el fichero de estado de rotación por bloques,
+    simulando que la semana anterior dejó al saliente con 'hechas' noches
+    ya acumuladas antes de generar la semana bajo prueba."""
+    path = data_dir / f"night_rotation_{rotation_key}.json"
+    path.write_text(json.dumps(estado), encoding="utf-8")
+
+
+def test_evita_libres_no_consecutivos_recepcion(data_dir):
+    """Recepción (cover_consecutive=True): si el saliente llega al lunes
+    (day_idx=0) con hechas==MAX_NOCHES_BLOQUE-1, trabajar esa noche del lunes
+    completaría su bloque justo ese día y forzaría al entrante a arrancar el
+    martes, dejándolo con libres Domingo+Lunes (no consecutivos). La
+    corrección debe cerrar el bloque del saliente ANTES del lunes (se queda
+    en 4 noches, no 5) para que el entrante arranque el lunes."""
+    from modelo_base import _plan_noches_bloques, MAX_NOCHES_BLOQUE
+
+    cfg   = _cfg_normal()
+    staff = _staff_simple(["Ana", "Bruno", "Carla", "Diego", "Elena"])
+
+    _seed_estado_bloques(
+        data_dir, cfg.night_rotation_key + "_bloques",
+        {"_actual": {"nombre": "Ana", "hechas": MAX_NOCHES_BLOQUE - 1},
+         "Ana": {"covers": 4, "pending": 0}},
+    )
+
+    asignaciones, estado_final = _plan_noches_bloques(staff, cfg)
+    ana = next(p for p in staff if p["name"] == "Ana")
+
+    # 1. Ana (saliente) cierra con 4 noches, no llega a trabajar el lunes.
+    assert asignaciones.get(0) != "Ana", "Ana no debería cubrir la noche del lunes"
+    assert "Ana" not in asignaciones.values(), "Ana no debería cubrir ninguna noche esta semana"
+    assert estado_final["Ana"]["covers"] == 4, "El total de noches de Ana no debe incrementarse"
+
+    # 2. El descanso de Ana son 2 días consecutivos (no Domingo+Lunes sueltos).
+    libres_ana = ana.get("forced_days_off", [])
+    assert len(libres_ana) == 2
+    idx_libres_ana = sorted(DAYS.index(d) for d in libres_ana)
+    assert idx_libres_ana in [[i, i + 1] for i in range(6)], (
+        f"Los libres de Ana ({libres_ana}) no son consecutivos"
+    )
+
+    # 3. El entrante arranca el LUNES (day_idx=0), no el martes.
+    entrante = asignaciones[0]
+    assert entrante != "Ana"
+    assert all(asignaciones[d] == entrante for d in range(5)), (
+        "El entrante debería cubrir un bloque completo Lunes-Viernes"
+    )
+
+    # 4. Los libres del entrante esa semana son Sáb+Dom, consecutivos
+    #    (caso 'empieza en Lunes', el bueno).
+    persona_entrante = next(p for p in staff if p["name"] == entrante)
+    assert set(persona_entrante.get("forced_days_off", [])) == {"Sábado", "Domingo"}
+
+
+def test_mozos_sin_correccion_mantiene_libres_no_consecutivos(data_dir):
+    """Mozos (cover_consecutive=False): el mismo escenario NO debe activar la
+    corrección — el bloque de 5 noches con arranque en martes, y por tanto
+    libres no consecutivos para el entrante, sigue siendo el comportamiento
+    aceptado y documentado para este departamento, sin cambios."""
+    from modelo_base import _plan_noches_bloques, MAX_NOCHES_BLOQUE
+    from modelo_mozos import MOZOS_CONFIG
+
+    cfg   = copy.deepcopy(MOZOS_CONFIG)
+    assert cfg.cover_consecutive is False
+    staff = _staff_simple(["Ana", "Bruno", "Carla", "Diego", "Elena"])
+
+    _seed_estado_bloques(
+        data_dir, cfg.night_rotation_key + "_bloques",
+        {"_actual": {"nombre": "Ana", "hechas": MAX_NOCHES_BLOQUE - 1},
+         "Ana": {"covers": 4, "pending": 0}},
+    )
+
+    asignaciones, estado_final = _plan_noches_bloques(staff, cfg)
+
+    # Ana SÍ trabaja el lunes (su 5ª noche) — comportamiento sin corregir.
+    assert asignaciones.get(0) == "Ana"
+    assert estado_final["Ana"]["covers"] == 5
+
+    # El bloque siguiente arranca en martes, como antes de la corrección.
+    entrante = asignaciones[1]
+    assert entrante != "Ana"
+    assert asignaciones[0] == "Ana" and asignaciones[1] != "Ana"
+
+
+def test_hechas_cero_no_dispara_correccion_por_error(data_dir):
+    """Caso límite: si nadie está cubriendo aún (hechas==0 al llegar al
+    lunes), la nueva condición no debe dispararse por accidente — el lunes
+    se asigna con normalidad al primer candidato de la rotación."""
+    from modelo_base import _plan_noches_bloques, MAX_NOCHES_BLOQUE
+
+    cfg   = _cfg_normal()
+    staff = _staff_simple(["Ana", "Bruno", "Carla", "Diego", "Elena"])
+
+    _seed_estado_bloques(
+        data_dir, cfg.night_rotation_key + "_bloques",
+        {"_actual": {"nombre": None, "hechas": 0}},
+    )
+
+    asignaciones, _ = _plan_noches_bloques(staff, cfg)
+
+    # Se cubre el lunes con normalidad (bloque nuevo de 5 noches Lun-Vie).
+    assert asignaciones.get(0) is not None
+    assert all(asignaciones[d] == asignaciones[0] for d in range(5))
+
+
+# ─── 7. Regresión encadenada: nunca aparecen libres Lunes+Domingo ───────────
+
+def test_regresion_nunca_libres_lunes_domingo(data_dir):
+    """Encadena 16 semanas de recepción sin night_fixed en plantilla y
+    verifica que ningún empleado termina la semana con sus dos únicos días
+    libres siendo exactamente Lunes+Domingo (no consecutivos). El resto de
+    combinaciones consecutivas (Lun+Mar, Mar+Mié, ..., Sáb+Dom) siguen
+    apareciendo con normalidad."""
+    cfg = _cfg_normal()
+
+    def staff_f():
+        return _plantilla_9_sin_night_fixed()
+
+    resultados = _generar_semanas(staff_f, cfg, n_semanas=16)
+
+    infractores = []
+    pares_consecutivos_vistos = set()
+    for semana_idx, semana, sched, staff_final, viols in resultados:
+        for p in staff_final:
+            libres = [i for i, t in enumerate(sched[p["name"]]) if t == "Libre"]
+            if len(libres) != 2:
+                continue
+            par = tuple(sorted(libres))
+            if par == (0, 6):
+                infractores.append(
+                    f"Semana {semana_idx} ({semana}) — {p['name']}: "
+                    f"libres Lunes+Domingo (no consecutivos)"
+                )
+            elif par[1] - par[0] == 1:
+                pares_consecutivos_vistos.add(par)
+
+    assert not infractores, (
+        "Aparecieron libres Lunes+Domingo (no consecutivos):\n" +
+        "\n".join(f"  · {i}" for i in infractores)
+    )
+    # Confirma que seguimos viendo pares consecutivos normales (el fix no
+    # eliminó por error toda variedad de arranque de bloque).
+    assert pares_consecutivos_vistos, "No se observó ningún par de libres consecutivos en 16 semanas"

@@ -6,14 +6,14 @@ Soporte multi-departamento: todas las funciones clave aceptan dept_id.
 import json
 import os
 import shutil
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 
 from modelo_base import DAYS
 
 # ─── RUTAS DE DATOS ──────────────────────────────────────────────────────────
 
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR        = os.path.join(BASE_DIR, "data")
+DATA_DIR        = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
 BACKUP_DIR      = os.path.join(DATA_DIR, "backups")
 
 os.makedirs(DATA_DIR,   exist_ok=True)
@@ -409,6 +409,9 @@ def aplicar_vacaciones(staff_list: list[dict], week_start: date, dept_id: str = 
             # Merge sin duplicados, manteniendo orden de la semana
             todos = list(dict.fromkeys(existentes + dias_vac))
             person["forced_days_off"] = todos
+            # Marca de origen para la capa de presentación: qué días de "Libre"
+            # son en realidad vacaciones (el motor sigue usando solo "Libre").
+            person["dias_vacaciones"] = dias_vac
     return staff2
 
 
@@ -572,37 +575,82 @@ def registrar_festivos_semana(week_start: date, schedule: dict, staff_list: list
 # - protegido: True para night_fixed/normal — no se pueden borrar ni renombrar,
 #   y algunos campos no son editables (ver editar_rol)
 # - borrable: False para night_fixed/normal
+# - cubre_ausencia_de: id del rol cuya ausencia cubre este rol, o None. Solo un
+#   rol puede cubrir la ausencia de otro rol dado (sin duplicados ni ciclos,
+#   ver validar_rol). Ej: "subjefe" cubre_ausencia_de "jefe".
+# - cobertura_semana_completa: bool, se configura en el rol CUBRIDOR. False
+#   (opción A) = cobertura solo los días sueltos de ausencia del cubierto.
+#   True (opción B) = además, si la ausencia es de semana completa, el
+#   cubridor da presencia total (turno fijo del cubierto todos sus días de
+#   trabajo, libres entre semana, nunca Sáb+Dom).
+# - cubrir_dias_libres_fijos: bool, se configura en el rol CUBRIDOR y solo
+#   tiene efecto si cubre_ausencia_de apunta a un rol. Si es True, los días
+#   libres FIJOS del rol cubierto (cfg.fixed_days_off, normalmente el
+#   finde del jefe) se añaden también como días a cubrir de forma
+#   permanente, no solo las ausencias reales (vacaciones/peticiones). Es
+#   independiente de cobertura_semana_completa: se pueden combinar.
+# - excluir_de_equidad: si es True, este rol no entra en el balanceo de
+#   fines de semana libres ni en el desempate por histórico de turnos.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ROLES_DEFAULT = {
     "recepcion": {
         "night_fixed": {"label": "Turno Noche fijo", "icon": "★", "turno_fijo": "Noche",
                          "dias_libres_fijos": [3, 4], "dias_libres_sustituto": [5, 6],
-                         "sin_noches": False, "unico": True, "protegido": True, "borrable": False},
+                         "sin_noches": False, "unico": True, "protegido": True, "borrable": False,
+                         "cubre_ausencia_de": None, "cobertura_semana_completa": False, "cubrir_dias_libres_fijos": False,
+                         "excluir_de_equidad": True},
         "jefe":        {"label": "Jefe", "icon": "👑", "turno_fijo": "Mañana",
                          "dias_libres_fijos": [5, 6], "dias_libres_sustituto": None,
-                         "sin_noches": True, "unico": True, "protegido": False, "borrable": True},
+                         "sin_noches": True, "unico": True, "protegido": False, "borrable": True,
+                         "cubre_ausencia_de": None, "cobertura_semana_completa": False, "cubrir_dias_libres_fijos": False,
+                         "excluir_de_equidad": True},
         "subjefe":     {"label": "Subjefe", "icon": "⭐", "turno_fijo": None,
                          "dias_libres_fijos": None, "dias_libres_sustituto": None,
-                         "sin_noches": True, "unico": False, "protegido": False, "borrable": True},
+                         "sin_noches": True, "unico": False, "protegido": False, "borrable": True,
+                         "cubre_ausencia_de": "jefe", "cobertura_semana_completa": False, "cubrir_dias_libres_fijos": False,
+                         "excluir_de_equidad": True},
         "adjunto_recepcion": {"label": "Adjunto Recepción", "icon": "◉", "turno_fijo": None,
                          "dias_libres_fijos": None, "dias_libres_sustituto": None,
-                         "sin_noches": True, "unico": False, "protegido": False, "borrable": True},
+                         "sin_noches": True, "unico": False, "protegido": False, "borrable": True,
+                         "cubre_ausencia_de": None, "cobertura_semana_completa": False, "cubrir_dias_libres_fijos": False,
+                         "excluir_de_equidad": False},
         "normal":      {"label": "Empleado", "icon": "", "turno_fijo": None,
                          "dias_libres_fijos": None, "dias_libres_sustituto": None,
-                         "sin_noches": False, "unico": False, "protegido": True, "borrable": False},
+                         "sin_noches": False, "unico": False, "protegido": True, "borrable": False,
+                         "cubre_ausencia_de": None, "cobertura_semana_completa": False, "cubrir_dias_libres_fijos": False,
+                         "excluir_de_equidad": False},
     },
     "mozos": {
         "night_fixed": {"label": "Turno Noche fijo", "icon": "★", "turno_fijo": "Noche",
                          "dias_libres_fijos": [4, 5], "dias_libres_sustituto": [0, 1],
-                         "sin_noches": False, "unico": True, "protegido": True, "borrable": False},
+                         "sin_noches": False, "unico": True, "protegido": True, "borrable": False,
+                         "cubre_ausencia_de": None, "cobertura_semana_completa": False, "cubrir_dias_libres_fijos": False,
+                         "excluir_de_equidad": True},
         "normal":      {"label": "Mozo normal", "icon": "", "turno_fijo": None,
                          "dias_libres_fijos": None, "dias_libres_sustituto": None,
-                         "sin_noches": False, "unico": False, "protegido": True, "borrable": False},
+                         "sin_noches": False, "unico": False, "protegido": True, "borrable": False,
+                         "cubre_ausencia_de": None, "cobertura_semana_completa": False, "cubrir_dias_libres_fijos": False,
+                         "excluir_de_equidad": False},
     },
 }
 
 TURNOS_VALIDOS_ROL = {"Mañana", "Tarde", "Noche", "Partido"}
+
+_DEFAULTS_ROL = {
+    "cubre_ausencia_de": None,
+    "cobertura_semana_completa": False,
+    "cubrir_dias_libres_fijos": False,
+    "excluir_de_equidad": False,
+}
+
+def _completar_defaults_rol(r: dict) -> dict:
+    """Retrocompatibilidad: roles.json guardados antes de añadir estos campos
+    no los tienen. Se autocompletan con su default al cargar, sin reescribir
+    el fichero (se persisten solos en cuanto se edite ese rol)."""
+    for campo, default in _DEFAULTS_ROL.items():
+        r.setdefault(campo, default)
+    return r
 
 def cargar_roles(dept_id: str = "recepcion") -> dict:
     """Carga la config de categorías del departamento. La crea con defaults si no existe."""
@@ -610,6 +658,8 @@ def cargar_roles(dept_id: str = "recepcion") -> dict:
     path  = _dept_file("roles.json", dept_id)
     datos = _cargar_json(path, None)
     if datos is not None:
+        for r in datos.values():
+            _completar_defaults_rol(r)
         return datos
     roles = copy.deepcopy(ROLES_DEFAULT.get(dept_id, {}))
     guardar_roles(roles, dept_id)
@@ -627,6 +677,21 @@ def _validar_dias(valor, campo: str) -> list[str]:
     if not all(isinstance(d, int) and 0 <= d <= 6 for d in valor):
         return [f"{campo} debe contener índices de día 0-6"]
     return []
+
+def _tiene_ciclo_cobertura(rol_id: str, cubre_id: str, roles_todos: dict) -> bool:
+    """True si, siguiendo la cadena cubre_ausencia_de a partir de cubre_id,
+    se vuelve a llegar a rol_id (ciclo A cubre B, B cubre A, o cadenas más
+    largas que cierran sobre sí mismas)."""
+    visto   = set()
+    actual  = cubre_id
+    while actual is not None:
+        if actual == rol_id:
+            return True
+        if actual in visto:
+            break  # ciclo entre otros roles, no involucra a rol_id
+        visto.add(actual)
+        actual = roles_todos.get(actual, {}).get("cubre_ausencia_de")
+    return False
 
 def validar_rol(rol_id: str, datos: dict, dept_id: str = "recepcion",
                 es_nuevo: bool = False) -> list[str]:
@@ -650,6 +715,29 @@ def validar_rol(rol_id: str, datos: dict, dept_id: str = "recepcion",
             a, b = sorted(fijos)
             if b - a != 1:
                 errores.append("Los días libres fijos del turno noche deben ser dos días consecutivos")
+
+    # — Cobertura de ausencia de otro rol —
+    cubre = datos.get("cubre_ausencia_de")
+    if cubre:
+        if cubre == rol_id:
+            errores.append("Un rol no puede cubrir su propia ausencia")
+        else:
+            roles_todos = cargar_roles(dept_id)
+            if cubre not in roles_todos:
+                errores.append(f"El rol a cubrir '{cubre}' no existe")
+            else:
+                duplicado = next(
+                    (rid for rid, r in roles_todos.items()
+                     if rid != rol_id and r.get("cubre_ausencia_de") == cubre),
+                    None,
+                )
+                if duplicado:
+                    errores.append(
+                        f"El rol '{cubre}' ya está cubierto por '{duplicado}': "
+                        f"solo un rol puede cubrir la ausencia de otro"
+                    )
+                if _tiene_ciclo_cobertura(rol_id, cubre, roles_todos):
+                    errores.append("La cobertura de ausencia no puede formar un ciclo entre roles")
 
     return errores
 
@@ -680,6 +768,10 @@ def crear_rol(rol_id: str, datos: dict, dept_id: str = "recepcion") -> tuple[boo
         "unico":      bool(datos.get("unico", False)),
         "protegido":  False,
         "borrable":   True,
+        "cubre_ausencia_de":          datos.get("cubre_ausencia_de"),
+        "cobertura_semana_completa":  bool(datos.get("cobertura_semana_completa", False)),
+        "cubrir_dias_libres_fijos":   bool(datos.get("cubrir_dias_libres_fijos", False)),
+        "excluir_de_equidad":         bool(datos.get("excluir_de_equidad", False)),
     }
     guardar_roles(roles, dept_id)
     return True, "Categoría creada"
@@ -708,7 +800,9 @@ def editar_rol(rol_id: str, datos: dict, dept_id: str = "recepcion") -> tuple[bo
         return False, errores[0]
 
     for campo in ("label", "icon", "turno_fijo", "dias_libres_fijos",
-                  "dias_libres_sustituto", "sin_noches", "unico"):
+                  "dias_libres_sustituto", "sin_noches", "unico",
+                  "cubre_ausencia_de", "cobertura_semana_completa",
+                  "cubrir_dias_libres_fijos", "excluir_de_equidad"):
         if campo in datos:
             actual[campo] = datos[campo]
     roles[rol_id] = actual
@@ -852,3 +946,205 @@ def validar_coverage_perfil(datos: dict) -> list[str]:
         if datos["min_coverage"].get("Noche", 0) < 1:
             errores.append("min_coverage['Noche'] debe ser al menos 1")
     return errores
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 7 — HORARIOS CONCRETOS POR TURNO
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Estructura de horarios_turnos.json (uno por departamento, mismo patrón que
+# el resto de ficheros dept-scoped):
+# {
+#   "Mañana":  [{"inicio": "07:00", "fin": "15:00"}],
+#   "Tarde":   [{"inicio": "15:00", "fin": "23:00"}],
+#   "Noche":   [{"inicio": "23:00", "fin": "07:00"}],   ← cruza medianoche
+#   "Partido": [{"inicio": "10:00", "fin": "13:00"}, {"inicio": "17:00", "fin": "20:00"}]
+# }
+# Cada turno tiene una lista de tramos horarios (Partido puede tener varios).
+# Usado para mostrar el horario concreto del turno de hoy en el dashboard del
+# empleado y para generar los eventos del export .ics.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+HORARIOS_TURNOS_DEFAULT = {
+    "Mañana":  [{"inicio": "07:00", "fin": "15:00"}],
+    "Tarde":   [{"inicio": "15:00", "fin": "23:00"}],
+    "Noche":   [{"inicio": "23:00", "fin": "07:00"}],
+    "Partido": [{"inicio": "10:00", "fin": "13:00"}, {"inicio": "17:00", "fin": "20:00"}],
+}
+
+TURNOS_CON_HORARIO = ["Mañana", "Tarde", "Noche", "Partido"]
+
+
+def cargar_horarios_turnos(dept_id: str = "recepcion") -> dict:
+    """Carga los tramos horarios por turno. Si el fichero no existe se crea
+    con los valores por defecto. Rellena turnos que falten con el default
+    para que el fichero siempre tenga las 4 claves."""
+    import copy as _copy
+    path = _dept_file("horarios_turnos.json", dept_id)
+    data = _cargar_json(path, None)
+    if data is None:
+        data = _copy.deepcopy(HORARIOS_TURNOS_DEFAULT)
+        guardar_json_atomico(path, data)
+        return data
+    cambiado = False
+    for turno, default in HORARIOS_TURNOS_DEFAULT.items():
+        if turno not in data:
+            data[turno] = _copy.deepcopy(default)
+            cambiado = True
+    if cambiado:
+        guardar_json_atomico(path, data)
+    return data
+
+
+def guardar_horarios_turnos(data: dict, dept_id: str = "recepcion") -> None:
+    guardar_json_atomico(_dept_file("horarios_turnos.json", dept_id), data)
+
+
+def validar_horarios_turnos(data: dict) -> list[str]:
+    """Valida el formato de horarios_turnos.json. Devuelve lista de errores
+    (vacía = válido). No valida que inicio < fin porque los turnos de Noche
+    cruzan la medianoche legítimamente."""
+    import re
+    errores: list[str] = []
+    patron_hora = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+    for turno in TURNOS_CON_HORARIO:
+        tramos = data.get(turno)
+        if not isinstance(tramos, list) or not tramos:
+            errores.append(f"'{turno}' debe tener al menos un tramo horario")
+            continue
+        for tramo in tramos:
+            if not isinstance(tramo, dict):
+                errores.append(f"Tramo inválido en '{turno}'")
+                continue
+            for campo in ("inicio", "fin"):
+                v = tramo.get(campo)
+                if not isinstance(v, str) or not patron_hora.match(v):
+                    errores.append(f"'{turno}.{campo}' debe tener formato HH:MM (recibido: {v!r})")
+    return errores
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 8 — DOTACIÓN ANUAL DE VACACIONES
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Estructura de vacaciones_dotacion.json (dept-scoped):
+# {
+#   "nombre_empleado": {"2026": 30, "2027": 30}   ← días naturales/año, editable
+# }
+# Si un empleado o año no tiene entrada explícita se usa DOTACION_VACACIONES_DEFAULT.
+# "Vacaciones restantes del año" = dotación del año - días de vacaciones.json
+# que caen dentro de ese año natural.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+DOTACION_VACACIONES_DEFAULT = 30  # días naturales/año
+
+
+def cargar_vacaciones_dotacion(dept_id: str = "recepcion") -> dict:
+    return _cargar_json(_dept_file("vacaciones_dotacion.json", dept_id), {})
+
+
+def guardar_vacaciones_dotacion(data: dict, dept_id: str = "recepcion") -> None:
+    guardar_json_atomico(_dept_file("vacaciones_dotacion.json", dept_id), data)
+
+
+def dotacion_vacaciones_de(nombre: str, anio: int, dept_id: str = "recepcion") -> int:
+    """Dotación de días de vacaciones de un empleado para un año dado."""
+    datos = cargar_vacaciones_dotacion(dept_id)
+    valor = datos.get(nombre, {}).get(str(anio))
+    return valor if isinstance(valor, int) and valor >= 0 else DOTACION_VACACIONES_DEFAULT
+
+
+def dias_vacaciones_tomados_en_anio(nombre: str, anio: int, dept_id: str = "recepcion") -> int:
+    """Cuenta los días naturales de periodos de vacaciones.json de 'nombre'
+    que caen dentro del año natural indicado (recorta periodos a caballo)."""
+    inicio_anio = date(anio, 1, 1)
+    fin_anio    = date(anio, 12, 31)
+    total = 0
+    for v in cargar_vacaciones(dept_id):
+        if v.get("nombre") != nombre:
+            continue
+        try:
+            inicio = date.fromisoformat(v["inicio"])
+            fin    = date.fromisoformat(v["fin"])
+        except (KeyError, ValueError):
+            continue
+        solape_inicio = max(inicio, inicio_anio)
+        solape_fin    = min(fin, fin_anio)
+        if solape_inicio <= solape_fin:
+            total += (solape_fin - solape_inicio).days + 1
+    return total
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 9 — AUDITORÍA DE INTERVENCIONES MANUALES
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Registro estructurado e independiente del log operativo de actividad.json
+# (que rota a 1000 entradas y usa texto libre). intervenciones.json guarda
+# cada intervención manual del encargado/admin sobre el horario o la
+# plantilla con campos estructurados, para poder analizarla en el panel de
+# auditoría (solo accesible al rol admin). NO rota: es un registro de
+# auditoría, no un log operativo — si algún día crece demasiado, se
+# archivará por año, pero eso no se implementa aquí.
+#
+# Estructura de intervenciones.json: lista de objetos
+# {
+#   "ts":                "<ISO 8601 UTC>",
+#   "usuario":            "<username que hizo la acción>",
+#   "rol_usuario":         "<rol del usuario>",
+#   "dept":               "recepcion" | "mozos",
+#   "tipo":                "edicion_turno" | "peticion_jefe" | "cupo_extra" |
+#                           "cambio_rol_plantilla",
+#   "empleado_afectado":  "<nombre en plantilla>",
+#   "semana":             "<YYYY-MM-DD del lunes>" | null,
+#   "dia_idx":            <0-6> | null,
+#   "valor_anterior":     "<str>" | null,
+#   "valor_nuevo":        "<str>" | null,
+#   "justificacion":      "<str>",
+# }
+# ═══════════════════════════════════════════════════════════════════════════════
+
+INTERVENCIONES_FILE = os.path.join(DATA_DIR, "intervenciones.json")
+
+TIPOS_INTERVENCION = {
+    "edicion_turno", "peticion_jefe", "cupo_extra", "cambio_rol_plantilla",
+}
+
+
+def cargar_intervenciones(dept_id: str = None, desde: str = None, hasta: str = None) -> list[dict]:
+    """Carga intervenciones.json, opcionalmente filtrado por departamento y
+    por rango de fechas (desde/hasta en formato ISO "YYYY-MM-DD", ambos
+    inclusive, comparados contra la fecha del campo "ts")."""
+    intervenciones = _cargar_json(INTERVENCIONES_FILE, [])
+    if dept_id:
+        intervenciones = [i for i in intervenciones if i.get("dept") == dept_id]
+    if desde:
+        intervenciones = [i for i in intervenciones if i.get("ts", "")[:10] >= desde]
+    if hasta:
+        intervenciones = [i for i in intervenciones if i.get("ts", "")[:10] <= hasta]
+    return intervenciones
+
+
+def registrar_intervencion(*, usuario: str, rol_usuario: str, dept: str, tipo: str,
+                           empleado_afectado: str, semana: str = None, dia_idx: int = None,
+                           valor_anterior: str = None, valor_nuevo: str = None,
+                           justificacion: str = "") -> None:
+    """Añade una entrada al registro de auditoría. Escritura atómica, sin
+    rotación (registro de auditoría, no log operativo)."""
+    if tipo not in TIPOS_INTERVENCION:
+        raise ValueError(f"Tipo de intervención desconocido: {tipo}")
+    intervenciones = _cargar_json(INTERVENCIONES_FILE, [])
+    intervenciones.append({
+        "ts":                datetime.now(timezone.utc).isoformat(),
+        "usuario":           usuario,
+        "rol_usuario":       rol_usuario,
+        "dept":              dept,
+        "tipo":              tipo,
+        "empleado_afectado": empleado_afectado,
+        "semana":            semana,
+        "dia_idx":           dia_idx,
+        "valor_anterior":    valor_anterior,
+        "valor_nuevo":       valor_nuevo,
+        "justificacion":     justificacion or "",
+    })
+    guardar_json_atomico(INTERVENCIONES_FILE, intervenciones)
