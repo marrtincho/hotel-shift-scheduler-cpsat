@@ -6,6 +6,7 @@ modelo.py y modelo_mozos.py importan de aquí.
 
 import random
 import copy
+import os
 from datetime import date, timedelta
 from dataclasses import dataclass, field
 from typing import Any
@@ -843,27 +844,60 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
     # del mínimo. Ver BUG 1.
     if min_libres_dia > 0:
         ajustables = [p for p in staff_list if p.get("_reasignable")]
+        _dbg = os.environ.get("DEBUG_REPARACION") == "1"
         for _ in range(7):
             libres_dia   = _libres_por_dia(schedule)
             deficitarios = [d for d in range(7) if libres_dia[d] < min_libres_dia]
             if not deficitarios:
                 break
             dia = deficitarios[0]
+            if _dbg:
+                print(f"\n[reparacion] Día deficitario: {DAYS[dia]} (libran {libres_dia[dia]}, "
+                      f"mínimo {min_libres_dia}). Ajustables: {[p['name'] for p in ajustables]}")
             reparado = False
             for person in ajustables:
                 actuales = person.get("days_off")
                 if not actuales or dia in actuales:
+                    if _dbg:
+                        motivo = "sin days_off" if not actuales else f"ya libra ese día ({actuales})"
+                        print(f"  {person['name']}: descartada de entrada ({motivo})")
                     continue
                 must_work = set(cover_by_person.get(person["name"], []))
                 if dia in must_work:
+                    if _dbg:
+                        print(f"  {person['name']}: descartada — debe trabajar {DAYS[dia]} "
+                              f"(cobertura obligatoria, must_work={must_work})")
                     continue
+                if _dbg:
+                    print(f"  {person['name']}: días libres actuales={actuales}, "
+                          f"must_work={must_work}")
+                    for p in pairs:
+                        etiqueta = f"{DAYS[p[0]]}+{DAYS[p[1]]}"
+                        if dia not in p:
+                            print(f"    par {etiqueta}: descartado — no incluye {DAYS[dia]} "
+                                  f"(exclusión estructural, ni se evalúa)")
+                        elif must_work & set(p):
+                            print(f"    par {etiqueta}: descartado — bloqueado por cobertura "
+                                  f"obligatoria en {[DAYS[d] for d in (must_work & set(p))]}")
+                        else:
+                            print(f"    par {etiqueta}: candidato válido de entrada "
+                                  f"(pair_usage={pair_usage[p]})")
                 opciones = sorted(
                     (p for p in pairs if dia in p and not (must_work & set(p))),
                     key=lambda p: pair_usage[p])
                 for nuevo in opciones:
                     dias_libera = [d for d in actuales if d not in nuevo]
                     if any(libres_dia[d] - 1 < min_libres_dia for d in dias_libera):
+                        if _dbg:
+                            etiqueta = f"{DAYS[nuevo[0]]}+{DAYS[nuevo[1]]}"
+                            dias_rotos = [DAYS[d] for d in dias_libera
+                                          if libres_dia[d] - 1 < min_libres_dia]
+                            print(f"    -> {person['name']} a {etiqueta}: RECHAZADO — dejaría "
+                                  f"{dias_rotos} por debajo del mínimo al abandonar {actuales}")
                         continue
+                    if _dbg:
+                        etiqueta = f"{DAYS[nuevo[0]]}+{DAYS[nuevo[1]]}"
+                        print(f"    -> {person['name']} a {etiqueta}: APLICADO")
                     par_anterior = tuple(sorted(actuales))
                     if par_anterior in pair_usage:
                         pair_usage[par_anterior] = max(0, pair_usage[par_anterior] - 1)
