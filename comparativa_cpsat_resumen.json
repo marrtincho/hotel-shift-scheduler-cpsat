@@ -9,10 +9,10 @@
       "dispersion": 0.05147058823529413,
       "detalle": {
         "Sofía": 0.125,
-        "Miguel": 0.125,
-        "Ana": 0.125,
         "Pedro": 0.176,
-        "Diego": 0.176
+        "Miguel": 0.125,
+        "Diego": 0.176,
+        "Ana": 0.125
       }
     }
   },
@@ -26,9 +26,9 @@
       "dispersion": 0.020833333333333343,
       "detalle": {
         "Inés": 0.188,
+        "Tomás": 0.167,
         "Rubén": 0.176,
-        "Gloria": 0.188,
-        "Tomás": 0.167
+        "Gloria": 0.188
       }
     }
   }

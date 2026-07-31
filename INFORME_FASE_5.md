@@ -454,6 +454,123 @@ Nota de rigor: el primer intento de este test (con "Martes" como día bloqueado)
 
 **Actualización (sesión posterior, ver "RESUELTO" al final del Paso 3): el bug se corrigió.** Se quitó el marcador `xfail`, se reforzaron las aserciones (confirma no solo que Ana no fue elegida, sino que otra persona SÍ lo fue), se añadió un segundo test para distinguir la infactibilidad real de la espuria, y el test ahora **PASA de verdad** — ver el detalle completo en la sección "RESUELTO" del Paso 3, que sustituye esta nota como estado actual.
 
+### 6. Barrido preventivo de no-determinismo + confirmación del estado de las tablas (revisión posterior al cierre)
+
+Tres verificaciones adicionales pedidas antes de aceptar el informe como definitivo.
+
+#### 6.1 — Barrido de `set()`/iteración no determinista en `motor_cpsat.py` y `cobertura_nocturna.py`
+
+Se listó **todo** uso de `set(...)`/`{...}` en ambos ficheros y se clasificó cada uno según si su orden de iteración puede afectar el modelo (llamadas secuenciales a `model.Add()`/`model.NewBoolVar()`, sensibles al orden) o si solo se usa para pertenencia/intersección (`in`, `&`, `>=`) o para construir otra colección consultada después solo por pertenencia — en ambos casos el orden de iteración no tiene ningún efecto observable.
+
+**Hallazgo de fondo, no obvio, que acota el barrido:** en CPython el hash de los enteros pequeños es el propio valor (`hash(n) == n`, salvo -1) y **no está sujeto a la aleatorización de `PYTHONHASHSEED`** (esa aleatorización solo afecta a `str`/`bytes`). Verificado en el propio entorno:
+```
+$ for i in 1 2 3 4 5; do python3 -c "s=set(); s.add(3); s.add(1); s.add(5); s.add(0); print(list(s))"; done
+[0, 1, 3, 5]
+[0, 1, 3, 5]
+[0, 1, 3, 5]
+[0, 1, 3, 5]
+[0, 1, 3, 5]
+```
+Esto significa que **todos** los `set()` de índices de día (0-6) del código — `_dias_cobertura_ausencia` (`dias_ausencia`), `forced_libre[name]`, `dias_a_comprobar`/`dias_cubrir` en `cobertura_nocturna.py` — son inherentemente deterministas entre procesos, aunque se iteren directamente, y no necesitaban `sorted()`.
+
+Resultado de la clasificación completa:
+
+| Ubicación | Contenido del set | ¿Se itera directamente para construir el modelo? | Veredicto |
+|---|---|---|---|
+| `motor_cpsat.py:327` `turnos_con_cobertura` | strings ("Mañana"...) | Sí — antes alimentaba un `for s in ...: model.Add(...)` | **Era el bug — ya corregido con `sorted()`** |
+| `motor_cpsat.py:244/246` `must_work`, `set(par)` | ints (días) | No — solo intersección `&` | Seguro (y además ints) |
+| `motor_cpsat.py:266/272/276` `dias_ausencia` | ints (días) | Sí, en `for d in dias_ausencia: objetivo_terms.append(...)` — pero solo añade TÉRMINOS a una suma de objetivo (`model.Minimize(sum(...))` se llama una única vez al final; el orden de construcción de la suma no cambia los coeficientes finales por variable) | Seguro (y además ints) |
+| `motor_cpsat.py:356/378` `forced_libre[name]` | ints (días) | Sí, en `for d in forced_libre[name]: model.Add(...)` | Seguro — son ints, orden reproducible (ver arriba) |
+| `motor_cpsat.py:439` `roles_con_libre_duro`, `roles_incentivo_trabajar_finde` | strings (roles) | Se itera para construir OTRO set/lista, consultado después solo con `in` dentro de un `for name in names` (lista, orden fijo) | Seguro — el contenido final no depende del orden de construcción |
+| `cobertura_nocturna.py:94-98` `dias_a_comprobar`, `dias_gap`, `forced`, `bloqueados` | ints y strings | Solo `&`/`in`/`.add()` dentro de un bucle sobre `staff_list` (lista) | Seguro |
+| `cobertura_nocturna.py:192` `elegibles_nombres` | strings (nombres) | Solo `in` contra `orden` (lista) | Seguro |
+| `x`, `by_name`, `weekend_libre`, `forced_libre` (dicts) | — | dicts, no sets — el orden de iteración de un dict es el de inserción desde Python 3.7, **no** sujeto a `PYTHONHASHSEED` | Seguro por construcción |
+
+**Confirmación empírica adicional** (no solo lectura de código), con dos escenarios que SÍ ejercitan los caminos poco frecuentes en la comparativa habitual (término G con ausencia real, término H jefe/subjefe, `roles_excluidos_equidad` con 2 roles, `fixed_days_off` con 2 roles, modo respaldo con el arreglo de `dias_cubrir`):
+
+```
+# Escenario sintético (jefe ausente miércoles, subjefe cubre, jefe+subjefe+adjunto, night_fixed) — 8 corridas:
+corrida 1: c35ee9a540dead9a8ec65681d14a1417
+corrida 2: c35ee9a540dead9a8ec65681d14a1417
+corrida 3: c35ee9a540dead9a8ec65681d14a1417
+corrida 4: c35ee9a540dead9a8ec65681d14a1417
+corrida 5: c35ee9a540dead9a8ec65681d14a1417
+corrida 6: c35ee9a540dead9a8ec65681d14a1417
+corrida 7: c35ee9a540dead9a8ec65681d14a1417
+corrida 8: c35ee9a540dead9a8ec65681d14a1417
+TODAS IDÉNTICAS
+
+# escenario_viernes_carla_cpsat.py (modo respaldo, 8 semanas, tras el arreglo de dias_cubrir) — 5 corridas:
+f2bf5c1131162e15df4479696211e53a  -
+f2bf5c1131162e15df4479696211e53a  -
+f2bf5c1131162e15df4479696211e53a  -
+f2bf5c1131162e15df4479696211e53a  -
+f2bf5c1131162e15df4479696211e53a  -
+```
+
+**Conclusión del barrido:** el caso ya corregido (`turnos_con_cobertura`) era el único genuinamente no determinista en ambos ficheros. No queda ningún otro caso agazapado — confirmado tanto por lectura exhaustiva del código como empíricamente en caminos que la comparativa rutinaria no ejercitaba.
+
+**Hallazgo colateral, FUERA de `motor_cpsat.py`/`cobertura_nocturna.py` (no corregido, `modelo_base.py` sigue sin tocarse):** al reconfirmar en vivo la reproducibilidad (ver 6.2), `comparativa_cpsat_resumen.json` mostró una diferencia de ORDEN de claves (no de valores) en el diccionario `detalle` de la dispersión de equidad. Rastreado hasta `modelo_base.py::_get_weekend_ratios`: `nombres = {p["name"] for p in staff_actual}` construye un **set de strings** (nombres de empleado), y `resultado = {n: {...} for n in nombres}` hereda ese orden de iteración — mismo fenómeno de hash-seed que el ya corregido, pero en un fichero fuera del alcance de este arreglo. **Sin efecto sobre ningún valor real**: todo el código que consume ese dict lo hace por clave explícita (`ratios.get(name, ...)` dentro de un `for name in names` sobre una LISTA, en `motor_cpsat.py`), nunca iterando `ratios` directamente — confirmado que los números (ratios, dispersión, todas las tablas de este informe) son idénticos entre corridas; solo el orden de un dict intermedio/de resumen varía. Se documenta como hallazgo, no se corrige (`modelo_base.py` queda fuera de alcance según las instrucciones de esta sesión).
+
+#### 6.2 — Confirmación de cuándo se regeneraron las tablas del informe
+
+Verificado con `git log`/`git show`, no solo por recuerdo de la sesión:
+
+```
+$ git log -p --follow -- motor_cpsat.py | grep -n "^commit\|num_search_workers = 1\|sorted(set"
+1:commit f4bf4289... (arreglo de cobertura_nocturna.py — posterior, no toca estos parámetros)
+60:commit b51fdf4a... (AMBOS fixes)
+110:+    turnos_con_cobertura = sorted(set(cfg.min_coverage) | set(cfg.max_coverage))
+129:+    solver.parameters.num_search_workers = 1
+148:+    solver.parameters.num_search_workers = 1
+```
+
+`num_search_workers=1` y `sorted()` se introdujeron **en el mismo commit** (`b51fdf4`), y ese mismo commit incluye la actualización de `INFORME_FASE_5.md` (tabla Paso 1) y de `comparativa_cpsat_recepcion.json`/`comparativa_metricas_comunes.json` — no hay ningún commit intermedio con las tablas actualizadas solo tras el primer fix.
+
+**Caso que sí merecía una comprobación aparte, no dar por sentado:** `comparativa_cpsat_mozos.json` no cambió de contenido (mismo hash) desde el commit `8ebbcee` (anterior a AMBOS fixes) hasta hoy — a diferencia de recepción, que sí cambió de hash en `b51fdf4`. Esto podía significar que el fichero de mozos nunca se regeneró tras los fixes, o que su regeneración produjo por coincidencia el mismo resultado. Se comprobó **ahora mismo, en vivo**, regenerando ambos ficheros con el código actual (incluido el arreglo de `cobertura_nocturna.py`, que no afecta a recepción/mozos porque ninguno de los dos entra en modo respaldo en sus 18 semanas):
+
+```
+$ md5sum comparativa_cpsat_mozos.json                    # antes de regenerar
+bdd349291238dd0a02ad23a5368da94e  comparativa_cpsat_mozos.json
+$ python generar_comparativa_cpsat.py
+$ md5sum comparativa_cpsat_mozos.json comparativa_cpsat_recepcion.json
+bdd349291238dd0a02ad23a5368da94e  comparativa_cpsat_mozos.json
+850977a5d967f829d5256f4e785b8c22  comparativa_cpsat_recepcion.json
+$ git diff --stat comparativa_cpsat_mozos.json comparativa_cpsat_recepcion.json
+(sin salida — sin diferencias)
+```
+
+**Confirmado: ninguna tabla quedó a medio camino.** El contenido committed hoy es exactamente lo que el código actual (con ambos fixes de determinismo, más el arreglo de `cobertura_nocturna.py`) produce ahora mismo — verificado por regeneración en vivo, no por inferencia de fechas de commit. La coincidencia de hash de mozos entre `8ebbcee` y hoy no era una tabla sin actualizar: es que, para ese departamento concreto, la última corrida capturada antes del cierre de esa sesión ya era (por causalidad, no por diseño) la misma que el código ya-determinista produce siempre.
+
+#### 6.3 — Tabla D vs B, para la decisión de pesos pendiente
+
+Regenerada ahora mismo con el código actual (ambos fixes de determinismo aplicados), coincide exactamente con la ya presente en la sección "Paso 4" de este informe — se repite aquí, junto a la de Recepción del Paso 1, para tenerla junta en el punto donde se pide la decisión:
+
+```
+Semana    B heur  B cpsat  Partido heur  Partido cpsat
+1              0        0             0              0
+2              0        1             0              0
+3              0        1             1              0
+4              1        1             0              0
+5              2        0             0              0
+6              1        1             0              0
+7              0        0             1              0
+8              1        0             1              0
+9              0        0             1              0
+10             0        1             1              0
+11             1        1             2              0
+12             1        2             1              0
+13             0        2             0              0
+14             0        1             0              0
+15             0        1             0              0
+16             1        1             0              0
+17             1        1             1              0
+18             0        1             1              0
+TOTAL          9       15            10              0
+```
+
+Resumen para decidir: en 18 semanas de Recepción, CP-SAT rompe la continuidad 15 veces (heurístico: 9) y usa "Partido" 0 veces (heurístico: 10). En Mozos: CP-SAT rompe 13 veces (heurístico: 28 — CP-SAT es MEJOR ahí) y usa "Partido" 0 veces (heurístico: 72). El patrón favorable a CP-SAT en Mozos es claro en ambos ejes; en Recepción es un trade-off real (peor en B, mucho mejor en D) que depende de los pesos `PESO_ROTURAS_CONTINUIDAD=5` / `PESO_USO_PARTIDO=20` — **la decisión de si reordenarlos sigue pendiente y no se ha tomado en esta sesión.**
+
 ## Conclusión final (revisada tras las 5 verificaciones + el cierre de determinismo + el arreglo del bug bloqueante)
 
 **El bug bloqueante (`cobertura_nocturna.py`, modo respaldo) está CORREGIDO Y VERIFICADO** — ver "RESUELTO" al final del Paso 3: parámetro `dias_cubrir` añadido a las 3 funciones de la cadena, verificado en los 4 puntos pedidos (test xfail ahora pasa por el motivo correcto, caso de infactibilidad real distinguido y confirmado, modo normal sin afectar, suite completa en verde — 206 passed, 0 fallos, 0 xfailed) y confirmado end-to-end reproduciendo el escenario "Viernes de Carla" completo (las 8 semanas resuelven sin `RuntimeError`, incluida la semana 2 que antes fallaba).
