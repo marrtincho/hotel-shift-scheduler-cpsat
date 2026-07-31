@@ -656,11 +656,82 @@ Violaciones duras: 0 en las 18 semanas. Mozos (mismo procedimiento, todas las se
 
 **Esto se reporta explícitamente, no se entierra en la tabla:** el usuario pidió una prioridad de negocio (B>I>D en cada decisión), no un objetivo de minimizar el total de roturas de Recepción — y esa prioridad está correctamente implementada y verificada. Pero si el objetivo implícito también era "menos roturas que antes" o "menos roturas que el heurístico", ESE objetivo no se cumple con estos pesos en Recepción. Queda para el usuario decidir si el resultado (peor en roturas brutas, exactamente 0 Partido, prioridad correcta en cada decisión aislada) es el que quería, con los números delante.
 
-## Conclusión final (revisada tras las 5 verificaciones + el cierre de determinismo + el arreglo del bug bloqueante + el rediseño de prioridades)
+## Investigación de rendimiento a escala real (revisión antes de cerrar de verdad)
+
+Antes de aceptar el "listo" del rediseño B>I>D, se pidió medir el tiempo de resolución real, semana a semana, a escala REAL de producción (9 personas, estructura de roles real de Recepción — jefe, subjefe, 4 adjunto_recepcion, 3 normal, **sin night_fixed**, nombres anonimizados P1-P9, no se usan datos reales de empleados), 3 repeticiones por semana, con la configuración final completa (`num_search_workers=1`, término I, pesos B=50/I=30/D=20 aceptados).
+
+### Tabla completa — 18 semanas x 3 repeticiones, escala real (9 personas)
+
+```
+Semana  1: media=  1.28s  min=  1.27s  max=  1.28s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana  2: media=  6.48s  min=  6.39s  max=  6.62s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana  3: media=  5.93s  min=  5.90s  max=  5.97s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana  4: media= 43.91s  min= 43.52s  max= 44.43s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana  5: media= 85.47s  min= 78.66s  max= 90.00s  status=['FEASIBLE','OPTIMAL','OPTIMAL']
+Semana  6: media=  3.92s  min=  3.82s  max=  4.10s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana  7: media=  3.42s  min=  3.36s  max=  3.49s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana  8: media= 28.36s  min= 27.28s  max= 28.95s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana  9: media= 13.00s  min= 12.98s  max= 13.02s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana 10: media=  4.81s  min=  4.74s  max=  4.89s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana 11: media= 90.00s  min= 90.00s  max= 90.00s  status=['FEASIBLE','FEASIBLE','FEASIBLE']
+Semana 12: media=  6.41s  min=  6.39s  max=  6.44s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana 13: media= 12.02s  min= 11.98s  max= 12.06s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana 14: media=  3.56s  min=  3.53s  max=  3.62s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana 15: media=  2.09s  min=  2.07s  max=  2.10s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana 16: media= 12.20s  min= 12.14s  max= 12.28s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana 17: media=  4.66s  min=  4.65s  max=  4.67s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+Semana 18: media=  3.86s  min=  3.84s  max=  3.88s  status=['OPTIMAL','OPTIMAL','OPTIMAL']
+```
+
+**Nota sobre la varianza:** con `num_search_workers=1` + `sorted()` ya en el código, el modelo es determinista — las 3 repeticiones de cada semana caen en un rango muy estrecho (variación de milisegundos por ruido de reloj/SO, no de resultado). La varianza real está ENTRE semanas, no dentro de una misma semana repetida.
+
+### Respuestas a las 4 preguntas
+
+**1. ¿Cuántas semanas tardan más de 5s? ¿Más de 30?**
+- Más de 5s: **10 de 18** (semanas 2, 3, 4, 5, 8, 9, 11, 12, 13, 16).
+- Más de 30s: **3 de 18** (semanas 4, 5, 11).
+- Dato adicional no pedido explícitamente pero decisivo (ver pregunta 4): **más de 60s (el techo REAL de producción, no los 90s del solver): 2 de 18** (semanas 5 y 11) — semana 11 ni siquiera llega a `OPTIMAL` con 90s, se queda en `FEASIBLE` las 3 veces.
+
+**2. ¿La semana 10 (el caso original que motivó subir el timeout) es un caso aislado o reproducible?**
+Ninguna de las dos cosas exactamente — **es reproducible como CLASE de problema, no como semana fija.** Se confirmó con 3 cadenas independientes de 18 semanas (misma plantilla de 8 personas STAFF_DEFAULT, cambiando SOLO el orden inicial de rotación de cobertura nocturna — una perturbación mínima):
+
+```
+Variante 'original'  (orden Pedro,Ana,Miguel,Diego): 5 semanas lentas (>20s) — semanas 2,5,9,10,15 (23-38s cada una)
+Variante 'invertido'  (orden Diego,Miguel,Ana,Pedro): 1 semana lenta — semana 1, a 90.00s, FEASIBLE (no probado óptimo)
+Variante 'rotado'     (orden Miguel,Diego,Pedro,Ana): 1 semana lenta — semana 3, a 20.32s
+```
+
+Y en la corrida de escala real (9 personas) de arriba, las semanas lentas fueron la 4, 5, 8 y 11 — **no la 10** (que en esa corrida resolvió en 4.81s). Conclusión: las semanas difíciles **aparecen de forma fiable en cualquier cadena larga** (las 4 corridas independientes tuvieron al menos una), pero **en qué semana concreta y con qué severidad es impredecible de antemano** — depende del estado acumulado específico (equidad, histórico de turnos, racha de noches, rotación de cobertura) en ese punto de la cadena, no de un defecto puntual de "la semana 10".
+
+**3. ¿Es el término I la causa directa? Confirmado, no asumido.**
+Reconstruido el estado EXACTO de entrada a la semana 10 original (8 personas), resuelto dos veces — con `PESO_SOBRECOBERTURA_DIURNA` real (30) y forzado a 0 — mismo resto de configuración:
+
+```
+CON término I (peso 30): 42.61s, 37.95s, 36.11s  (media 38.89s) — todas OPTIMAL, mismo ObjectiveValue final (-1601.0)
+SIN término I (peso 0):   2.22s,  2.21s,  2.22s  (media  2.22s) — todas OPTIMAL, mismo ObjectiveValue final (-1601.0)
+Ratio: 17.5x más lento CON el término I.
+```
+
+El término I es la causa directa, confirmada empíricamente — con un matiz importante: la solución óptima final es LA MISMA con o sin I activo (mismo `ObjectiveValue`, el término I termina contribuyendo 0 a esa solución) — el coste no está en encontrar una buena solución, está en que el solver tenga que **demostrar** que ninguna solución mejor existe en un espacio de búsqueda mucho más grande (más términos lineales que acotar durante la prueba de optimalidad), aunque el resultado final no cambie.
+
+**4. ¿Es síncrona la generación de horario? Confirmado leyendo el código (sin tocarlo).**
+Sí, completamente síncrona: `static/index.html:1501` hace `await api('POST','/horario/generar',...)`, y `api()` es un `await fetch(...)` normal — el navegador del encargado se queda bloqueado esperando la respuesta HTTP, sin ningún patrón de cola/proceso en segundo plano ni sondeo. **Y hay un techo real más estricto que los 90s del solver**: `gunicorn.conf.py` fija `timeout = 60` — gunicorn mata el proceso worker a los 60s SIN IMPORTAR que el solver interno tenga margen hasta 90s. Con la escala real medida arriba, **2 de 18 semanas (11%) superan ese techo de 60s** — en producción, esas generaciones no terminarían con un JSON de error legible: el proceso moriría a mitad de resolver, y el encargado vería previsiblemente un error de conexión/502 tras haber esperado un minuto completo.
+
+### Conclusión de esta investigación — no es aceptable dejarlo así
+
+**Un caso de 90s (o de 60s en producción real) SÍ es inaceptable en la práctica**, tal como anticipaba la pregunta 4, independientemente de que "llegara a óptimo" en las pruebas de este informe. Esto cambia la conclusión de cierre anterior: el rediseño B>I>D en sí mismo (los pesos, la lógica de negocio) queda aceptado — pero **su coste de rendimiento a escala real NO estaba caracterizado cuando se aceptó**, y ahora que lo está, es un problema real de producción, no solo de laboratorio.
+
+**No se ha corregido en esta sesión** (no se pidió, y una corrección apresurada del rendimiento —bajar pesos, cambiar el solver, añadir un límite de tiempo con degradación— sería exactamente el tipo de "arreglo hasta que el número cuadre" que esta migración ha evitado en todo lo demás). Se deja documentado como **bloqueante de producción real, distinto y más grave que el rendimiento de `num_search_workers=1` ya aceptado** (aquel era despreciable a escala real; este NO lo es):
+
+- Opciones a valorar en una sesión aparte (no decidido aquí): mover la generación a un proceso en segundo plano con sondeo (cambia la UX, pero elimina el problema de raíz); bajar el límite del solver por debajo de 60s y aceptar `FEASIBLE` en vez de `OPTIMAL` para los casos difíciles (cede algo de calidad de solución a cambio de una respuesta a tiempo); investigar si el propio término I se puede reformular de forma que no penalice tanto el espacio de búsqueda de la prueba de optimalidad; o simplemente subir el timeout de gunicorn (parche superficial, no ataca la causa).
+
+## Conclusión final (revisada tras las 5 verificaciones + el cierre de determinismo + el arreglo del bug bloqueante + el rediseño de prioridades + la investigación de rendimiento a escala real)
 
 **El bug bloqueante (`cobertura_nocturna.py`, modo respaldo) está CORREGIDO Y VERIFICADO** — ver "RESUELTO" al final del Paso 3: parámetro `dias_cubrir` añadido a las 3 funciones de la cadena, verificado en los 4 puntos pedidos (test xfail ahora pasa por el motivo correcto, caso de infactibilidad real distinguido y confirmado, modo normal sin afectar, suite completa en verde) y confirmado end-to-end reproduciendo el escenario "Viernes de Carla" completo (las 8 semanas resuelven sin `RuntimeError`, incluida la semana 2 que antes fallaba).
 
-**El rediseño de prioridades B > I > D está IMPLEMENTADO, VERIFICADO Y ACEPTADO** (3/3 escenarios de dominancia con `ObjectiveValue()` explícito, calibraciones de E/F sin romperse, suite completa en verde — 209 passed) — con una regresión de rendimiento real encontrada y corregida en el camino (timeout de 30s insuficiente a escala real con los pesos nuevos, subido a 90s). El usuario revisó el resultado agregado (más roturas brutas en Recepción que antes del rediseño, 17 vs 15, 0 Partido mantenido) y **aceptó el resultado en Recepción tal cual, sin más ajuste de pesos** — no queda ninguna decisión de negocio pendiente sobre B/I/D.
+**El rediseño de prioridades B > I > D está IMPLEMENTADO, VERIFICADO Y ACEPTADO EN SU LÓGICA DE NEGOCIO** (3/3 escenarios de dominancia con `ObjectiveValue()` explícito, calibraciones de E/F sin romperse, suite completa en verde — 209 passed). El usuario revisó el resultado agregado (más roturas brutas en Recepción que antes del rediseño, 17 vs 15, 0 Partido mantenido) y **aceptó el resultado en Recepción tal cual, sin más ajuste de pesos** — no queda ninguna decisión de negocio pendiente sobre B/I/D.
+
+**PERO su coste de rendimiento a escala real es un bloqueante de producción nuevo, encontrado en la investigación posterior (ver sección "Investigación de rendimiento a escala real"):** a escala de 9 personas (la plantilla real de Recepción, sin `night_fixed`), 2 de 18 semanas (11%) superaron los 60s — el techo REAL de producción (`gunicorn.conf.py: timeout=60`), no los 90s del solver — y una de ellas ni siquiera llegó a probar la solución óptima. Confirmado con evidencia, no asumido: el término I es la causa directa (17.5x más lento con I que sin él, misma semana, mismo resultado final), el problema es reproducible como clase (aparece en 4 de 4 cadenas independientes probadas, en semanas distintas e impredecibles cada vez), y la generación es síncrona (el encargado espera en pantalla) — así que un caso de 60-90s no es solo "lento", es una generación que puede fallar en producción con un error de conexión tras un minuto de espera. Esto **no se ha corregido** en esta sesión (no se pidió, y arreglarlo con prisa habría sido exactamente el tipo de parche superficial que esta migración ha evitado en todo lo demás) — queda como bloqueante real, documentado con opciones a valorar, no resuelto.
 
 El resto de lo encontrado en rondas anteriores también quedó CERRADO, no solo señalado:
 
@@ -674,9 +745,10 @@ El resto de lo encontrado en rondas anteriores también quedó CERRADO, no solo 
 - **Todas las cifras de las tablas del informe (Paso 1, punto 4) se regeneraron y sustituyeron** por sus versiones ya deterministas — no queda ningún número en este informe que dependa de qué corrida concreta se mire.
 - El trade-off B (continuidad) vs I (sobre-cobertura) vs D (Partido) quedó **decidido por el usuario**: prioridad estricta B>I>D aceptada, incluido el resultado agregado en Recepción (17 roturas, 0 Partido) tal cual, sin más ajuste de pesos.
 
-**Lista de qué falta antes de "listo", actualizada — YA NO QUEDA NINGÚN BUG BLOQUEANTE NI NINGUNA DECISIÓN DE NEGOCIO ABIERTA:**
-1. Hallazgo aparte, no bloqueante, para valorar en una fase futura: `cfg.night_fixed_days_off` es un valor de configuración manual a nivel de rol/departamento (editable vía `/api/roles`), sin ningún mecanismo que lo actualice automáticamente cuando cambia quién ocupa el rol `night_fixed` — depende enteramente de que un administrador se acuerde de editarlo. No se ha corregido (fuera de alcance de esta sesión), solo documentado.
+**Lista de qué falta antes de "listo", actualizada:**
+1. **BLOQUEANTE DE PRODUCCIÓN, nuevo, sin corregir:** el término I hace que, a escala real (9 personas, sin `night_fixed`), 2 de 18 semanas (11%) superen los 60s (techo real de `gunicorn.conf.py`, no los 90s del solver) — una de ellas sin llegar siquiera a `OPTIMAL`. La generación es síncrona (el encargado espera en pantalla); en producción esto se traduce en generaciones que fallan tras un minuto de espera, no solo "lentas". Confirmado que el término I es la causa directa (17.5x) y que el problema es reproducible como clase (aparece en las 4 cadenas independientes probadas). Requiere una decisión de producto sobre cómo mitigarlo (proceso en segundo plano, bajar el límite del solver aceptando soluciones subóptimas, reformular el término I, u otra vía) — no decidido ni corregido en esta sesión.
+2. Hallazgo aparte, no bloqueante, para valorar en una fase futura: `cfg.night_fixed_days_off` es un valor de configuración manual a nivel de rol/departamento (editable vía `/api/roles`), sin ningún mecanismo que lo actualice automáticamente cuando cambia quién ocupa el rol `night_fixed` — depende enteramente de que un administrador se acuerde de editarlo. No se ha corregido (fuera de alcance de esta sesión), solo documentado.
 
-Todo lo demás que motivó dudas en rondas anteriores (peso de equidad, determinismo del solver, rendimiento del `num_search_workers=1`, el test de racha, el bug bloqueante de `cobertura_nocturna.py`, el orden de prioridad B/I/D) quedó resuelto y cerrado, con evidencia, no solo declarado. La regresión de rendimiento del propio rediseño (timeout de 30s insuficiente con los pesos nuevos) también se encontró y corrigió en la misma sesión que la introdujo, no se dejó pendiente.
+Todo lo demás que motivó dudas en rondas anteriores (peso de equidad, determinismo del solver, rendimiento del `num_search_workers=1` en sí mismo, el test de racha, el bug bloqueante de `cobertura_nocturna.py`, el orden de prioridad B/I/D) quedó resuelto y cerrado, con evidencia, no solo declarado.
 
-**Con esto: el motor CP-SAT ya no tiene ningún bug conocido pendiente que bloquee producción, la prioridad de negocio pedida está correctamente implementada y verificada, y el usuario aceptó el resultado agregado en Recepción tal cual.** Lo único que queda, y no es bloqueante, es valorar si el hallazgo del punto 1 (gestión manual de `night_fixed_days_off`) merece una fase de mejora aparte.
+**Con esto: la prioridad de negocio B>I>D está correctamente implementada, verificada y aceptada — pero el motor CP-SAT SÍ tiene un bloqueante de producción conocido y sin corregir (punto 1), descubierto precisamente al medir lo que antes no se había medido a esta escala.** No está "listo" sin reservas hasta resolver ese punto.
