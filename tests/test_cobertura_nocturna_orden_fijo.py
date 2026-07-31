@@ -282,58 +282,78 @@ def test_baja_del_siguiente_turno_cuando_era_el_ultimo_pasa_al_primero():
 # RuntimeError("... status=INFEASIBLE"), no por falta real de personal,
 # sino por este bug de elegibilidad.
 #
-# xfail(strict=True): el día que se corrija (pasando el día concreto por
-# toda la cadena de llamadas: motor_cpsat.generar_semana_cpsat_con_
-# cobertura_nocturna → seleccionar_candidato_cobertura_nocturna →
-# _elegibles → _bloqueados_por_peticion_o_vacacion), este test debe pasar
-# solo, y strict=True hará que pytest falle con un XPASS si eso ocurre sin
-# que nadie lo haya marcado explícitamente — señal de que se arregló de
-# una forma distinta a la documentada aquí, o sin darse cuenta de qué se
-# estaba resolviendo. No confundir con night_fixed_days_off: ese mecanismo
-# solo aplica en modo NORMAL (un único sustituto cubre ambos días fijos de
-# night_fixed) y sigue funcionando correctamente — el bug es específico de
-# modo respaldo, día a día.
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "cobertura_nocturna._elegibles/_bloqueados_por_peticion_o_vacacion "
-        "no reciben el día concreto que se cubre en modo respaldo: solo "
-        "filtran contra cfg.night_fixed_days_off, nunca contra el "
-        "forced_days_off del día real que toca decidir. Requiere threading "
-        "del parámetro de día por 3 funciones (ver INFORME_FASE_5.md, "
-        "Paso 3) — no corregido deliberadamente en esta sesión."
-    ),
-)
+# CORREGIDO (Fase 5, cierre del bug bloqueante): seleccionar_candidato_
+# cobertura_nocturna ahora acepta dias_cubrir={d} (ver su docstring y el
+# docstring del módulo) — el llamador de modo respaldo (motor_cpsat.py)
+# ya lo pasa en cada una de sus 7 llamadas. Este test deja de ser xfail:
+# ya no basta con "no lanza excepción", se confirma con aserciones
+# explícitas que (a) Ana NO es elegida el día que tiene bloqueado, y (b)
+# alguien más SÍ lo es (la cobertura de esa noche no queda sin cubrir).
 def test_modo_respaldo_no_debe_asignar_a_quien_tiene_ese_dia_forzado_libre():
-    """Modo respaldo (sin night_fixed): Ana tiene Martes forzado libre
-    (vacación/petición concedida). Al pedir cobertura día a día para toda la
-    semana, ninguna llamada para el día "Martes" debería devolver a Ana —
-    hoy sí puede devolverla, porque _elegibles/_bloqueados_por_peticion_o_
-    vacacion no comprueban el día concreto, solo cfg.night_fixed_days_off
-    (aquí Jueves/Viernes, irrelevante para el Martes)."""
+    """Modo respaldo (sin night_fixed): Ana tiene Lunes forzado libre
+    (vacación/petición concedida). Al pedir cobertura día a día para toda
+    la semana, pasando dias_cubrir={d} en cada llamada (como hace
+    motor_cpsat.py), la llamada del Lunes NO debe devolver a Ana — y debe
+    devolver a otra persona elegible de verdad (Diego o Miguel), no
+    limitarse a "no fallar"."""
     orden = ["Ana", "Diego", "Miguel"]
     # Ana tiene el LUNES forzado libre. Con este orden/estado (verificado
-    # empíricamente antes de escribir el test, no asumido): la rotación por
-    # orden fijo en modo respaldo asigna a Ana el Lunes, Jueves y Domingo —
-    # el Lunes es justo el día que Ana tiene bloqueado, así que el
-    # escenario SÍ fuerza el conflicto (con otro día se corre el riesgo de
-    # que "pase" por simple coincidencia de fase de rotación, no porque el
-    # bug no exista — el mismo patrón de falso negativo que ya se detectó
-    # una vez con los tests de "domingo suelto").
+    # empíricamente antes de escribir el test, no asumido): la rotación en
+    # modo respaldo (balance puro, covers=0 para todos al principio,
+    # desempate alfabético) asignaba a Ana el Lunes, Jueves y Domingo antes
+    # del arreglo — el Lunes es justo el día que Ana tiene bloqueado, así
+    # que el escenario SÍ fuerza el conflicto (con otro día se corre el
+    # riesgo de que "pase" por simple coincidencia de fase de rotación, no
+    # porque el bug no exista — el mismo patrón de falso negativo que ya
+    # se detectó una vez con los tests de "domingo suelto").
     staff = _staff(orden, night_fixed=None, Ana=["Lunes"])
     cfg = _cfg()
     estado = _estado_base(orden)
 
     dia_indice_lunes = DAYS.index("Lunes")
     for d in range(7):
-        elegido, estado = seleccionar_candidato_cobertura_nocturna(staff, cfg, estado)
+        elegido, estado = seleccionar_candidato_cobertura_nocturna(
+            staff, cfg, estado, dias_cubrir={d}
+        )
         if d == dia_indice_lunes:
             assert elegido != "Ana", (
                 f"seleccionar_candidato_cobertura_nocturna asignó a Ana la "
                 f"cobertura nocturna del Lunes, pese a que Ana tiene ese "
-                f"día forzado Libre (forced_days_off=['Lunes']) — la "
-                f"elegibilidad de modo respaldo no comprueba el día "
-                f"concreto que se está cubriendo, solo "
-                f"cfg.night_fixed_days_off (Jueves/Viernes aquí, "
-                f"irrelevante para el Lunes). Elegido: {elegido!r}"
+                f"día forzado Libre (forced_days_off=['Lunes']) y a que se "
+                f"pasó dias_cubrir={{d}} explícitamente. Elegido: {elegido!r}"
             )
+            assert elegido in ("Diego", "Miguel"), (
+                f"El Lunes debía cubrirlo alguien REALMENTE elegible ese "
+                f"día (Diego o Miguel, ninguno bloqueado) — no basta con "
+                f"que no sea Ana, tiene que ser una asignación real. "
+                f"Elegido: {elegido!r}"
+            )
+
+
+def test_modo_respaldo_infactibilidad_real_cuando_todos_bloqueados_ese_dia():
+    """Distingue el caso corregido (INFEASIBLE espurio, ver test anterior)
+    del caso de infactibilidad REAL: si TODOS los candidatos elegibles
+    tienen el mismo día concreto forzado Libre, no hay nadie que pueda
+    cubrir esa noche — seleccionar_candidato_cobertura_nocturna debe
+    seguir lanzando RuntimeError, y debe hacerlo por el motivo correcto
+    ("nadie elegible", no una excepción distinta o un valor inventado).
+
+    Tras el arreglo, un RuntimeError de esta función SIEMPRE significa
+    "no hay solución real" — antes del arreglo, el INFEASIBLE de
+    motor_cpsat.py para el escenario del test anterior también parecía
+    "sin solución real" pero no lo era (bug de elegibilidad, no falta de
+    personal). Este test confirma que ese otro caso, el genuinamente sin
+    solución, se sigue reportando explícitamente."""
+    orden = ["Ana", "Diego", "Miguel"]
+    dia_indice_lunes = DAYS.index("Lunes")
+    # Los 3 candidatos elegibles tienen el LUNES forzado libre (vacación
+    # concedida a los 3 a la vez, o coincidencia de peticiones) — nadie
+    # puede cubrir la noche de ese día.
+    staff = _staff(orden, night_fixed=None, Ana=["Lunes"], Diego=["Lunes"], Miguel=["Lunes"])
+    cfg = _cfg()
+    estado = _estado_base(orden)
+
+    with pytest.raises(RuntimeError, match="[Nn]adie.*elegible"):
+        seleccionar_candidato_cobertura_nocturna(
+            staff, cfg, estado, dias_cubrir={dia_indice_lunes}
+        )

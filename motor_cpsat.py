@@ -823,8 +823,17 @@ def generar_semana_cpsat_con_cobertura_nocturna(
     nombre_sustituto_unico = None
     if modo_respaldo_activo(staff_list, estado_rotacion):
         for d in range(7):
+            # dias_cubrir={d} (Fase 5, corrección de INFEASIBLE espurio):
+            # cada llamada de modo respaldo decide un día CONCRETO, no los
+            # dos días fijos de cfg.night_fixed_days_off (que en modo
+            # respaldo pueden ser irrelevantes, p.ej. si no hay night_fixed
+            # en la plantilla) — sin este parámetro, la elegibilidad podía
+            # devolver a alguien con el día `d` real ya forzado Libre por
+            # vacación/petición, y la línea de abajo fijaba Noche=1 sobre
+            # esa misma celda: dos restricciones duras contradictorias,
+            # INFEASIBLE que no reflejaba una imposibilidad real.
             nombre, estado_rotacion = seleccionar_candidato_cobertura_nocturna(
-                staff_list, cfg, estado_rotacion
+                staff_list, cfg, estado_rotacion, dias_cubrir={d}
             )
             cobertura_externa[d] = nombre
     else:

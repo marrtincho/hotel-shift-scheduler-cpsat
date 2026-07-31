@@ -111,6 +111,99 @@ modo_respaldo: True
 
 **Este es, con diferencia, el hallazgo más importante del informe**: es un bug real en el propio motor_cpsat/cobertura_nocturna (código de esta migración, no del heurístico), que en modo respaldo puede producir un `RuntimeError` de infactibilidad espuria en producción con cualquier plantilla sin `night_fixed` que además tenga vacaciones/peticiones concedidas coincidiendo con el reparto de cobertura nocturna.
 
+### RESUELTO (sesión posterior) — corrección, verificación en 4 puntos, y cierre
+
+**El arreglo.** Se añadió el parámetro `dias_cubrir: set = None` a las 3 funciones de la cadena:
+
+- `cobertura_nocturna._bloqueados_por_peticion_o_vacacion(staff_list, cfg, dias_cubrir=None)`: si `dias_cubrir` es `None`, reproduce el comportamiento anterior exacto (bloquea contra `cfg.night_fixed_days_off` — correcto en modo NORMAL, donde un único sustituto cubre ambos días fijos). Si se pasa un `set` de índices de día, bloquea contra ESOS días en concreto.
+- `cobertura_nocturna._elegibles(staff_list, cfg, dias_cubrir=None)`: reenvía el parámetro tal cual.
+- `cobertura_nocturna.seleccionar_candidato_cobertura_nocturna(staff_list, cfg, estado_rotacion, dias_cubrir=None)`: reenvía el parámetro a `_elegibles`.
+- `motor_cpsat.generar_semana_cpsat_con_cobertura_nocturna`: en el bucle de modo respaldo (`for d in range(7)`), ahora pasa `dias_cubrir={d}` en cada una de las 7 llamadas — el día concreto que esa llamada decide. La llamada de modo normal no cambia (sigue sin pasar el parámetro, usando el default `None` = `cfg.night_fixed_days_off`, que es lo correcto ahí).
+
+El valor por defecto `None` fue deliberado: preserva el comportamiento y la firma de los ~10 call sites existentes en `tests/test_cobertura_nocturna_orden_fijo.py` que ejercitan modo normal, sin tener que tocarlos.
+
+**Verificación en los 4 puntos pedidos, no solo "ya no da error":**
+
+**1. El test xfail existente ahora pasa de verdad.** Se quitó el marcador `@pytest.mark.xfail` de `test_modo_respaldo_no_debe_asignar_a_quien_tiene_ese_dia_forzado_libre` (ahora pasando `dias_cubrir={d}` en cada llamada del bucle, igual que hace `motor_cpsat.py`) y se reforzaron las aserciones: no solo `elegido != "Ana"`, sino `elegido in ("Diego", "Miguel")` — confirma que otra persona REALMENTE elegible cubrió esa noche, no solo que Ana quedó excluida.
+```
+$ pytest tests/test_cobertura_nocturna_orden_fijo.py -k modo_respaldo_no_debe -v
+tests/test_cobertura_nocturna_orden_fijo.py::test_modo_respaldo_no_debe_asignar_a_quien_tiene_ese_dia_forzado_libre PASSED [100%]
+```
+
+**2. Caso de infactibilidad REAL, distinguido del INFEASIBLE espurio ya corregido.** Nuevo test `test_modo_respaldo_infactibilidad_real_cuando_todos_bloqueados_ese_dia`: los 3 candidatos elegibles (Ana, Diego, Miguel) tienen el mismo día forzado Libre — nadie puede cubrir esa noche. Confirma que `seleccionar_candidato_cobertura_nocturna` sigue lanzando `RuntimeError` con el mensaje correcto ("nadie elegible"), no una excepción distinta ni un valor inventado:
+```
+$ pytest tests/test_cobertura_nocturna_orden_fijo.py -v
+...
+tests/test_cobertura_nocturna_orden_fijo.py::test_modo_respaldo_no_debe_asignar_a_quien_tiene_ese_dia_forzado_libre PASSED [ 93%]
+tests/test_cobertura_nocturna_orden_fijo.py::test_modo_respaldo_infactibilidad_real_cuando_todos_bloqueados_ese_dia PASSED [100%]
+============================== 15 passed in 0.29s ==============================
+```
+Con esta distinción confirmada: tras el arreglo, un `RuntimeError` de esta función significa siempre "no hay solución real" — antes del arreglo, el mismo tipo de error podía significar también "el chequeo se saltó un dato", que es exactamente lo que ya no puede volver a pasar.
+
+**3. Modo normal, sin afectar.** Suite completa de `tests/test_cobertura_nocturna_orden_fijo.py` (15 tests, incluidos los 2 nuevos) y `tests/test_racha_noches.py` (5 tests, dos de los cuales — `test_alternancia_moderada_night_fixed` y `test_alternancia_agresiva_night_fixed_cada_semana` — ejercitan modo respaldo end-to-end vía `generar_semana_cpsat_con_cobertura_nocturna`, no solo a nivel unitario de `cobertura_nocturna.py`):
+```
+$ pytest tests/test_cobertura_nocturna_orden_fijo.py -v   → 15 passed in 0.29s
+$ pytest tests/test_racha_noches.py -v                     → 5 passed in 3.82s
+```
+
+**4. Suite completa del proyecto**, salida literal:
+```
+$ PYTHONPATH=. python -m pytest tests/ -q
+........................................................................ [ 34%]
+........................................................................ [ 69%]
+..............................................................           [100%]
+206 passed in 85.88s (0:01:25)
+```
+(206 = los 204 de antes de esta sesión, más el test que era xfail y ahora pasa de verdad, más el test nuevo de infactibilidad real — 0 xfailed, 0 fallos.)
+
+**Confirmación end-to-end a escala completa — el MISMO escenario "Viernes de Carla" reconstruido, con el arreglo aplicado** (`escenario_viernes_carla_cpsat.py`, 8 semanas encadenadas, exactamente el mismo input que producía `INFEASIBLE` en la semana 2 antes del arreglo):
+```
+SEMANA 1: Resuelto sin RuntimeError (factible para CP-SAT).
+SEMANA 2: Resuelto sin RuntimeError (factible para CP-SAT).
+SEMANA 3: Resuelto sin RuntimeError (factible para CP-SAT).
+SEMANA 4: Resuelto sin RuntimeError (factible para CP-SAT).
+SEMANA 5: Resuelto sin RuntimeError (factible para CP-SAT).
+SEMANA 6: Resuelto sin RuntimeError (factible para CP-SAT).
+SEMANA 7: Resuelto sin RuntimeError (factible para CP-SAT).
+SEMANA 8: Resuelto sin RuntimeError (factible para CP-SAT).
+
+CP-SAT resolvió las 8 semanas del escenario reconstruido sin infactibilidad en ninguna (todas las restricciones duras satisfechas por construcción).
+```
+La semana 2, que antes lanzaba `RuntimeError (status=INFEASIBLE)` por el bug, ahora se resuelve — confirmando en el propio escenario que motivó el hallazgo que la infactibilidad era espuria, no real.
+
+**Bug bloqueante: CERRADO.**
+
+#### Paso 1 re-corrido específicamente para el escenario de modo respaldo
+
+El comportamiento de CP-SAT en modo respaldo cambió con este arreglo (antes: `RuntimeError` espurio en la semana 2 de 8; ahora: las 8 semanas resuelven), así que se recalculan aquí las métricas de la comparativa (violaciones duras, roturas de continuidad término B, uso de Partido) sobre el escenario reconstruido completo — no existían antes porque el escenario nunca había llegado a completarse:
+
+```
+Semana 1: violaciones=0 roturas_B=0 partido=0
+Semana 2: violaciones=0 roturas_B=0 partido=0
+Semana 3: violaciones=0 roturas_B=3 partido=0
+Semana 4: violaciones=0 roturas_B=1 partido=0
+Semana 5: violaciones=0 roturas_B=1 partido=0
+Semana 6: violaciones=0 roturas_B=1 partido=0
+Semana 7: violaciones=0 roturas_B=2 partido=0
+Semana 8: violaciones=0 roturas_B=1 partido=0
+
+TOTAL (8 semanas, escenario modo respaldo, tras el arreglo):
+  Violaciones duras: 0
+  Roturas de continuidad (término B): 9
+  Uso de Partido: 0
+  RuntimeError (INFEASIBLE): NINGUNO en ninguna de las 8 semanas
+```
+
+Mismo patrón que en Recepción/Mozos con plantillas normales (Paso 1): 0 violaciones duras por construcción, Partido eliminado por completo, algunas roturas de continuidad (9 en 8 semanas) consistentes con el trade-off D>B ya documentado como decisión de negocio pendiente — el modo respaldo, una vez corregido el bug de elegibilidad, se comporta de forma cualitativamente igual al resto del motor, no como un caso aparte.
+
+#### Diagnóstico aparte (no relacionado con el arreglo): gestión de `cfg.night_fixed_days_off` cuando cambia el titular del rol
+
+`night_fixed_days_off` (y su compañero `night_cover_compensation`) **no está atado a ninguna persona concreta — es un valor de configuración del ROL `night_fixed` a nivel de departamento**, almacenado en `roles.json` (campos `dias_libres_fijos`/`dias_libres_sustituto` del rol `night_fixed`, ver `herramientas.py`) y editable vía `PUT /api/roles/<rol_id>` (`app.py:555`, requiere permiso `gestionar_roles`). `app._get_dept_config` lo lee en cada generación (`nf = roles.get("night_fixed", {}); cfg.night_fixed_days_off = nf["dias_libres_fijos"]`).
+
+Esto significa: **no es una constante fija en el código** (se puede variar sin tocar código, vía la UI de administración de roles) — pero **tampoco hay ningún mecanismo que lo actualice automáticamente cuando cambia quién ocupa el rol** `night_fixed` en la plantilla (`plantilla.json`). Si Carlos (con Jue+Vie configurados) deja el rol y lo asume una persona nueva que preferiría, por ejemplo, Sáb+Dom, un administrador tiene que acordarse de ir a editar el rol manualmente vía `/api/roles/night_fixed` — no hay ningún aviso, validación cruzada, ni campo de preferencia por empleado que lo dispare automáticamente. El cambio de titular y el cambio de días libres fijos son dos acciones independientes que hoy dependen enteramente de que un humano recuerde hacer la segunda tras la primera.
+
+**No se corrige en esta sesión** (fuera de alcance, según lo pedido) — se deja como hallazgo para valorar si merece una fase aparte (p.ej. un aviso en la UI al reasignar el rol `night_fixed`, o mover la preferencia de días libres al empleado en vez de al rol).
+
 ## Paso 4 — Ajuste de pesos
 
 `PESO_EQUIDAD_FINDES`: **10 → 100** (motor_cpsat.py, commit `5f91e0e`).
@@ -352,31 +445,20 @@ Esto confirma que, bajo los pesos reales, la alternativa con más Partido cuesta
 
 **No se reordenaron los pesos D/B.** Queda como decisión pendiente del usuario, con la tabla completa delante: ¿aceptar que CP-SAT rompa más veces la continuidad a cambio de casi eliminar "Partido", o preferir lo contrario?
 
-### 5. Test permanente (xfail) para el bug de `cobertura_nocturna.py`
+### 5. Test permanente (xfail → PASS tras el arreglo) para el bug de `cobertura_nocturna.py`
 
 Añadido a `tests/test_cobertura_nocturna_orden_fijo.py`:
-`test_modo_respaldo_no_debe_asignar_a_quien_tiene_ese_dia_forzado_libre` — modo respaldo (sin `night_fixed`), Ana con Lunes forzado libre; se piden los 7 días de cobertura y se comprueba que ningún día Ana quede asignada el día que tiene bloqueado. Marcado `@pytest.mark.xfail(strict=True, reason=...)` con referencia explícita a la causa raíz (falta el parámetro de día concreto en `seleccionar_candidato_cobertura_nocturna`/`_elegibles`/`_bloqueados_por_peticion_o_vacacion`).
+`test_modo_respaldo_no_debe_asignar_a_quien_tiene_ese_dia_forzado_libre` — modo respaldo (sin `night_fixed`), Ana con Lunes forzado libre; se piden los 7 días de cobertura y se comprueba que ningún día Ana quede asignada el día que tiene bloqueado. Marcado originalmente `@pytest.mark.xfail(strict=True, reason=...)` con referencia explícita a la causa raíz (falta el parámetro de día concreto en `seleccionar_candidato_cobertura_nocturna`/`_elegibles`/`_bloqueados_por_peticion_o_vacacion`).
 
-Nota de rigor: el primer intento de este test (con "Martes" como día bloqueado) dio **XPASS** — no porque el bug no exista, sino porque la rotación por orden fijo de ese escenario concreto nunca hacía coincidir a Ana con el Martes (coincidencia de fase de rotación, el mismo patrón de falso-negativo de los puntos 2/3). Se verificó primero, con un script aparte, qué día le toca realmente a Ana en la rotación determinista de ese `estado_rotacion`, y se usó ESE día ("Lunes") para forzar el conflicto de verdad:
+Nota de rigor: el primer intento de este test (con "Martes" como día bloqueado) dio **XPASS** — no porque el bug no exista, sino porque la rotación por orden fijo de ese escenario concreto nunca hacía coincidir a Ana con el Martes (coincidencia de fase de rotación, el mismo patrón de falso-negativo de los puntos 2/3). Se verificó primero, con un script aparte, qué día le toca realmente a Ana en la rotación determinista de ese `estado_rotacion`, y se usó ESE día ("Lunes") para forzar el conflicto de verdad.
 
-```
-$ pytest tests/test_cobertura_nocturna_orden_fijo.py -k modo_respaldo_no_debe -v
-tests/test_cobertura_nocturna_orden_fijo.py::test_modo_respaldo_no_debe_asignar_a_quien_tiene_ese_dia_forzado_libre XFAIL [100%]
-13 deselected, 1 xfailed
-```
+**Actualización (sesión posterior, ver "RESUELTO" al final del Paso 3): el bug se corrigió.** Se quitó el marcador `xfail`, se reforzaron las aserciones (confirma no solo que Ana no fue elegida, sino que otra persona SÍ lo fue), se añadió un segundo test para distinguir la infactibilidad real de la espuria, y el test ahora **PASA de verdad** — ver el detalle completo en la sección "RESUELTO" del Paso 3, que sustituye esta nota como estado actual.
 
-Suite completa tras añadir el test:
-```
-$ PYTHONPATH=. python -m pytest tests/ -q
-........................................................................ [ 35%]
-.................x...................................................... [ 70%]
-.............................................................            [100%]
-204 passed, 1 xfailed in 46.20s
-```
+## Conclusión final (revisada tras las 5 verificaciones + el cierre de determinismo + el arreglo del bug bloqueante)
 
-## Conclusión final (revisada tras las 5 verificaciones + el cierre de determinismo)
+**El bug bloqueante (`cobertura_nocturna.py`, modo respaldo) está CORREGIDO Y VERIFICADO** — ver "RESUELTO" al final del Paso 3: parámetro `dias_cubrir` añadido a las 3 funciones de la cadena, verificado en los 4 puntos pedidos (test xfail ahora pasa por el motivo correcto, caso de infactibilidad real distinguido y confirmado, modo normal sin afectar, suite completa en verde — 206 passed, 0 fallos, 0 xfailed) y confirmado end-to-end reproduciendo el escenario "Viernes de Carla" completo (las 8 semanas resuelven sin `RuntimeError`, incluida la semana 2 que antes fallaba).
 
-**Sigue sin estar listo para producción — pero el determinismo del solver ya no es parte de los motivos.** El bloqueo principal (bug de `cobertura_nocturna.py` en modo respaldo, Paso 3) permanece intacto y tiene un test permanente que lo documenta (punto 5). El resto de lo encontrado en las verificaciones puntuales ha quedado CERRADO en esta misma sesión, no solo señalado:
+El resto de lo encontrado en las verificaciones puntuales de la ronda anterior también quedó CERRADO en esa misma sesión, no solo señalado:
 
 - **`PESO_EQUIDAD_FINDES=100` (Paso 4):** confirmado que no rompió la propiedad de diseño de fase 2 (E cede ante A) — el margen de esa propiedad de hecho mejoró 10x (punto 2). La guarda de test obsoleta que dependía del valor viejo hardcodeado quedó corregida.
 - **No-determinismo del solver (puntos 3-4):** resuelto por completo, con dos causas distintas encontradas y corregidas, no solo una:
@@ -388,8 +470,10 @@ $ PYTHONPATH=. python -m pytest tests/ -q
 - **Todas las cifras de las tablas del informe (Paso 1, punto 4) se regeneraron y sustituyeron** por sus versiones ya deterministas — no queda ningún número en este informe que dependa de qué corrida concreta se mire.
 - El trade-off D (Partido) vs B (continuidad) sigue como **decisión de negocio pendiente del usuario** — ahora con una tabla estable y reproducible delante, no una que cambia entre lecturas.
 
-**Lista de qué falta antes de "listo", actualizada:**
-1. Corregir el bug de elegibilidad por día en `cobertura_nocturna.py` (bloqueante, Paso 3 — sigue siendo el único motivo de fondo; ya tiene test xfail que lo prueba).
-2. Decisión de negocio pendiente: ¿D (Partido) > B (continuidad) es el orden de prioridad deseado? (Recepción: 15 roturas CP-SAT vs 9 heurístico, a cambio de 0 Partido vs 10).
+**Lista de qué falta antes de "listo", actualizada — YA NO QUEDA NINGÚN BUG BLOQUEANTE ABIERTO:**
+1. Decisión de negocio pendiente (única cosa que falta, no es un bug): ¿D (Partido) > B (continuidad) es el orden de prioridad deseado? (Recepción: 15 roturas CP-SAT vs 9 heurístico, a cambio de 0 Partido vs 10).
+2. Hallazgo aparte, no bloqueante, para valorar en una fase futura: `cfg.night_fixed_days_off` es un valor de configuración manual a nivel de rol/departamento (editable vía `/api/roles`), sin ningún mecanismo que lo actualice automáticamente cuando cambia quién ocupa el rol `night_fixed` — depende enteramente de que un administrador se acuerde de editarlo. No se ha corregido (fuera de alcance de esta sesión), solo documentado.
 
-Todo lo demás que motivó dudas en la ronda de verificaciones puntuales (peso de equidad, determinismo del solver, rendimiento, el test de racha) queda resuelto y cerrado en esta sesión.
+Todo lo demás que motivó dudas en la ronda de verificaciones puntuales (peso de equidad, determinismo del solver, rendimiento, el test de racha) y el propio bug bloqueante de `cobertura_nocturna.py` quedan resueltos y cerrados en esta sesión, con evidencia, no solo declarados.
+
+**Con esto: el motor CP-SAT ya no tiene ningún bug conocido pendiente que bloquee producción.** Lo único que queda antes de decir "listo" sin reservas es la decisión de negocio del punto 1 (una preferencia de diseño, no un defecto) y valorar si el hallazgo del punto 2 merece una fase de mejora aparte.

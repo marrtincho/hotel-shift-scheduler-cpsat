@@ -1,0 +1,304 @@
+"""
+cobertura_nocturna.py — Prototipo AISLADO: selección de quién cubre los días
+libres de night_fixed, por orden fijo con respaldo de balance histórico.
+
+No toca app.py ni modelo_base.py. Sustituye, solo dentro de este prototipo,
+el criterio de select_night_covers (modelo_base.py) — que elige siempre por
+menor histórico de noches cubiertas — por un ORDEN FIJO como mecanismo
+principal, usando el histórico solo como respaldo en dos casos concretos
+(ver `seleccionar_candidato_cobertura_nocturna`). select_night_covers no se
+modifica ni se importa; solo se usó como referencia de comportamiento para
+el filtro de elegibilidad y el criterio de balance puro.
+
+No implementa todavía: la migración de night_rotation_*.json al nuevo
+formato de estado (sesión siguiente), ni la conexión con la restricción de
+racha de noches en motor_cpsat.py (también sesión siguiente) — esta función
+solo decide QUIÉN cubre cada noche que haga falta cubrir; qué días
+concretos hacen falta cubrir y cómo se modela la racha es responsabilidad
+de quien la invoque.
+
+── Formato de estado_rotacion ────────────────────────────────────────────
+{
+    "orden": [lista de nombres, orden fijo vigente],
+    "siguiente_turno": "nombre de quien le toca por defecto esta semana",
+    "deudas": {"nombre": int},          # turnos saltados pendientes de recuperar
+    "usar_orden_fijo": bool,            # si False, se ignora todo lo anterior
+    "historico_balance": {"nombre": {"covers": int, "pending": int}},
+    # mismo formato que _load_night_history en modelo_base.py — mecanismo
+    # de respaldo (balance puro: menor covers-pending elige primero).
+
+    # Campo adicional propio de este prototipo, no listado en el encargo
+    # original pero necesario para la regla 4 (modo respaldo por ausencia
+    # larga): cuántas semanas CONSECUTIVAS lleva night_fixed totalmente
+    # ausente (forced_days_off cubriendo los 7 días). Lo mantiene
+    # avanzar_semana_ausencia_night_fixed, NO seleccionar_candidato_cobertura_
+    # nocturna — ver la nota de diseño en esa función sobre por qué está
+    # separado.
+    "ausencias_night_fixed_consecutivas": int,
+}
+
+── Contrato de uso (importante para la sesión que conecte esto al CP-SAT) ──
+1. Una vez por semana, ANTES de cualquier llamada a
+   seleccionar_candidato_cobertura_nocturna esa semana, llamar a
+   avanzar_semana_ausencia_night_fixed(staff_list, estado_rotacion) y usar
+   su resultado como estado_rotacion de partida. Esto actualiza el contador
+   de semanas consecutivas de ausencia — se hace aparte, una vez, para que
+   llamar a seleccionar_candidato_cobertura_nocturna varias veces la misma
+   semana (modo respaldo, una noche a la vez) no infle el contador.
+2. Modo normal (order fijo activo, night_fixed presente o ausente <2
+   semanas): llamar a seleccionar_candidato_cobertura_nocturna UNA vez por
+   semana — la misma persona cubre los dos días de cfg.night_fixed_days_off.
+3. Modo respaldo (ausencia >=2 semanas consecutivas, o rol night_fixed
+   inexistente en staff_list): llamar a seleccionar_candidato_cobertura_
+   nocturna UNA vez POR CADA noche que haga falta cubrir esa semana,
+   encadenando el estado_rotacion devuelto entre llamadas — así el balance
+   histórico se actualiza entre noches y reparte el reparto en vez de
+   asignar siempre a la misma persona. IMPORTANTE (parámetro añadido en
+   Fase 5, corrección de INFEASIBLE espurio): cada una de estas llamadas
+   DEBE pasar `dias_cubrir={d}` con el índice del día concreto (0=Lunes..
+   6=Domingo) que se está decidiendo en esa llamada — de lo contrario la
+   elegibilidad vuelve a comprobarse contra cfg.night_fixed_days_off (el
+   bug original), no contra el día real, y puede devolver a alguien que
+   ese día tiene una vacación/petición concedida.
+"""
+
+from modelo_base import DAYS
+
+
+def _persona_ausente_toda_la_semana(persona: dict) -> bool:
+    return set(persona.get("forced_days_off", [])) >= set(DAYS)
+
+
+def _bloqueados_por_peticion_o_vacacion(staff_list: list, cfg, dias_cubrir: set = None) -> set:
+    """Nombres bloqueados porque su forced_days_off cubre algún día de
+    `dias_cubrir` (regla 1).
+
+    dias_cubrir: índices de día (0=Lunes..6=Domingo) que se están decidiendo
+    en ESTA llamada concreta. Si es None (por defecto), se asume el caso
+    histórico de modo NORMAL: un único sustituto cubre AMBOS días de
+    cfg.night_fixed_days_off, así que el bloqueo se comprueba contra esos
+    dos días fijos — comportamiento sin cambios para quien no pase el
+    parámetro nuevo.
+
+    BUG corregido (Fase 5, verificación tras el arreglo del INFEASIBLE
+    espurio): en modo respaldo, cada llamada decide UN día concreto (no
+    necesariamente uno de cfg.night_fixed_days_off — puede no haber ni
+    night_fixed en la plantilla). Antes de este parámetro, esta función
+    SIEMPRE comprobaba el bloqueo contra cfg.night_fixed_days_off sin
+    importar qué día se estuviera cubriendo de verdad, así que podía
+    devolver como "elegible" a alguien con el día REAL que se cubre
+    marcado como forced_days_off — motor_cpsat.py fijaba entonces Noche=1
+    ese día sobre una persona que Fase 1 ya había forzado a Libre ese
+    mismo día, produciendo un INFEASIBLE espurio (dos restricciones duras
+    contradictorias), no una infactibilidad real."""
+    dias_a_comprobar = set(dias_cubrir) if dias_cubrir is not None else set(cfg.night_fixed_days_off)
+    dias_gap = {DAYS[i] for i in dias_a_comprobar}
+    bloqueados = set()
+    for p in staff_list:
+        forced = set(p.get("forced_days_off", []))
+        if forced & dias_gap:
+            bloqueados.add(p["name"])
+    return bloqueados
+
+
+def _elegibles(staff_list: list, cfg, dias_cubrir: set = None) -> list:
+    """Regla 1: rol no en cfg.no_night_roles, no es night_fixed, no
+    bloqueado por vacación/petición concedida en los días de `dias_cubrir`
+    (ver _bloqueados_por_peticion_o_vacacion para el significado exacto de
+    este parámetro y por qué None reproduce el comportamiento de modo
+    normal sin cambios)."""
+    bloqueados = _bloqueados_por_peticion_o_vacacion(staff_list, cfg, dias_cubrir)
+    return [
+        p for p in staff_list
+        if p.get("role") not in cfg.no_night_roles
+        and p.get("role") != "night_fixed"
+        and p["name"] not in bloqueados
+    ]
+
+
+def _en_modo_respaldo(staff_list: list, estado_rotacion: dict) -> bool:
+    """Regla 4: sin night_fixed en plantilla, o >=2 semanas consecutivas de
+    ausencia (contador mantenido por avanzar_semana_ausencia_night_fixed)."""
+    nf = next((p for p in staff_list if p.get("role") == "night_fixed"), None)
+    if nf is None:
+        return True
+    return estado_rotacion.get("ausencias_night_fixed_consecutivas", 0) >= 2
+
+
+def modo_respaldo_activo(staff_list: list, estado_rotacion: dict) -> bool:
+    """Wrapper público de _en_modo_respaldo — añadido para que quien orqueste
+    la generación semanal (motor_cpsat.py) pueda decidir CUÁNTAS veces llamar
+    a seleccionar_candidato_cobertura_nocturna (1 vez en modo normal, 1 vez
+    por noche en modo respaldo — ver contrato de uso arriba) sin tener que
+    importar un nombre "privado" (con guion bajo) de este módulo."""
+    return _en_modo_respaldo(staff_list, estado_rotacion)
+
+
+def avanzar_semana_ausencia_night_fixed(staff_list: list, estado_rotacion: dict) -> dict:
+    """Actualiza el contador de semanas consecutivas de ausencia de
+    night_fixed. Debe llamarse UNA vez por semana (ver contrato de uso en
+    el docstring del módulo) — separado de seleccionar_candidato_cobertura_
+    nocturna precisamente para que las múltiples llamadas por noche del
+    modo respaldo no lo incrementen de más dentro de la misma semana.
+
+    Si no hay ningún night_fixed en la plantilla, el contador no se toca:
+    ese caso activa el modo respaldo por la condición "rol inexistente"
+    (regla 4), no por rachas de ausencia — son dos disparadores distintos.
+    """
+    estado = dict(estado_rotacion)
+    nf = next((p for p in staff_list if p.get("role") == "night_fixed"), None)
+    if nf is None:
+        return estado
+    if _persona_ausente_toda_la_semana(nf):
+        estado["ausencias_night_fixed_consecutivas"] = (
+            estado.get("ausencias_night_fixed_consecutivas", 0) + 1
+        )
+    else:
+        estado["ausencias_night_fixed_consecutivas"] = 0
+    return estado
+
+
+def _elegir_balance_puro(elegibles: list, estado: dict) -> tuple:
+    """Regla 2 / mecanismo de respaldo: menor (covers - pending) en
+    historico_balance elige primero. Desempate determinista por nombre
+    (select_night_covers hoy desempata también por preferencia de
+    compensación vía herramientas.cargar_compensaciones, dato externo que
+    esta función no recibe — se documenta como simplificación deliberada,
+    no como un olvido)."""
+    balance = estado.get("historico_balance", {})
+
+    def sort_key(p):
+        info = balance.get(p["name"], {})
+        return (info.get("covers", 0) - info.get("pending", 0), p["name"])
+
+    elegido = sorted(elegibles, key=sort_key)[0]["name"]
+
+    nuevo_balance = {n: dict(v) for n, v in balance.items()}
+    info = dict(nuevo_balance.get(elegido, {"covers": 0, "pending": 0}))
+    info["covers"] = info.get("covers", 0) + 1
+    nuevo_balance[elegido] = info
+
+    nuevo_estado = dict(estado)
+    nuevo_estado["historico_balance"] = nuevo_balance
+    return elegido, nuevo_estado
+
+
+def _elegir_orden_fijo(elegibles: list, estado: dict) -> tuple:
+    """Reglas 3.a-3.d."""
+    orden = list(estado.get("orden", []))
+    if not orden:
+        raise RuntimeError("estado_rotacion['orden'] está vacío: no hay a quién asignar.")
+    deudas = dict(estado.get("deudas", {}))
+    elegibles_nombres = {p["name"] for p in elegibles}
+
+    # 3.a: alguien con deuda pendiente. Empate = primero en "orden".
+    con_deuda = [n for n in orden if deudas.get(n, 0) > 0 and n in elegibles_nombres]
+    if con_deuda:
+        max_deuda = max(deudas[n] for n in con_deuda)
+        elegido = next(n for n in con_deuda if deudas[n] == max_deuda)
+        deudas[elegido] = deudas[elegido] - 1
+    else:
+        # 3.b: recorrido cíclico desde "siguiente_turno".
+        siguiente = estado.get("siguiente_turno")
+        idx_inicio = orden.index(siguiente) if siguiente in orden else 0
+        n = len(orden)
+        elegido = None
+        for offset in range(n):
+            candidato = orden[(idx_inicio + offset) % n]
+            if candidato in elegibles_nombres:
+                elegido = candidato
+                break
+            deudas[candidato] = deudas.get(candidato, 0) + 1
+        if elegido is None:
+            raise RuntimeError(
+                "Nadie en 'orden' es elegible esta semana (todos bloqueados o "
+                "fuera de cfg.no_night_roles)."
+            )
+
+    # 3.c: siguiente_turno pasa a quien sigue al elegido en "orden",
+    # independientemente de si ganó por deuda (3.a) o por turno (3.b).
+    idx_elegido = orden.index(elegido)
+    nuevo_siguiente = orden[(idx_elegido + 1) % len(orden)]
+
+    # 3.d: actualizar historico_balance aunque no se use para decidir.
+    balance = estado.get("historico_balance", {})
+    nuevo_balance = {n: dict(v) for n, v in balance.items()}
+    info = dict(nuevo_balance.get(elegido, {"covers": 0, "pending": 0}))
+    info["covers"] = info.get("covers", 0) + 1
+    nuevo_balance[elegido] = info
+
+    nuevo_estado = dict(estado)
+    nuevo_estado["deudas"] = deudas
+    nuevo_estado["siguiente_turno"] = nuevo_siguiente
+    nuevo_estado["historico_balance"] = nuevo_balance
+    return elegido, nuevo_estado
+
+
+def seleccionar_candidato_cobertura_nocturna(staff_list: list, cfg, estado_rotacion: dict,
+                                              dias_cubrir: set = None) -> tuple:
+    """Elige quién cubre la próxima noche/gap de night_fixed. Ver el
+    contrato de uso en el docstring del módulo para cuántas veces llamarla
+    por semana según el modo activo.
+
+    dias_cubrir: índices de día (0=Lunes..6=Domingo) que esta llamada
+    concreta está decidiendo — se reenvía tal cual a _elegibles (ver su
+    docstring). Parámetro NUEVO (Fase 5, corrección del INFEASIBLE
+    espurio de modo respaldo):
+      - Modo NORMAL (una llamada/semana, el mismo elegido cubre AMBOS días
+        de cfg.night_fixed_days_off): se puede omitir (None) — el
+        comportamiento por defecto sigue comprobando el bloqueo contra
+        cfg.night_fixed_days_off, que es exactamente lo correcto aquí.
+      - Modo RESPALDO (una llamada POR CADA día de la semana, ver
+        generar_semana_cpsat_con_cobertura_nocturna en motor_cpsat.py):
+        el llamador DEBE pasar `dias_cubrir={d}` con el día concreto que
+        esa llamada está decidiendo — omitirlo reintroduce el bug
+        original (bloqueo comprobado contra el día equivocado).
+
+    Devuelve (nombre_elegido, estado_rotacion_actualizado).
+    """
+    elegibles = _elegibles(staff_list, cfg, dias_cubrir)
+    if not elegibles:
+        raise RuntimeError("Nadie en staff_list es elegible para cubrir la noche esta semana.")
+
+    if not estado_rotacion.get("usar_orden_fijo", True):
+        return _elegir_balance_puro(elegibles, estado_rotacion)
+
+    if _en_modo_respaldo(staff_list, estado_rotacion):
+        return _elegir_balance_puro(elegibles, estado_rotacion)
+
+    return _elegir_orden_fijo(elegibles, estado_rotacion)
+
+
+def incorporar_empleado_orden(estado_rotacion: dict, nombre: str) -> dict:
+    """Regla 5: se añade al final de 'orden'. No toca 'siguiente_turno'."""
+    estado = dict(estado_rotacion)
+    orden = list(estado.get("orden", []))
+    if nombre not in orden:
+        orden.append(nombre)
+    estado["orden"] = orden
+    return estado
+
+
+def dar_de_baja_empleado_orden(estado_rotacion: dict, nombre: str) -> dict:
+    """Regla 6: se elimina de 'orden'. Si era 'siguiente_turno', pasa a
+    quien estaba inmediatamente después (o al primero si era el último)."""
+    estado = dict(estado_rotacion)
+    orden = list(estado.get("orden", []))
+    if nombre not in orden:
+        return estado
+
+    idx = orden.index(nombre)
+    n = len(orden)
+    siguiente_tras_baja = orden[(idx + 1) % n] if n > 1 else None
+
+    orden.remove(nombre)
+    estado["orden"] = orden
+
+    if estado.get("siguiente_turno") == nombre:
+        estado["siguiente_turno"] = siguiente_tras_baja
+
+    deudas = dict(estado.get("deudas", {}))
+    deudas.pop(nombre, None)
+    estado["deudas"] = deudas
+
+    return estado
