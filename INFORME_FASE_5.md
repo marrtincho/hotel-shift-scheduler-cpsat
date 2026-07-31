@@ -41,26 +41,26 @@ Mismo generador para CP-SAT: `generar_comparativa_cpsat.py`, mismas 18 semanas, 
 
 `_contar_penalizaciones` de `modelo_base.py` **no sirve** para comparar continuidad entre motores: también penaliza "repetir turno al volver de librar", una noción propia del heurístico que el término B de `motor_cpsat.py` no modela. Se implementó `comparar_metricas_comunes.py` con una métrica de "roturas de continuidad" que replica EXACTAMENTE lo que penaliza el término B (cambio de turno entre dos días consecutivos ambos trabajados en Mañana/Tarde/Partido), aplicable por igual a ambos.
 
-### Resultado (con `PESO_EQUIDAD_FINDES` ya ajustado a 100 — ver Paso 4)
+### Resultado (con `PESO_EQUIDAD_FINDES=100` y `num_search_workers=1` + `sorted()` — ver Paso 4 y "Verificaciones puntuales" más abajo)
+
+**Nota sobre estos números:** las cifras de esta tabla son las FINALES, tras resolver por completo el no-determinismo del solver (ver sección de verificaciones puntuales, puntos 3-4): confirmadas estables en 8/8 regeneraciones consecutivas byte-a-byte idénticas. Versiones anteriores de esta tabla en este mismo informe tenían números ligeramente distintos (p.ej. B=20 en vez de 15 para Recepción) que resultaron ser ruido de desempate no determinista del solver, no el comportamiento real del modelo — se sustituyen aquí, no se mantienen ambas.
 
 | Métrica | Recepción — Heurístico | Recepción — CP-SAT | Mozos — Heurístico | Mozos — CP-SAT |
 |---|---|---|---|---|
 | Violaciones duras (18 semanas) | 0 | 0 | 0 | 0 |
-| Roturas de continuidad (término B) | 9 | 20 | 28 | 14 |
+| Roturas de continuidad (término B) | 9 | 15 | 28 | 13 |
 | Uso de "Partido" | 10 | 0 | 72 | 0 |
-| Dispersión ratio findes (max−min) | 0.056 | 0.042 | 0.056 | 0.069* |
+| Dispersión ratio findes (max−min) | 0.056 | 0.051 | 0.056 | 0.021 |
 
-`*` mozos: la dispersión de CP-SAT osciló entre 0.054 y 0.069 en distintas ejecuciones a igualdad de pesos (ver Paso 2) — no es completamente estable; recepción sí fue estable (0.042 en repeticiones).
-
-Salida literal (`generar_comparativa_cpsat.py` + `comparar_metricas_comunes.py`):
+Salida literal (`generar_comparativa_cpsat.py` + `comparar_metricas_comunes.py`, determinista — verificado 8/8 corridas idénticas):
 ```
 === recepcion ===
   Heurístico: {'violaciones_duras': 0, 'roturas_continuidad_termino_B': 9, 'uso_partido': 10}
-  CP-SAT:     {'violaciones_duras': 0, 'roturas_continuidad_termino_B': 20, 'uso_partido': 0}
+  CP-SAT:     {'violaciones_duras': 0, 'roturas_continuidad_termino_B': 15, 'uso_partido': 0}
 
 === mozos ===
   Heurístico: {'violaciones_duras': 0, 'roturas_continuidad_termino_B': 28, 'uso_partido': 72}
-  CP-SAT:     {'violaciones_duras': 0, 'roturas_continuidad_termino_B': 14, 'uso_partido': 0}
+  CP-SAT:     {'violaciones_duras': 0, 'roturas_continuidad_termino_B': 13, 'uso_partido': 0}
 ```
 
 Detalle semana a semana en `comparativa_cpsat_recepcion.json`, `comparativa_cpsat_mozos.json`, `referencia_motor_actual.json`.
@@ -267,7 +267,7 @@ Verificacion independiente de racha/descanso: PASA (sin excepcion)
 ```
 `_verificar_todos` — el verificador independiente del propio archivo de test, que recorre la cadena concatenada de 16 semanas día a día SIN asumir nada sobre quién debía hacer qué, solo contando rachas y descansos reales — **pasa sin excepción** incluso en la ejecución donde la aserción específica del test falla. Esto es la confirmación definitiva: la restricción dura de Fase 3 funciona correctamente (opción **(b)**, no (a)). El bug está en el test (asume que N1 solo tiene Noche/Libre como opciones, cuando Tarde/Mañana/Partido son alternativas igual de válidas que no violan ninguna regla de racha) — **no se corrigió modelo_base.py ni motor_cpsat.py**, y el propio test tampoco se tocó en esta revisión (queda pendiente de decidir si se corrige la aserción o se elimina esa rama del test, ver más abajo).
 
-**Impacto en tiempo de resolución** (`solver.parameters.num_search_workers`: 0=por defecto/paralelo vs 1=mono-hilo), medido con `time.perf_counter()`/`solver.WallTime()`:
+**Impacto en tiempo de resolución** (`solver.parameters.num_search_workers`: 0=por defecto/paralelo vs 1=mono-hilo). Primero medido en corrida única (ver más abajo la repetición pedida por el usuario antes de aceptar la tabla):
 
 ```
 === Recepción — plantilla REAL de producción (9 personas, data/plantilla.json) ===
@@ -281,55 +281,64 @@ Verificacion independiente de racha/descanso: PASA (sin excepcion)
 === Recepción + Mozos combinados en un solo modelo (14 personas, cota superior hipotética — hoy se resuelven por separado) ===
   por defecto (paralelo)      : 0.079s (status=OPTIMAL)
   num_search_workers=1        : 0.167s (status=OPTIMAL)
-
-=== Sintético 20 personas ===
-  por defecto (paralelo)      : 0.137s (status=OPTIMAL)
-  num_search_workers=1        : 0.967s (status=OPTIMAL)
-
-=== Sintético 25 personas ===
-  workers=0: 0.176s status=OPTIMAL
-  workers=1: 5.267s status=OPTIMAL
-
-=== Sintético 30 personas ===
-  workers=0: 0.193s status=OPTIMAL
-  workers=1: 1.824s status=OPTIMAL
 ```
 
-**Lectura:** a la escala REAL actual de producción (5-9 personas por departamento), el impacto es indistinguible del ruido de medición (decenas de milisegundos, en un caso `workers=1` incluso salió más rápido). La brecha empieza a notarse a partir de ~14-20 personas (hasta 7x más lento) y se vuelve significativa (varios segundos, hasta 30x más lento en el peor caso medido, con comportamiento no monótono típico de la búsqueda combinatoria de CP-SAT) en el rango de 25-30 personas — muy por encima de cualquier plantilla real existente hoy (la mayor, Recepción, tiene 9). **Con la escala actual del proyecto, el rendimiento NO es un argumento de peso contra fijar `num_search_workers=1`; sí lo sería si el equipo creciera a 20+ personas por departamento.**
+**Repetición pedida por el usuario (5 corridas por escenario, media + rango, antes de dar la tabla por buena):**
 
-**Conclusión de esta revisión, entregada antes de tocar el parámetro (decisión de producto pendiente del usuario):**
-- El test roto (`test_estado_sucio_fuerza_descanso_inmediato`) tiene un bug propio (opción (b)), no revela ningún problema en la restricción de racha de Fase 3 — se puede corregir sin ninguna duda sobre si el modelo está bien.
-- El coste de rendimiento de fijar `num_search_workers=1` es despreciable a la escala real de hoy, y solo importaría si el proyecto creciera considerablemente en número de empleados por departamento.
-- **No se ha fijado el parámetro** en ningún sitio en esta sesión — motor_cpsat.py permanece sin cambios respecto a antes de esta revisión puntual.
+```
+=== 20 personas ===
+  por defecto (paralelo)  : media=0.130s  min=0.126s  max=0.138s  valores=[0.131, 0.138, 0.126, 0.128, 0.128]
+  num_search_workers=1    : media=0.896s  min=0.881s  max=0.913s  valores=[0.881, 0.899, 0.901, 0.913, 0.888]
+
+=== 25 personas ===
+  por defecto (paralelo)  : media=0.171s  min=0.160s  max=0.183s  valores=[0.163, 0.170, 0.160, 0.183, 0.178]
+  num_search_workers=1    : media=5.416s  min=5.339s  max=5.498s  valores=[5.378, 5.471, 5.339, 5.498, 5.395]
+
+=== 30 personas ===
+  por defecto (paralelo)  : media=0.201s  min=0.194s  max=0.228s  valores=[0.194, 0.228, 0.195, 0.196, 0.194]
+  num_search_workers=1    : media=1.839s  min=1.820s  max=1.864s  valores=[1.859, 1.823, 1.864, 1.831, 1.820]
+```
+
+**El 5.267s de la primera medición de "Sintético 25" NO fue un valor atípico** — es representativo: las 5 repeticiones caen en un rango estrecho (5.339s–5.498s, media 5.416s). Curiosamente, 25 personas resulta consistentemente MÁS lento que 30 con `num_search_workers=1` (5.4s vs 1.8s) — un artefacto real y estable de la estructura combinatoria de ese tamaño concreto con esta configuración de cobertura, no ruido de medición.
+
+**Lectura, ahora con rangos estables:** a la escala REAL actual de producción (5-9 personas por departamento), el impacto es indistinguible del ruido de medición (decenas de milisegundos). La brecha crece de forma consistente y reproducible a partir de ~20 personas (media 0.90s, ~7x más lento que el paralelo) y se vuelve significativa en el rango 25-30 (media 1.8-5.4s, hasta ~30x) — muy por encima de cualquier plantilla real existente hoy (la mayor, Recepción, tiene 9). **Con la escala actual del proyecto, el rendimiento no es un argumento de peso contra fijar `num_search_workers=1`.**
+
+**Decisión de producto, ya tomada por el usuario con estos datos delante:** fijar `num_search_workers=1` en `motor_cpsat.py` (ambos puntos donde se construye `CpSolver()`), documentado con un comentario explicando el motivo (reproducibilidad del horario ante regeneración). El test roto (`test_estado_sucio_fuerza_descanso_inmediato`) se corrigió en la misma sesión, ya que su causa raíz quedó confirmada como bug del test (opción (b)), no del modelo — ver `tests/test_racha_noches.py`.
+
+**Hallazgo adicional, no pedido pero necesario para que el pin cumpliera su propósito:** al re-verificar el determinismo tras fijar `num_search_workers=1` con varias repeticiones (no solo un par A/B), se encontró que **seguía sin ser 100% determinista** (4 de 5 corridas idénticas, la 5ª distinta). Causa raíz, leída en el código (`motor_cpsat.py`, restricción 2 de cobertura): `turnos_con_cobertura = set(cfg.min_coverage) | set(cfg.max_coverage)` se iteraba directamente para añadir las restricciones de cobertura mín/máx por turno — el orden de iteración de un `set` en Python depende del hash-seed aleatorio de cada proceso (`PYTHONHASHSEED`, no fijo por defecto), así que el orden en que esas restricciones se añadían al modelo variaba entre ejecuciones, y eso bastaba para que el solver (ya mono-hilo) resolviera un empate de forma distinta. Verificado: con `PYTHONHASHSEED=0` fijo, 5/5 corridas idénticas; sin fijarlo pero con el `set` reemplazado por `sorted(set(...))` en el código, también 5/5 (y 8/8 en una repetición posterior) idénticas — se optó por corregir el código (`sorted()`), no por depender de una variable de entorno que el despliegue podría olvidar fijar. Commit incluido en esta sesión.
+
+Con ambos cambios (`num_search_workers=1` + `sorted()`), la reproducibilidad del horario generado ante una regeneración con el mismo input queda garantizada, verificada empíricamente, no solo asumida.
 
 ### 4. Cuantificación del trade-off D>B (Recepción, 18 semanas)
 
-Tabla semana a semana (roturas de continuidad término B, uso de Partido), heurístico vs CP-SAT, sobre las mismas 18 semanas de `referencia_motor_actual.json`/`comparativa_cpsat_recepcion.json`:
+Tabla semana a semana (roturas de continuidad término B, uso de Partido), heurístico vs CP-SAT, sobre las mismas 18 semanas de `referencia_motor_actual.json`/`comparativa_cpsat_recepcion.json`.
+
+**Actualización tras resolver el no-determinismo (ver punto 3):** con `num_search_workers=1` + `sorted()` ya aplicados, esta tabla es ahora reproducible byte a byte (verificado 8/8) — reemplaza la versión anterior de este informe (que tenía TOTAL=17, generada antes del segundo fix de determinismo):
 
 ```
 Semana    B heur  B cpsat  Partido heur  Partido cpsat
 1              0        0             0              0
-2              0        0             0              0
+2              0        1             0              0
 3              0        1             1              0
 4              1        1             0              0
-5              2        1             0              0
+5              2        0             0              0
 6              1        1             0              0
-7              0        1             1              0
-8              1        2             1              0
-9              0        1             1              0
+7              0        0             1              0
+8              1        0             1              0
+9              0        0             1              0
 10             0        1             1              0
 11             1        1             2              0
-12             1        1             1              0
-13             0        0             0              0
+12             1        2             1              0
+13             0        2             0              0
 14             0        1             0              0
 15             0        1             0              0
 16             1        1             0              0
-17             1        2             1              0
+17             1        1             1              0
 18             0        1             1              0
-TOTAL          9       17            10              0
+TOTAL          9       15            10              0
 ```
 
-**Nota de honestidad, descubierta al intentar aislar el mecanismo con rigor:** el primer intento de aislamiento (recalcular `ObjectiveValue()` de la rama real con D=20 vs. una rama contrafactual resuelta con `PESO_USO_PARTIDO=0`, cada una leyendo **su propio** `ObjectiveValue()`) fue **metodológicamente inválido** — cada solver reporta su objetivo bajo sus propios pesos, así que un Partido que cuesta 0 en la rama D=0 no es comparable directamente contra la rama D=20. Se corrigió fijando **ambos** schedules candidatos como restricciones duras en un modelo construido con los **pesos reales** y leyendo `ObjectiveValue()` de esa misma resolución (comparación consistente). Con esa corrección, en la semana 12:
+**Nota de honestidad, descubierta al intentar aislar el mecanismo con rigor:** el primer intento de aislamiento (recalcular `ObjectiveValue()` de la rama real con D=20 vs. una rama contrafactual resuelta con `PESO_USO_PARTIDO=0`, cada una leyendo **su propio** `ObjectiveValue()`) fue **metodológicamente inválido** — cada solver reporta su objetivo bajo sus propios pesos, así que un Partido que cuesta 0 en la rama D=0 no es comparable directamente contra la rama D=20. Se corrigió fijando **ambos** schedules candidatos como restricciones duras en un modelo construido con los **pesos reales** y leyendo `ObjectiveValue()` de esa misma resolución (comparación consistente). Con esa corrección, en la semana 12 (de aquella corrida, previa al segundo fix de determinismo):
 
 ```
 sched_real (0 Partido, B=1): coste bajo pesos reales = -2849.0
@@ -337,9 +346,9 @@ sched_d0   (2 Partido, B=1): coste bajo pesos reales = -2809.0
 Delta (sched_d0 - sched_real) bajo pesos reales = 40.0
 ```
 
-Esto confirma que, bajo los pesos reales, la alternativa con más Partido cuesta más — el término D actúa como se espera. **Pero** intentar aislar específicamente una semana donde D fuerce una rotura de continuidad ADICIONAL (no solo un Partido de más) resultó **confundido por la misma no-determinismo del solver identificada en el punto 3**: al recorrer las 18 semanas comparando la rama real contra una rama D=0 partiendo del mismo estado, solo 1 de 18 semanas mostró el patrón limpio "D=0 baja B Y sube Partido" en una pasada, y al repetir el mismo experimento la selección de esa semana candidata no fue reproducible entre corridas (la propia rama "real" cambiaba de resultado entre repeticiones, igual que en el punto 3).
+Esto confirma que, bajo los pesos reales, la alternativa con más Partido cuesta más — el término D actúa como se espera. La demostración causal semana-a-semana limpia (aislar una semana donde D=20 fuerce una rotura de continuidad ADICIONAL, no solo evite un Partido) seguía sin poder hacerse de forma perfectamente reproducible en el momento de escribir esto, aunque el no-determinismo de fondo ya está resuelto — no se ha repetido ese experimento concreto tras el fix, así que esta limitación se deja anotada en vez de reclamar una conclusión más fuerte de la que se verificó.
 
-**Conclusión, con la incertidumbre indicada explícitamente en vez de forzar una historia limpia:** el patrón agregado (Partido→0, roturas de continuidad casi 2x el heurístico en Recepción) es consistente con el orden de pesos documentado (D=20 > B=5) y con el hecho de que CP-SAT reoptimiza globalmente cada semana sin la "inercia" que el heurístico local produce por construcción — pero una demostración causal semana-a-semana limpia está confundida por el mismo no-determinismo del solver del punto 3, y no se fuerza aquí una conclusión más categórica de la que los datos permiten.
+**Conclusión:** el patrón agregado (Partido→0, roturas de continuidad ~1.7x el heurístico en Recepción con los números ya deterministas) es consistente con el orden de pesos documentado (D=20 > B=5) y con el hecho de que CP-SAT reoptimiza globalmente cada semana sin la "inercia" que el heurístico local produce por construcción.
 
 **No se reordenaron los pesos D/B.** Queda como decisión pendiente del usuario, con la tabla completa delante: ¿aceptar que CP-SAT rompa más veces la continuidad a cambio de casi eliminar "Partido", o preferir lo contrario?
 
@@ -365,16 +374,22 @@ $ PYTHONPATH=. python -m pytest tests/ -q
 204 passed, 1 xfailed in 46.20s
 ```
 
-## Conclusión final (revisada tras las 5 verificaciones)
+## Conclusión final (revisada tras las 5 verificaciones + el cierre de determinismo)
 
-**Sigue sin estar listo para producción — y la revisión añade motivos, no los quita.** El bloqueo principal (bug de `cobertura_nocturna.py` en modo respaldo, Paso 3) permanece intacto y ahora tiene un test permanente que lo documenta (punto 5). Las 5 verificaciones, además:
+**Sigue sin estar listo para producción — pero el determinismo del solver ya no es parte de los motivos.** El bloqueo principal (bug de `cobertura_nocturna.py` en modo respaldo, Paso 3) permanece intacto y tiene un test permanente que lo documenta (punto 5). El resto de lo encontrado en las verificaciones puntuales ha quedado CERRADO en esta misma sesión, no solo señalado:
 
-- Confirman que el ajuste de peso del Paso 4 (`PESO_EQUIDAD_FINDES=100`) **no rompió** la propiedad de diseño de fase 2 (E cede ante A) — el margen de esa propiedad de hecho mejoró 10x (punto 2) — pero sí dejó una guarda de test obsoleta, ya corregida.
-- Revelan que **parte de la variación observada en este informe (equidad de Mozos, y parcialmente las roturas de continuidad de Recepción) no es una propiedad estable del modelo, sino ruido de desempate no determinista del solver CP-SAT** (`num_search_workers` sin fijar) — esto es un hallazgo NUEVO que el informe original no tenía: **antes de dar cualquier número de este informe como "el" comportamiento de CP-SAT, hay que decidir si se fija la búsqueda a mono-hilo (determinismo, con el coste de revisar `test_estado_sucio_fuerza_descanso_inmediato`) o se acepta y documenta la variación.**
-- Dejan pendiente, explícitamente para decisión del usuario y no de esta sesión, el trade-off D (Partido) vs B (continuidad) — con datos (tabla semana a semana) pero sin una atribución causal 100% limpia semana a semana, por la misma razón de no-determinismo.
+- **`PESO_EQUIDAD_FINDES=100` (Paso 4):** confirmado que no rompió la propiedad de diseño de fase 2 (E cede ante A) — el margen de esa propiedad de hecho mejoró 10x (punto 2). La guarda de test obsoleta que dependía del valor viejo hardcodeado quedó corregida.
+- **No-determinismo del solver (puntos 3-4):** resuelto por completo, con dos causas distintas encontradas y corregidas, no solo una:
+  1. `num_search_workers` sin fijar (portafolio paralelo) → fijado a `1` en `motor_cpsat.py`, con el motivo documentado en el propio código.
+  2. Un `set()` iterado directamente para construir restricciones de cobertura, cuyo orden depende del hash-seed aleatorio de cada proceso → corregido con `sorted()`, sin depender de que el entorno de despliegue fije `PYTHONHASHSEED`.
+  Verificado **8/8 regeneraciones consecutivas byte-a-byte idénticas** tras ambos cambios, a diferencia de la variación observada antes (con solo el primer fix, 4/5).
+- **`test_estado_sucio_fuerza_descanso_inmediato`:** su causa raíz quedó confirmada como bug del propio test (asumía que N1 solo podía hacer Noche o Libre, cuando Tarde/Mañana/Partido eran alternativas igual de válidas) — corregido en `tests/test_racha_noches.py`. La restricción dura de racha de Fase 3 nunca estuvo rota.
+- **Rendimiento de `num_search_workers=1`:** medido con 5 repeticiones por escala (no un solo valor) — despreciable a la escala real de hoy (5-9 personas), crece de forma reproducible a partir de ~20 personas (hasta ~30x más lento en el peor caso, 25 personas, con un patrón no monótono real y estable, no ruido). No es un obstáculo a la escala actual del proyecto.
+- **Todas las cifras de las tablas del informe (Paso 1, punto 4) se regeneraron y sustituyeron** por sus versiones ya deterministas — no queda ningún número en este informe que dependa de qué corrida concreta se mire.
+- El trade-off D (Partido) vs B (continuidad) sigue como **decisión de negocio pendiente del usuario** — ahora con una tabla estable y reproducible delante, no una que cambia entre lecturas.
 
 **Lista de qué falta antes de "listo", actualizada:**
-1. Corregir el bug de elegibilidad por día en `cobertura_nocturna.py` (bloqueante, Paso 3 — ya tiene test xfail que lo prueba).
-2. Decidir y fijar `num_search_workers` del solver (determinismo vs. variación aceptada) — nuevo, descubierto en esta revisión — y, si se fija a 1, revisar `test_estado_sucio_fuerza_descanso_inmediato`.
-3. Decisión de negocio pendiente: ¿D (Partido) > B (continuidad) es el orden de prioridad deseado?
-4. Repetir el análisis de equidad de Mozos con el solver ya determinista (una vez resuelto el punto 2 de esta lista), antes de confiar en `PESO_EQUIDAD_FINDES=100` como cifra definitiva para ese departamento.
+1. Corregir el bug de elegibilidad por día en `cobertura_nocturna.py` (bloqueante, Paso 3 — sigue siendo el único motivo de fondo; ya tiene test xfail que lo prueba).
+2. Decisión de negocio pendiente: ¿D (Partido) > B (continuidad) es el orden de prioridad deseado? (Recepción: 15 roturas CP-SAT vs 9 heurístico, a cambio de 0 Partido vs 10).
+
+Todo lo demás que motivó dudas en la ronda de verificaciones puntuales (peso de equidad, determinismo del solver, rendimiento, el test de racha) queda resuelto y cerrado en esta sesión.

@@ -1,18 +1,18 @@
 {
   "recepcion": {
     "violaciones_duras": 0,
-    "penalizacion_continuidad": 58,
+    "penalizacion_continuidad": 65,
     "uso_partido": 0,
     "dispersion_findes": {
-      "min": 0.16666666666666666,
-      "max": 0.2,
-      "dispersion": 0.033333333333333354,
+      "min": 0.125,
+      "max": 0.17647058823529413,
+      "dispersion": 0.05147058823529413,
       "detalle": {
-        "Diego": 0.188,
-        "Pedro": 0.2,
-        "Miguel": 0.167,
-        "Sofía": 0.188,
-        "Ana": 0.167
+        "Sofía": 0.125,
+        "Miguel": 0.125,
+        "Ana": 0.125,
+        "Pedro": 0.176,
+        "Diego": 0.176
       }
     }
   },
@@ -25,10 +25,10 @@
       "max": 0.1875,
       "dispersion": 0.020833333333333343,
       "detalle": {
-        "Tomás": 0.167,
+        "Inés": 0.188,
         "Rubén": 0.176,
         "Gloria": 0.188,
-        "Inés": 0.188
+        "Tomás": 0.167
       }
     }
   }

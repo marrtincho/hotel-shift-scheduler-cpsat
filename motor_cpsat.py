@@ -314,7 +314,17 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
             model.AddExactlyOne(x[name, d, s] for s in SHIFTS)
 
     # 2. Cobertura mín/máx por turno y día.
-    turnos_con_cobertura = set(cfg.min_coverage) | set(cfg.max_coverage)
+    # sorted(...) — no basta con fijar num_search_workers=1 para
+    # reproducibilidad total (Fase 5, revisión de la comparativa):
+    # iterar un set() directamente depende del hash-seed aleatorio de cada
+    # proceso Python (PYTHONHASHSEED, no fijo por defecto), así que el
+    # ORDEN en que estas restricciones se añaden al modelo variaba entre
+    # ejecuciones — verificado que eso bastaba para que, en un empate de
+    # valor óptimo, el solver (ya mono-hilo) explorara la solución en
+    # orden distinto y devolviera un schedule distinto sin cambiar el
+    # input. sorted() elimina la dependencia del hash-seed sin depender de
+    # que el entorno de despliegue fije PYTHONHASHSEED.
+    turnos_con_cobertura = sorted(set(cfg.min_coverage) | set(cfg.max_coverage))
     for s in turnos_con_cobertura:
         mn = cfg.min_coverage.get(s, 0)
         mx = cfg.max_coverage.get(s, len(names))
@@ -550,6 +560,18 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
 def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list) -> dict:
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 30.0
+    # num_search_workers=1 (Fase 5, revisión de la comparativa): el valor
+    # por defecto (0 = portafolio paralelo) hace que, ante empates en el
+    # valor óptimo, el desempate dependa de qué hilo termina antes —
+    # verificado con el mismo input exacto produciendo schedules distintos
+    # entre corridas. El horario generado debe ser reproducible ante una
+    # regeneración (motivo de negocio original de la migración: el
+    # heurístico con random.seed no fijo ya tenía este problema y era
+    # parte de lo que se quería mejorar, no repetir). El coste en tiempo
+    # es despreciable a la escala real de hoy (5-9 personas/depto) y solo
+    # se vuelve notable (varios segundos) a partir de ~20-25 personas —
+    # ver INFORME_FASE_5.md para las mediciones completas.
+    solver.parameters.num_search_workers = 1
     status = solver.Solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -595,6 +617,18 @@ def _resolver_y_extraer_con_extra(model: cp_model.CpModel, x: dict, names: list,
     """
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 30.0
+    # num_search_workers=1 (Fase 5, revisión de la comparativa): el valor
+    # por defecto (0 = portafolio paralelo) hace que, ante empates en el
+    # valor óptimo, el desempate dependa de qué hilo termina antes —
+    # verificado con el mismo input exacto produciendo schedules distintos
+    # entre corridas. El horario generado debe ser reproducible ante una
+    # regeneración (motivo de negocio original de la migración: el
+    # heurístico con random.seed no fijo ya tenía este problema y era
+    # parte de lo que se quería mejorar, no repetir). El coste en tiempo
+    # es despreciable a la escala real de hoy (5-9 personas/depto) y solo
+    # se vuelve notable (varios segundos) a partir de ~20-25 personas —
+    # ver INFORME_FASE_5.md para las mediciones completas.
+    solver.parameters.num_search_workers = 1
     status = solver.Solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
