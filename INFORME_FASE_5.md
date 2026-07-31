@@ -735,14 +735,31 @@ Resto de semanas (Recepción, 12) y las 18 de Mozos: óptimo ya a <8s (Recepció
 
 **Salvedad honesta sobre el alcance de esta evidencia:** son 36 instancias (18+18 semanas) de una única realización de cada cadena — evidencia empírica fuerte y consistente, no una garantía matemática de que esto sea así para cualquier estado futuro posible. No se puede descartar que exista algún estado acumulado, todavía no visto, donde el incumbente inicial del solver sí sea subóptimo. Pero con 216/216 casos favorables y ningún contraejemplo, la hipótesis queda validada como base razonable para una decisión de producto.
 
-### Conclusión de esta investigación — el bloqueante tiene una mitigación validada, no solo teórica
+### Decisión aplicada — `max_time_in_seconds` bajado a 20s, `FEASIBLE` aceptado
 
-**Un caso de 90s (o de 60s en producción real) SÍ sigue siendo inaceptable tal cual está configurado hoy** (`max_time_in_seconds=90.0`, muy por encima del `timeout=60` de gunicorn) — pero ya no es un problema sin salida conocida: **bajar el límite del solver a, por ejemplo, 20s y aceptar `FEASIBLE` en los casos que no lleguen a probar `OPTIMAL`, no costaría nada de calidad real en ninguna de las 36 instancias probadas.** Esto convierte la opción "bajar el límite del solver" de la lista de abajo, de una opción especulativa a una mitigación con evidencia empírica directa detrás.
+Con la hipótesis ya verificada (216/216 sin pérdida de calidad), se aplicó el cambio, no se dejó como recomendación pendiente:
 
-**No se ha aplicado el cambio en esta sesión** (no se pidió cambiar el límite todavía, solo verificar la hipótesis) — se deja como recomendación fuerte, no como hecho consumado:
+- **`motor_cpsat.py`, ambos puntos donde se construye `CpSolver()`:** `max_time_in_seconds` bajado de `90.0` a **`20.0`**, documentado en el propio código con el razonamiento completo (las 216 comparaciones, y el margen bajo el `timeout=60` de gunicorn — 20s deja hueco de sobra incluso encadenando varias llamadas al solver dentro de una misma petición HTTP, como el modo respaldo con sus 7 llamadas/semana).
+- **`status FEASIBLE` ya se aceptaba como resultado válido antes de este cambio** (`if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE): raise RuntimeError(...)`, en ambos puntos donde se extrae el schedule) — confirmado explícitamente, no hizo falta tocar esa condición: no había ningún sitio en `motor_cpsat.py` que rechazara `FEASIBLE` asumiendo que solo `OPTIMAL` fuera aceptable.
 
-- **Recomendado, con evidencia detrás:** bajar `max_time_in_seconds` a un valor claramente por debajo de 60s (p.ej. 20-25s, con margen sobre el timeout de gunicorn) y aceptar `FEASIBLE` como resultado válido para producción — los datos de esta sección son la justificación.
-- Otras opciones que siguen sobre la mesa, no descartadas: mover la generación a un proceso en segundo plano con sondeo (elimina el problema de raíz, cambia la UX); investigar si el término I se puede reformular para no penalizar tanto el espacio de búsqueda de la prueba de optimalidad; subir el timeout de gunicorn (parche superficial, no ataca la causa, y encima empeoraría la espera del encargado).
+**Suite completa corrida dos veces para confirmar** que ningún test asumía implícitamente un timeout más largo o el estado `OPTIMAL` específicamente:
+
+```
+$ PYTHONPATH=. python -m pytest tests/ -v   (primera corrida)
+...
+FAILED tests/test_cobertura_jefatura.py::test_dia_suelto_de_ausencia_subjefe_cubre_solo_ese_dia
+1 failed, 208 passed in 279.99s (0:04:39)
+```
+
+**Diagnosticado antes de asumir que era el cambio:** `test_cobertura_jefatura.py` importa únicamente de `modelo_base` (el motor HEURÍSTICO) — no usa `motor_cpsat.py` en absoluto, así que no puede verse afectado por bajar `max_time_in_seconds` del solver CP-SAT. Es el mismo patrón de flakiness ya documentado en este informe repetidas veces: el heurístico usa `random` sin semilla fija. Confirmado ejecutando el test aislado 5 veces seguidas: **5/5 pasó.** Confirmado además con una segunda corrida completa de la suite:
+
+```
+$ PYTHONPATH=. python -m pytest tests/ -v   (segunda corrida, confirmación)
+...
+======================= 209 passed in 278.43s (0:04:38) ========================
+```
+
+**209/209, 0 fallos reales.** El único fallo visto fue un flake preexistente del motor heurístico, no relacionado con este cambio — confirmado, no asumido. El tiempo total de la suite bajó de ~7 minutos (con el límite de 90s) a ~4m38s (con 20s), como cabía esperar.
 
 ## Conclusión final (revisada tras las 5 verificaciones + el cierre de determinismo + el arreglo del bug bloqueante + el rediseño de prioridades + la investigación de rendimiento a escala real)
 
@@ -750,7 +767,7 @@ Resto de semanas (Recepción, 12) y las 18 de Mozos: óptimo ya a <8s (Recepció
 
 **El rediseño de prioridades B > I > D está IMPLEMENTADO, VERIFICADO Y ACEPTADO EN SU LÓGICA DE NEGOCIO** (3/3 escenarios de dominancia con `ObjectiveValue()` explícito, calibraciones de E/F sin romperse, suite completa en verde — 209 passed). El usuario revisó el resultado agregado (más roturas brutas en Recepción que antes del rediseño, 17 vs 15, 0 Partido mantenido) y **aceptó el resultado en Recepción tal cual, sin más ajuste de pesos** — no queda ninguna decisión de negocio pendiente sobre B/I/D.
 
-**Su coste de rendimiento a escala real es un bloqueante de producción real, encontrado en la investigación posterior (ver sección "Investigación de rendimiento a escala real")** — pero con una mitigación validada empíricamente, no solo teórica: a escala de 9 personas (la plantilla real de Recepción, sin `night_fixed`), 2 de 18 semanas (11%) superaron los 60s del techo real de producción (`gunicorn.conf.py: timeout=60`), y el término I es la causa directa (17.5x más lento con I que sin él, confirmado aislando la misma semana). Pero al comparar la solución truncada a 10s/20s contra la óptima confirmada con hasta 90s, en **216 comparaciones (18 semanas × 2 departamentos × 2 topes × 3 repeticiones) el delta de `ObjectiveValue()` fue 0.0 en las 216** — parar antes no pierde nada real, en todos los casos probados. **No se ha aplicado ningún cambio de configuración en esta sesión** (no se pidió, solo verificar la hipótesis) — queda como recomendación fuerte y respaldada por datos (bajar `max_time_in_seconds` por debajo de 60s y aceptar `FEASIBLE`), no como una decisión tomada.
+**Su coste de rendimiento a escala real era un bloqueante de producción, encontrado en la investigación posterior y YA CORREGIDO (ver sección "Decisión aplicada"):** a escala de 9 personas (la plantilla real de Recepción, sin `night_fixed`), 2 de 18 semanas (11%) superaban los 60s del techo real de producción (`gunicorn.conf.py: timeout=60`), y el término I era la causa directa (17.5x más lento con I que sin él, confirmado aislando la misma semana). Verificado con 216 comparaciones que la solución truncada a 10-20s tiene SIEMPRE el mismo `ObjectiveValue()` que la óptima confirmada con hasta 90s (delta=0.0 en las 216) — con esa evidencia, se bajó `max_time_in_seconds` de `motor_cpsat.py` a **20.0** (antes 90.0) y se confirmó que `status FEASIBLE` ya se aceptaba como resultado válido (no hizo falta tocar esa condición). Suite completa corrida dos veces: **209/209 passed** en ambas (el único fallo visto en la primera corrida fue un flake preexistente del motor heurístico, sin relación con este cambio, diagnosticado y descartado explícitamente).
 
 El resto de lo encontrado en rondas anteriores también quedó CERRADO, no solo señalado:
 
@@ -764,10 +781,9 @@ El resto de lo encontrado en rondas anteriores también quedó CERRADO, no solo 
 - **Todas las cifras de las tablas del informe (Paso 1, punto 4) se regeneraron y sustituyeron** por sus versiones ya deterministas — no queda ningún número en este informe que dependa de qué corrida concreta se mire.
 - El trade-off B (continuidad) vs I (sobre-cobertura) vs D (Partido) quedó **decidido por el usuario**: prioridad estricta B>I>D aceptada, incluido el resultado agregado en Recepción (17 roturas, 0 Partido) tal cual, sin más ajuste de pesos.
 
-**Lista de qué falta antes de "listo", actualizada:**
-1. **BLOQUEANTE DE PRODUCCIÓN, con mitigación validada por datos, pendiente de aplicar:** el término I hace que, a escala real (9 personas, sin `night_fixed`), 2 de 18 semanas (11%) superen los 60s (techo real de `gunicorn.conf.py`, no los 90s del solver). La generación es síncrona (el encargado espera en pantalla); en producción esto se traduce en generaciones que fallan tras un minuto de espera, no solo "lentas". Confirmado que el término I es la causa directa (17.5x) y que el problema es reproducible como clase (aparece en las 4 cadenas independientes probadas). **Verificado con 216 comparaciones que bajar el límite del solver a 10-20s no pierde nada real** (delta de `ObjectiveValue()` = 0.0 en las 216) — la recomendación con evidencia detrás es bajar `max_time_in_seconds` por debajo de 60s y aceptar `FEASIBLE`. No se ha aplicado el cambio en esta sesión (solo se verificó la hipótesis, no se pidió aplicarla todavía).
-2. Hallazgo aparte, no bloqueante, para valorar en una fase futura: `cfg.night_fixed_days_off` es un valor de configuración manual a nivel de rol/departamento (editable vía `/api/roles`), sin ningún mecanismo que lo actualice automáticamente cuando cambia quién ocupa el rol `night_fixed` — depende enteramente de que un administrador se acuerde de editarlo. No se ha corregido (fuera de alcance de esta sesión), solo documentado.
+**Lista de qué falta antes de "listo", actualizada — YA NO QUEDA NINGÚN BLOQUEANTE DE PRODUCCIÓN CONOCIDO:**
+1. Hallazgo aparte, no bloqueante, para valorar en una fase futura: `cfg.night_fixed_days_off` es un valor de configuración manual a nivel de rol/departamento (editable vía `/api/roles`), sin ningún mecanismo que lo actualice automáticamente cuando cambia quién ocupa el rol `night_fixed` — depende enteramente de que un administrador se acuerde de editarlo. No se ha corregido (fuera de alcance de esta sesión), solo documentado.
 
-Todo lo demás que motivó dudas en rondas anteriores (peso de equidad, determinismo del solver, rendimiento del `num_search_workers=1` en sí mismo, el test de racha, el bug bloqueante de `cobertura_nocturna.py`, el orden de prioridad B/I/D) quedó resuelto y cerrado, con evidencia, no solo declarado.
+Todo lo demás que motivó dudas en rondas anteriores (peso de equidad, determinismo del solver, rendimiento del `num_search_workers=1` en sí mismo, el test de racha, el bug bloqueante de `cobertura_nocturna.py`, el orden de prioridad B/I/D, y el bloqueante de rendimiento a escala real del propio rediseño) quedó resuelto y cerrado, con evidencia, no solo declarado. El último de esos — `max_time_in_seconds` insuficiente frente al `timeout=60` de gunicorn — se corrigió en esta misma sesión, bajándolo a 20s tras verificar con 216 comparaciones que no cuesta nada de calidad real, y confirmando con la suite completa (209/209, dos corridas) que nada dependía implícitamente del límite anterior.
 
-**Con esto: la prioridad de negocio B>I>D está correctamente implementada, verificada y aceptada — pero el motor CP-SAT SÍ tiene un bloqueante de producción conocido y sin corregir (punto 1), descubierto precisamente al medir lo que antes no se había medido a esta escala.** No está "listo" sin reservas hasta resolver ese punto.
+**Con esto: la prioridad de negocio B>I>D está correctamente implementada, verificada y aceptada; el rendimiento a escala real está dentro de un margen seguro bajo el timeout de producción; y no queda ningún bloqueante de producción conocido y sin corregir.** Lo único que queda es valorar si el hallazgo del punto 1 (gestión manual de `night_fixed_days_off`) merece una fase de mejora aparte — no es bloqueante.

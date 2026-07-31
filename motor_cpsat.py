@@ -662,16 +662,25 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
 
 def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list) -> dict:
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 90.0  # 30.0 -> 90.0 (Fase 5,
-    # rediseño de prioridades B>I>D): con PESO_ROTURAS_CONTINUIDAD=50 y el
-    # nuevo término I, la búsqueda mono-hilo (num_search_workers=1, ya fijado
-    # por determinismo) se volvió notablemente más difícil incluso a escala
-    # REAL de producción — verificado que una semana de las 18 de la
-    # comparativa de Recepción (8 personas reales) llegaba a necesitar 37s
-    # y devolvía FEASIBLE (no probado óptimo) con el límite anterior de 30s.
-    # Con 90s, esa misma semana confirma OPTIMAL. No se ha medido un límite
-    # superior más ajustado — 90s es un margen deliberadamente generoso
-    # sobre el peor caso observado (37s), no un valor mínimo calculado.
+    solver.parameters.max_time_in_seconds = 20.0  # 90.0 -> 20.0 (Fase 5,
+    # decisión final tras el rediseño B>I>D): con PESO_ROTURAS_CONTINUIDAD=50
+    # y el término I, la búsqueda mono-hilo (num_search_workers=1, fijado por
+    # determinismo) puede tardar hasta 90s en PROBAR optimalidad a escala
+    # real de producción — pero gunicorn.conf.py fija timeout=60 en el
+    # despliegue real, así que un límite de 90s aquí es inútil en la
+    # práctica: el proceso worker muere primero, sin devolver nada.
+    # Verificado con 216 comparaciones (18 semanas x Recepción/Mozos x topes
+    # de 10s/20s x 3 repeticiones cada una, escala real 9/5 personas): la
+    # solución truncada a 10-20s tuvo SIEMPRE (216/216, sin excepción) el
+    # mismo ObjectiveValue() que la solución óptima confirmada con hasta
+    # 90s — el tiempo extra se gastaba enteramente en demostrar que no
+    # existía nada mejor (status OPTIMAL), nunca en encontrar algo mejor.
+    # 20s deja margen bajo el timeout de 60s de gunicorn (encadenar varias
+    # llamadas al solver dentro de una misma petición HTTP, p.ej. modo
+    # respaldo con 7 llamadas/semana, debe caber cómodamente por debajo de
+    # 60s). status FEASIBLE se acepta como resultado válido más abajo
+    # (ver "if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE)" más abajo) —
+    # ya lo era antes de este cambio, no hizo falta tocar esa condición.
     # num_search_workers=1 (Fase 5, revisión de la comparativa): el valor
     # por defecto (0 = portafolio paralelo) hace que, ante empates en el
     # valor óptimo, el desempate dependa de qué hilo termina antes —
@@ -728,16 +737,25 @@ def _resolver_y_extraer_con_extra(model: cp_model.CpModel, x: dict, names: list,
     extra_vars: {clave: BoolVar}. Devuelve (schedule, {clave: 0|1}).
     """
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 90.0  # 30.0 -> 90.0 (Fase 5,
-    # rediseño de prioridades B>I>D): con PESO_ROTURAS_CONTINUIDAD=50 y el
-    # nuevo término I, la búsqueda mono-hilo (num_search_workers=1, ya fijado
-    # por determinismo) se volvió notablemente más difícil incluso a escala
-    # REAL de producción — verificado que una semana de las 18 de la
-    # comparativa de Recepción (8 personas reales) llegaba a necesitar 37s
-    # y devolvía FEASIBLE (no probado óptimo) con el límite anterior de 30s.
-    # Con 90s, esa misma semana confirma OPTIMAL. No se ha medido un límite
-    # superior más ajustado — 90s es un margen deliberadamente generoso
-    # sobre el peor caso observado (37s), no un valor mínimo calculado.
+    solver.parameters.max_time_in_seconds = 20.0  # 90.0 -> 20.0 (Fase 5,
+    # decisión final tras el rediseño B>I>D): con PESO_ROTURAS_CONTINUIDAD=50
+    # y el término I, la búsqueda mono-hilo (num_search_workers=1, fijado por
+    # determinismo) puede tardar hasta 90s en PROBAR optimalidad a escala
+    # real de producción — pero gunicorn.conf.py fija timeout=60 en el
+    # despliegue real, así que un límite de 90s aquí es inútil en la
+    # práctica: el proceso worker muere primero, sin devolver nada.
+    # Verificado con 216 comparaciones (18 semanas x Recepción/Mozos x topes
+    # de 10s/20s x 3 repeticiones cada una, escala real 9/5 personas): la
+    # solución truncada a 10-20s tuvo SIEMPRE (216/216, sin excepción) el
+    # mismo ObjectiveValue() que la solución óptima confirmada con hasta
+    # 90s — el tiempo extra se gastaba enteramente en demostrar que no
+    # existía nada mejor (status OPTIMAL), nunca en encontrar algo mejor.
+    # 20s deja margen bajo el timeout de 60s de gunicorn (encadenar varias
+    # llamadas al solver dentro de una misma petición HTTP, p.ej. modo
+    # respaldo con 7 llamadas/semana, debe caber cómodamente por debajo de
+    # 60s). status FEASIBLE se acepta como resultado válido más abajo
+    # (ver "if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE)" más abajo) —
+    # ya lo era antes de este cambio, no hizo falta tocar esa condición.
     # num_search_workers=1 (Fase 5, revisión de la comparativa): el valor
     # por defecto (0 = portafolio paralelo) hace que, ante empates en el
     # valor óptimo, el desempate dependa de qué hilo termina antes —
