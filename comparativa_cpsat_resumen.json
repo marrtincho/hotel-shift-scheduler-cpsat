@@ -1,33 +1,33 @@
 {
   "recepcion": {
     "violaciones_duras": 0,
-    "penalizacion_continuidad": 66,
+    "penalizacion_continuidad": 58,
     "uso_partido": 0,
     "dispersion_findes": {
-      "min": 0.23529411764705882,
-      "max": 0.2777777777777778,
-      "dispersion": 0.04248366013071897,
+      "min": 0.16666666666666666,
+      "max": 0.2,
+      "dispersion": 0.033333333333333354,
       "detalle": {
-        "Ana": 0.235,
-        "Diego": 0.278,
-        "Sofía": 0.267,
-        "Miguel": 0.235,
-        "Pedro": 0.278
+        "Diego": 0.188,
+        "Pedro": 0.2,
+        "Miguel": 0.167,
+        "Sofía": 0.188,
+        "Ana": 0.167
       }
     }
   },
   "mozos": {
     "violaciones_duras": 0,
-    "penalizacion_continuidad": 38,
+    "penalizacion_continuidad": 35,
     "uso_partido": 0,
     "dispersion_findes": {
       "min": 0.16666666666666666,
-      "max": 0.23529411764705882,
-      "dispersion": 0.06862745098039216,
+      "max": 0.1875,
+      "dispersion": 0.020833333333333343,
       "detalle": {
-        "Tomás": 0.188,
-        "Rubén": 0.235,
-        "Gloria": 0.167,
+        "Tomás": 0.167,
+        "Rubén": 0.176,
+        "Gloria": 0.188,
         "Inés": 0.188
       }
     }

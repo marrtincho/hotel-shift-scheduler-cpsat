@@ -7,7 +7,7 @@
     },
     "cpsat": {
       "violaciones_duras": 0,
-      "roturas_continuidad_termino_B": 20,
+      "roturas_continuidad_termino_B": 17,
       "uso_partido": 0
     }
   },
@@ -19,7 +19,7 @@
     },
     "cpsat": {
       "violaciones_duras": 0,
-      "roturas_continuidad_termino_B": 14,
+      "roturas_continuidad_termino_B": 13,
       "uso_partido": 0
     }
   }
