@@ -2,12 +2,12 @@
   "recepcion": {
     "heuristico": {
       "violaciones_duras": 0,
-      "roturas_continuidad_termino_B": 9,
-      "uso_partido": 10
+      "roturas_continuidad_termino_B": 10,
+      "uso_partido": 11
     },
     "cpsat": {
       "violaciones_duras": 0,
-      "roturas_continuidad_termino_B": 15,
+      "roturas_continuidad_termino_B": 17,
       "uso_partido": 0
     }
   },
@@ -19,7 +19,7 @@
     },
     "cpsat": {
       "violaciones_duras": 0,
-      "roturas_continuidad_termino_B": 13,
+      "roturas_continuidad_termino_B": 11,
       "uso_partido": 0
     }
   }

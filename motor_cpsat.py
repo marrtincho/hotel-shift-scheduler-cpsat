@@ -193,6 +193,45 @@ encima de B (para que sí tenga efecto real desempatando turnos
 concretos) pero por debajo de D y F, reflejando que es la preferencia
 más fácil de ceder de las nuevas si hace falta liberar margen para
 cobertura mínima.
+
+── Esta sesión — rediseño de prioridades: B > I > D ────────────────────────
+Fase 5 encontró que CP-SAT eliminaba el uso de "Partido" por completo, a
+costa de más roturas de continuidad que el motor heurístico (Recepción, 18
+semanas: 9 roturas heurístico vs 15 CP-SAT; Partido: 10 vs 0). Causa raíz:
+no existía ningún coste por cubrir un turno diurno por encima de su mínimo,
+así que el solver prefería sobre-cubrir Mañana/Tarde antes que usar Partido
+(que sí tenía coste, término D) — el resultado técnicamente minimizaba el
+objetivo de entonces, pero no reflejaba la prioridad real de negocio.
+
+Nueva prioridad de negocio, en este orden estricto:
+  1. Continuidad (término B) — la más importante de las tres.
+  2. Evitar sobre-cobertura de un turno diurno (término I, NUEVO) — si hay
+     excedente de personal ese día, mandarlo a Partido es preferible a
+     apilarlo de más en Mañana/Tarde.
+  3. Evitar el uso de Partido en general (término D) — la de menor
+     prioridad de las tres, pero sigue existiendo.
+
+I. Sobre-cobertura de turnos diurnos: penaliza, por cada día y cada turno
+   de TURNOS_DIURNOS_SIN_PARTIDO (Mañana/Tarde — subconjunto de DAY_SHIFTS,
+   sin Partido), cuánto se cubre ese turno por encima de cfg.min_coverage.
+   Lineal, siempre no-negativo (la restricción dura #2 de fase 1 ya
+   garantiza cobertura_real >= min_coverage), no hace falta max(). No
+   incluye Noche (cobertura decidida por la orquestación de fase 3, ajena
+   a esta lógica) ni Partido (es la válvula de escape que este término
+   empuja a usar, no algo a penalizar además por sobre-cobertura — ya
+   tiene su propio coste vía D).
+
+   Caso que se resuelve solo, sin lógica especial: si Mañana/Tarde ya
+   están en su máximo (cfg.max_coverage), la restricción dura de fase 1
+   ya impide meter a nadie de más ese turno — I no tiene nada que
+   penalizar ahí, y Partido tampoco haría falta.
+
+Los pesos de B/D se recalibraron y se añadió PESO_SOBRECOBERTURA_DIURNA
+(I) — ver los comentarios junto a cada constante para la magnitud elegida
+y por qué. Los términos F y H (complementario jefatura) no se tocaron en
+valor, pero sus comentarios de posición relativa se actualizaron para no
+quedar desconectados de la nueva relación B > D > F/H (ver comentarios
+junto a esas constantes).
 """
 
 from datetime import date
@@ -208,6 +247,14 @@ from modelo_base import (
 # histórico (C). Noche y Libre quedan fuera de ambos términos a propósito.
 DAY_SHIFTS = ["Mañana", "Tarde", "Partido"]
 
+# Subconjunto de DAY_SHIFTS para el término I (sobre-cobertura diurna, Fase 5
+# — rediseño de prioridades): Mañana/Tarde, SIN Partido. Se deriva de
+# DAY_SHIFTS (no una lista nueva desconectada) porque son el mismo concepto
+# base de "turno de día" que ya usa el término B — pero Partido es aquí la
+# VÁLVULA DE ESCAPE que I incentiva usar en vez de penalizar, no un turno
+# más a penalizar por sobre-cobertura (ya tiene su propio coste vía D).
+TURNOS_DIURNOS_SIN_PARTIDO = [s for s in DAY_SHIFTS if s != "Partido"]
+
 # ─── Pesos de los términos de objetivo (fase 2) — constantes ajustables ─────
 PESO_EQUIDAD_FINDES          = 100  # término A — subido de 10 a 100 (Fase 5,
 # Paso 4): con 10, la dispersión de ratio de findes libres tras 18 semanas
@@ -218,14 +265,52 @@ PESO_EQUIDAD_FINDES          = 100  # término A — subido de 10 a 100 (Fase 5,
 # ambos, sin reintroducir Partido (sigue en 0) y con una subida marginal de
 # roturas de continuidad en recepción (22→24 sobre 18 semanas) — visto el
 # comparativo completo en el informe de Fase 5, la contrapartida es buena.
-PESO_ROTURAS_CONTINUIDAD     = 5    # término B
+PESO_ROTURAS_CONTINUIDAD     = 50   # término B — REDISEÑO DE PRIORIDADES (Fase 5,
+# sesión posterior a fijar num_search_workers=1/sorted()): nueva prioridad de
+# negocio estricta B > I > D (continuidad primero, luego evitar sobre-cubrir
+# Mañana/Tarde, luego evitar Partido) — antes B=5 era MENOR que D=20, así que
+# el solver prefería romper continuidad antes que usar Partido, lo contrario
+# de lo pedido. Subido a 50: claramente por encima de I(30) y D(20), y también
+# por encima de F(15)/H-complementario(10) — la continuidad ya no cede ante
+# ninguna otra preferencia blanda de fase 2 salvo A/E/G (equidad, rol
+# excluido, cobertura de ausencia), que siguen siendo cuestiones distintas
+# (agregadas o de cobertura obligatoria, no de "reparto de turnos").
 PESO_DESEQUILIBRIO_HISTORICO = 1    # término C
-PESO_USO_PARTIDO             = 20   # término D
+PESO_USO_PARTIDO             = 20   # término D — sin cambios: sigue siendo la
+# preferencia MÁS FÁCIL DE CEDER de las tres nuevas (B > I > D), justo lo que
+# la prioridad de negocio pide. Con I=30 > D=20, el solver prefiere 1 Partido
+# (coste 20) antes que 1 persona de sobra en Mañana/Tarde (coste 30) — la
+# válvula de escape gana frente a la sobre-cobertura, tal como se pidió.
 PESO_FINDE_ROL_EXCLUIDO      = 200  # término E — debe ser > PESO_EQUIDAD_FINDES
 ESCALA_RATIO                 = 1000  # escala entera para el ratio [0,1] de A (CP-SAT exige coeficientes enteros)
-PESO_DOMINGO_SUSTITUTO       = 15   # término F (ver docstring del módulo) — moderado: entre B y D
+PESO_DOMINGO_SUSTITUTO       = 15   # término F (ver docstring del módulo) — YA
+# NO está "entre B y D" tras el rediseño de prioridades (B=50 > D=20 > F=15):
+# no se ha tocado su valor porque su mecanismo real es el GATING estructural
+# (_tiene_par_consecutivo_disponible), no la magnitud del peso — cuando hay
+# par consecutivo disponible, F ni entra en la suma del objetivo y no compite
+# con nada; cuando no lo hay, 15 sigue siendo un valor moderado razonable
+# frente a G(1000)/E(200)/A(100)/B(50). Ver test_gating_prefiere_par_consecutivo...
+# (Paso 3 de esta sesión) para la confirmación de que el gating sigue intacto.
 PESO_COBERTURA_AUSENCIA      = 1000  # término G — el más alto del módulo, ver docstring
-PESO_COMPLEMENTARIO_JEFATURA = 10   # término H — moderado: entre B y D/F (ver docstring)
+PESO_COMPLEMENTARIO_JEFATURA = 10   # término H — YA NO está "por encima de B"
+# tras el rediseño de prioridades (B=50 > H=10): sigue siendo la preferencia
+# más fácil de ceder de las de "reparto de turnos concretos" frente a D(20)/
+# F(15), y ahora también frente a B — reflejando que emparejar jefe/subjefe
+# en turnos distintos es una comodidad menor comparada con preservar la
+# continuidad de alguien. No se ha subido: nada en el rediseño de prioridades
+# de esta sesión pedía tocar este término, y sus tests de Fase 4 siguen
+# calibrados sobre su valor absoluto (10), no sobre su posición relativa a B.
+PESO_SOBRECOBERTURA_DIURNA   = 30   # término I (NUEVO, Fase 5 — rediseño de
+# prioridades): penaliza cubrir Mañana/Tarde por encima de cfg.min_coverage.
+# Nombrado "I", no "H" — "H" ya existe (PESO_COMPLEMENTARIO_JEFATURA, turno
+# complementario jefe/subjefe) y significa algo distinto; reutilizar la letra
+# habría chocado con un término ya documentado. Valor 30: estrictamente entre
+# B=50 y D=20 (el orden de negocio pedido es B > I > D) — con 30 > D(20), 1
+# persona de sobra en Mañana/Tarde (coste I=30) sale más cara que 1 turno
+# Partido (coste D=20), así que el solver prefiere Partido para el excedente,
+# tal como pide el ejemplo de negocio. Con B=50 > I=30, preservar la
+# continuidad de alguien sigue ganando aunque eso implique sobre-cubrir un
+# turno diurno ese día (ver escenario B-vs-I, Paso 2 de esta sesión).
 
 
 def _tiene_par_consecutivo_disponible(cfg, dias_bloqueados: set) -> bool:
@@ -552,6 +637,24 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
                 coincidencias.append(both_s)
             objetivo_terms.append(PESO_COMPLEMENTARIO_JEFATURA * sum(coincidencias))
 
+    # I. Sobre-cobertura de turnos diurnos (Fase 5 — rediseño de
+    # prioridades, ver docstring del módulo): penaliza, por cada día y cada
+    # turno de TURNOS_DIURNOS_SIN_PARTIDO (Mañana/Tarde), cuánto se cubre
+    # ese turno POR ENCIMA de cfg.min_coverage. Lineal y siempre no-negativo
+    # sin necesitar max(): la restricción dura #2 (fase 1) ya garantiza
+    # cobertura_real >= min_coverage para cualquier solución factible, así
+    # que (cobertura_real - min_coverage) nunca puede ser negativo — no hay
+    # riesgo de que este término "recompense" nada.
+    # No incluye Noche (su cobertura la decide la orquestación de fase 3,
+    # ajena a esta lógica de Partido como alternativa) ni Partido (es la
+    # válvula de escape que este término empuja a usar, no un turno más a
+    # penalizar por exceso).
+    for turno in TURNOS_DIURNOS_SIN_PARTIDO:
+        min_turno = cfg.min_coverage.get(turno, 0)
+        for d in range(7):
+            cobertura_real = sum(x[name, d, turno] for name in names)
+            objetivo_terms.append(PESO_SOBRECOBERTURA_DIURNA * (cobertura_real - min_turno))
+
     model.Minimize(sum(objetivo_terms))
 
     return model, x, names, by_name
@@ -559,7 +662,16 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
 
 def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list) -> dict:
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30.0
+    solver.parameters.max_time_in_seconds = 90.0  # 30.0 -> 90.0 (Fase 5,
+    # rediseño de prioridades B>I>D): con PESO_ROTURAS_CONTINUIDAD=50 y el
+    # nuevo término I, la búsqueda mono-hilo (num_search_workers=1, ya fijado
+    # por determinismo) se volvió notablemente más difícil incluso a escala
+    # REAL de producción — verificado que una semana de las 18 de la
+    # comparativa de Recepción (8 personas reales) llegaba a necesitar 37s
+    # y devolvía FEASIBLE (no probado óptimo) con el límite anterior de 30s.
+    # Con 90s, esa misma semana confirma OPTIMAL. No se ha medido un límite
+    # superior más ajustado — 90s es un margen deliberadamente generoso
+    # sobre el peor caso observado (37s), no un valor mínimo calculado.
     # num_search_workers=1 (Fase 5, revisión de la comparativa): el valor
     # por defecto (0 = portafolio paralelo) hace que, ante empates en el
     # valor óptimo, el desempate dependa de qué hilo termina antes —
@@ -616,7 +728,16 @@ def _resolver_y_extraer_con_extra(model: cp_model.CpModel, x: dict, names: list,
     extra_vars: {clave: BoolVar}. Devuelve (schedule, {clave: 0|1}).
     """
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30.0
+    solver.parameters.max_time_in_seconds = 90.0  # 30.0 -> 90.0 (Fase 5,
+    # rediseño de prioridades B>I>D): con PESO_ROTURAS_CONTINUIDAD=50 y el
+    # nuevo término I, la búsqueda mono-hilo (num_search_workers=1, ya fijado
+    # por determinismo) se volvió notablemente más difícil incluso a escala
+    # REAL de producción — verificado que una semana de las 18 de la
+    # comparativa de Recepción (8 personas reales) llegaba a necesitar 37s
+    # y devolvía FEASIBLE (no probado óptimo) con el límite anterior de 30s.
+    # Con 90s, esa misma semana confirma OPTIMAL. No se ha medido un límite
+    # superior más ajustado — 90s es un margen deliberadamente generoso
+    # sobre el peor caso observado (37s), no un valor mínimo calculado.
     # num_search_workers=1 (Fase 5, revisión de la comparativa): el valor
     # por defecto (0 = portafolio paralelo) hace que, ante empates en el
     # valor óptimo, el desempate dependa de qué hilo termina antes —

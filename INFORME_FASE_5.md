@@ -571,11 +571,98 @@ TOTAL          9       15            10              0
 
 Resumen para decidir: en 18 semanas de Recepción, CP-SAT rompe la continuidad 15 veces (heurístico: 9) y usa "Partido" 0 veces (heurístico: 10). En Mozos: CP-SAT rompe 13 veces (heurístico: 28 — CP-SAT es MEJOR ahí) y usa "Partido" 0 veces (heurístico: 72). El patrón favorable a CP-SAT en Mozos es claro en ambos ejes; en Recepción es un trade-off real (peor en B, mucho mejor en D) que depende de los pesos `PESO_ROTURAS_CONTINUIDAD=5` / `PESO_USO_PARTIDO=20` — **la decisión de si reordenarlos sigue pendiente y no se ha tomado en esta sesión.**
 
-## Conclusión final (revisada tras las 5 verificaciones + el cierre de determinismo + el arreglo del bug bloqueante)
+## Rediseño de prioridades del objetivo: B > I > D (sesión posterior)
 
-**El bug bloqueante (`cobertura_nocturna.py`, modo respaldo) está CORREGIDO Y VERIFICADO** — ver "RESUELTO" al final del Paso 3: parámetro `dias_cubrir` añadido a las 3 funciones de la cadena, verificado en los 4 puntos pedidos (test xfail ahora pasa por el motivo correcto, caso de infactibilidad real distinguido y confirmado, modo normal sin afectar, suite completa en verde — 206 passed, 0 fallos, 0 xfailed) y confirmado end-to-end reproduciendo el escenario "Viernes de Carla" completo (las 8 semanas resuelven sin `RuntimeError`, incluida la semana 2 que antes fallaba).
+Con el bug bloqueante ya corregido y el determinismo ya resuelto, quedaba una única decisión de negocio pendiente: el orden D>B encontrado en el Paso 2 (CP-SAT eliminaba "Partido" a costa de más roturas de continuidad que el heurístico). El usuario decidió: **no es un simple reajuste de pesos, es un rediseño** — nueva prioridad estricta 1) continuidad, 2) evitar sobre-cubrir un turno diurno por encima de su mínimo, 3) evitar Partido en general.
 
-El resto de lo encontrado en las verificaciones puntuales de la ronda anterior también quedó CERRADO en esa misma sesión, no solo señalado:
+### Paso 0 — Auditoría de pesos (leída del código, no de memoria de fases anteriores)
+
+| Constante | Término | Valor ANTES de esta sesión |
+|---|---|---|
+| `PESO_EQUIDAD_FINDES` | A | 100 |
+| `PESO_ROTURAS_CONTINUIDAD` | B | 5 |
+| `PESO_DESEQUILIBRIO_HISTORICO` | C | 1 |
+| `PESO_USO_PARTIDO` | D | 20 |
+| `PESO_FINDE_ROL_EXCLUIDO` | E | 200 |
+| `PESO_DOMINGO_SUSTITUTO` | F | 15 |
+| `PESO_COBERTURA_AUSENCIA` | G | 1000 |
+| `PESO_COMPLEMENTARIO_JEFATURA` | **H** | 10 |
+
+**Hallazgo inmediato:** la letra "H" ya estaba en uso (turno complementario jefe/subjefe, sesión de Fase 4) — el nuevo término de sobre-cobertura diurna pedido en el prompt como "término H" se implementó como **término I** para no chocar con uno ya documentado.
+
+### Paso 1 — Término I: sobre-cobertura de turnos diurnos
+
+Añadido en `_construir_modelo` (motor_cpsat.py): para cada turno de `TURNOS_DIURNOS_SIN_PARTIDO` (`["Mañana", "Tarde"]`, derivado por filtro de `DAY_SHIFTS` — el mismo conjunto base que usa el término B, sin Partido, según lo pedido) y cada día, penaliza `cobertura_real - cfg.min_coverage[turno]`. Lineal, sin `max()` (la restricción dura #2 de fase 1 ya garantiza `cobertura_real >= min_coverage` en cualquier solución factible, así que la resta nunca es negativa). No incluye Noche (fase 3, ajena) ni Partido (la válvula de escape, no algo a penalizar además).
+
+### Paso 2 — Recalibración y tests de dominancia
+
+| Constante | Antes | Ahora | Justificación (resumen — ver comentario completo junto a cada constante en motor_cpsat.py) |
+|---|---|---|---|
+| `PESO_ROTURAS_CONTINUIDAD` (B) | 5 | **50** | Debe ser la mayor de las tres (B>I>D); antes era MENOR que D, exactamente al revés de lo pedido. |
+| `PESO_SOBRECOBERTURA_DIURNA` (I, nuevo) | — | **30** | Estrictamente entre B y D: >D(20) para que 1 unidad de sobre-cobertura salga más cara que 1 Partido (el solver prefiere Partido); <B(50) para que preservar la continuidad de alguien siga ganando aunque implique sobre-cubrir. |
+| `PESO_USO_PARTIDO` (D) | 20 | 20 (sin cambio) | Sigue siendo la más fácil de ceder de las tres — es justo lo que pide la prioridad de negocio. |
+
+`F` y `H` (complementario jefatura) no cambiaron de VALOR, pero sus comentarios de posición relativa ("entre B y D") quedaron actualizados para no contradecir la nueva relación B(50)>D(20)>F(15)/H(10) — su mecanismo real (F: gating estructural; H: valor absoluto) no dependía de esa posición relativa, así que no se vieron afectados en la práctica (confirmado en Paso 3).
+
+**3 escenarios de dominancia, con `ObjectiveValue()` explícito** (no solo el resultado final), en `tests/test_prioridad_continuidad_sobrecobertura.py`:
+
+1. `test_sobrante_va_a_partido_no_a_sobrecubrir_manana_o_tarde` — reproduce el ejemplo de negocio exacto (min Mañana=2/Tarde=2/Noche=1, 1 persona de sobra): el sobrante va a Partido, delta de `ObjectiveValue()` entre la opción real y el contrafactual (forzado a sobre-cubrir) = exactamente `I-D=10`. **PASA.**
+2. `test_continuidad_gana_sobre_evitar_sobrecobertura` — escenario donde la ÚNICA forma de no sobre-cubrir es romper continuidad: el solver preserva la continuidad y acepta la sobre-cobertura, delta = exactamente `B-I=20`. **PASA.**
+   - Nota de depuración: el primer diseño de este test intentaba la transición Tarde→Mañana como "rotura", y resultó **INFEASIBLE** — no por el término B, sino porque esa transición está bloqueada por la restricción DURA de fase 1 "no-Mañana-tras-Tarde/Noche" (`NO_MORNING_AFTER`). Rediseñado con la transición Mañana→Tarde (permitida), que sí aísla el término B correctamente.
+3. `test_max_coverage_al_limite_no_necesita_logica_especial` — con `max_coverage` de Mañana/Tarde igual al mínimo (sin holgura), el sobrante solo puede ir a Partido; el término I no tiene nada que penalizar, sin lógica especial. **PASA.**
+
+### Paso 3 — Verificación de calibraciones anteriores (E, F)
+
+```
+$ pytest tests/test_domingo_suelto_sustituto.py -v   → 8 passed (incluye test_gating_prefiere_par_consecutivo_sobre_domingo_suelto)
+$ pytest tests/test_motor_cpsat.py -v -k "termino_e or rol_excluido or jefe_y_night_fixed"   → 4 passed
+```
+
+El gating de F es estructural (`_tiene_par_consecutivo_disponible`), no depende de la magnitud de B/D — confirmado que sigue intacto sin necesitar ningún ajuste. La cesión de E frente a A tampoco depende de B/D — confirmado sin cambios.
+
+Suite completa (primera pasada, antes de descubrir y corregir la regresión de rendimiento del Paso 4): **209 passed**, 0 fallos (204 anteriores + 2 tests nuevos de racha/cobertura de sesiones previas + 3 tests nuevos de dominancia de esta sesión).
+
+### Paso 4 — Comparativo actualizado, y una regresión de rendimiento real encontrada y corregida
+
+Al regenerar la comparativa de 18 semanas de Recepción con los pesos nuevos, se detectó — no se asumió — que **la semana 10 no llegaba a `OPTIMAL`**: con el límite de 30s ya existente, el solver devolvía `FEASIBLE` (no probado óptimo) tras agotar el tiempo. Verificado semana a semana:
+
+```
+Semana 2: status=OPTIMAL tiempo=24.29s
+Semana 5: status=OPTIMAL tiempo=29.51s
+Semana 9: status=OPTIMAL tiempo=28.42s
+Semana 10: status=FEASIBLE tiempo=30.00s   <-- no probado óptimo
+Semana 15: status=OPTIMAL tiempo=21.82s
+```
+
+Esto es una regresión de rendimiento REAL, a escala de producción (8 personas, la plantilla real de Recepción, no un escenario sintético) — introducida por esta misma sesión: `PESO_ROTURAS_CONTINUIDAD=50` + el nuevo término I amplían notablemente el espacio de búsqueda que el solver mono-hilo (`num_search_workers=1`, ya fijado por determinismo) tiene que explorar. Corregido subiendo `max_time_in_seconds` de 30.0 a 90.0 (margen deliberadamente generoso sobre el peor caso observado, 37.13s) — verificado que con 90s **las 18 semanas alcanzan `OPTIMAL`**, incluida la semana 10 (37.13s). Documentado en el propio código (motor_cpsat.py, comentario junto a `max_time_in_seconds`).
+
+**Tabla final — Recepción, 18 semanas, con los pesos nuevos y las 18 semanas confirmadas `OPTIMAL`:**
+
+| Semana | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | **TOTAL** |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| B CP-SAT | 1 | 1 | 1 | 1 | 0 | 2 | 0 | 1 | 1 | 1 | 2 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | **17** |
+| Partido CP-SAT | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+Violaciones duras: 0 en las 18 semanas. Mozos (mismo procedimiento, todas las semanas `OPTIMAL` sin necesitar el margen de 90s — 5 personas, búsqueda mucho más simple): **B=11, Partido=0**.
+
+**Heurístico — confirmado que oscila entre regeneraciones (usa `random` sin semilla fija), 5 regeneraciones, rango en vez de un solo valor:**
+
+| Departamento | B (rango, media de 5 corridas) | Partido (rango, media) |
+|---|---|---|
+| Recepción | 5–14, media ≈ 9.8 | 6–18, media ≈ 11.4 |
+| Mozos | 28–37, media ≈ 32.4 | 72 (constante en las 5) |
+
+**Hallazgo que no se puede omitir, ni suavizar:** el rediseño se implementó correctamente (los 3 escenarios de dominancia lo confirman con `ObjectiveValue()` explícito — en cualquier decisión AISLADA, B gana a I, e I gana a D, exactamente como se pidió) — pero el efecto AGREGADO sobre las 18 semanas reales de Recepción es que el número BRUTO de roturas de continuidad **subió** de 15 (con los pesos de la ronda anterior, D=20>B=5, sin término I) a **17** (con B=50>I=30>D=20), y queda por encima del rango típico del heurístico (5–14). En Mozos sí mejoró (13→11, ya mejor que el heurístico en ambas rondas). Esto no es una contradicción ni un bug: forzar una prioridad estricta por-decisión no garantiza un total agregado menor a lo largo de una cadena de 18 semanas, porque el término I nuevo cambia TODO el paisaje de la optimización semana a semana (qué combinaciones concretas de turnos resultan óptimas), no solo la comparación aislada B-vs-D que motivó el cambio. Partido sigue en 0 en ambos departamentos, sin excepción.
+
+**Esto se reporta explícitamente, no se entierra en la tabla:** el usuario pidió una prioridad de negocio (B>I>D en cada decisión), no un objetivo de minimizar el total de roturas de Recepción — y esa prioridad está correctamente implementada y verificada. Pero si el objetivo implícito también era "menos roturas que antes" o "menos roturas que el heurístico", ESE objetivo no se cumple con estos pesos en Recepción. Queda para el usuario decidir si el resultado (peor en roturas brutas, exactamente 0 Partido, prioridad correcta en cada decisión aislada) es el que quería, con los números delante.
+
+## Conclusión final (revisada tras las 5 verificaciones + el cierre de determinismo + el arreglo del bug bloqueante + el rediseño de prioridades)
+
+**El bug bloqueante (`cobertura_nocturna.py`, modo respaldo) está CORREGIDO Y VERIFICADO** — ver "RESUELTO" al final del Paso 3: parámetro `dias_cubrir` añadido a las 3 funciones de la cadena, verificado en los 4 puntos pedidos (test xfail ahora pasa por el motivo correcto, caso de infactibilidad real distinguido y confirmado, modo normal sin afectar, suite completa en verde) y confirmado end-to-end reproduciendo el escenario "Viernes de Carla" completo (las 8 semanas resuelven sin `RuntimeError`, incluida la semana 2 que antes fallaba).
+
+**El rediseño de prioridades B > I > D está IMPLEMENTADO Y VERIFICADO** (3/3 escenarios de dominancia con `ObjectiveValue()` explícito, calibraciones de E/F sin romperse, suite completa en verde — 209 passed) — con una regresión de rendimiento real encontrada y corregida en el camino (timeout de 30s insuficiente a escala real con los pesos nuevos, subido a 90s) y un resultado agregado que hay que decidir si es aceptable (más roturas brutas en Recepción que antes del rediseño, 0 Partido mantenido).
+
+El resto de lo encontrado en rondas anteriores también quedó CERRADO, no solo señalado:
 
 - **`PESO_EQUIDAD_FINDES=100` (Paso 4):** confirmado que no rompió la propiedad de diseño de fase 2 (E cede ante A) — el margen de esa propiedad de hecho mejoró 10x (punto 2). La guarda de test obsoleta que dependía del valor viejo hardcodeado quedó corregida.
 - **No-determinismo del solver (puntos 3-4):** resuelto por completo, con dos causas distintas encontradas y corregidas, no solo una:
@@ -588,9 +675,9 @@ El resto de lo encontrado en las verificaciones puntuales de la ronda anterior t
 - El trade-off D (Partido) vs B (continuidad) sigue como **decisión de negocio pendiente del usuario** — ahora con una tabla estable y reproducible delante, no una que cambia entre lecturas.
 
 **Lista de qué falta antes de "listo", actualizada — YA NO QUEDA NINGÚN BUG BLOQUEANTE ABIERTO:**
-1. Decisión de negocio pendiente (única cosa que falta, no es un bug): ¿D (Partido) > B (continuidad) es el orden de prioridad deseado? (Recepción: 15 roturas CP-SAT vs 9 heurístico, a cambio de 0 Partido vs 10).
+1. **Decisión de negocio pendiente, con datos completos delante:** el orden de prioridad B>I>D se implementó y verificó correctamente en cada decisión aislada — pero el efecto agregado en Recepción (18 semanas) es 17 roturas de continuidad (antes del rediseño: 15; heurístico: 5–14 según la corrida), a cambio de mantener Partido en 0 (antes también 0). ¿Es aceptable que el total agregado de roturas suba ligeramente y quede por encima del rango típico del heurístico, a cambio de que cada decisión individual respete la prioridad de negocio pedida? En Mozos el resultado es una mejora clara en ambos ejes (11 roturas, antes 13, heurístico 28–37; Partido 0, heurístico 72).
 2. Hallazgo aparte, no bloqueante, para valorar en una fase futura: `cfg.night_fixed_days_off` es un valor de configuración manual a nivel de rol/departamento (editable vía `/api/roles`), sin ningún mecanismo que lo actualice automáticamente cuando cambia quién ocupa el rol `night_fixed` — depende enteramente de que un administrador se acuerde de editarlo. No se ha corregido (fuera de alcance de esta sesión), solo documentado.
 
-Todo lo demás que motivó dudas en la ronda de verificaciones puntuales (peso de equidad, determinismo del solver, rendimiento, el test de racha) y el propio bug bloqueante de `cobertura_nocturna.py` quedan resueltos y cerrados en esta sesión, con evidencia, no solo declarados.
+Todo lo demás que motivó dudas en rondas anteriores (peso de equidad, determinismo del solver, rendimiento del `num_search_workers=1`, el test de racha, el bug bloqueante de `cobertura_nocturna.py`) quedó resuelto y cerrado, con evidencia, no solo declarado. La regresión de rendimiento del propio rediseño (timeout de 30s insuficiente con los pesos nuevos) también se encontró y corrigió en la misma sesión que la introdujo, no se dejó pendiente.
 
-**Con esto: el motor CP-SAT ya no tiene ningún bug conocido pendiente que bloquee producción.** Lo único que queda antes de decir "listo" sin reservas es la decisión de negocio del punto 1 (una preferencia de diseño, no un defecto) y valorar si el hallazgo del punto 2 merece una fase de mejora aparte.
+**Con esto: el motor CP-SAT ya no tiene ningún bug conocido pendiente que bloquee producción, y la prioridad de negocio pedida está correctamente implementada y verificada.** Lo único que queda antes de decir "listo" sin reservas es la decisión de negocio del punto 1 — que el resultado agregado en Recepción tenga MÁS roturas brutas que antes del rediseño es un hecho a decidir, no un defecto a esconder — y valorar si el hallazgo del punto 2 merece una fase de mejora aparte.

@@ -2,7 +2,7 @@
   "_meta": {
     "generado": "2026-07-31",
     "generador": "generar_referencia_motor_actual.py",
-    "commit_modelo_base": "997e4815e18a4bef0126937babb2b5b49ab2bc70",
+    "commit_modelo_base": "c07e11c88355fb56b35c6500a0af31b90de68907",
     "nota": "Reemplaza la foto de Fase 0 original, nunca persistida y perdida. Arranque desde estado limpio (sin historial previo, sin vacaciones/peticiones) — ver docstring del script."
   },
   "recepcion": [
@@ -28,22 +28,22 @@
           "Libre"
         ],
         "Laura": [
+          "Libre",
+          "Libre",
           "Tarde",
-          "Libre",
-          "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
-        ],
-        "Pedro": [
-          "Mañana",
-          "Mañana",
-          "Libre",
-          "Libre",
+          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
+        ],
+        "Pedro": [
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre"
         ],
         "Ana": [
           "Mañana",
@@ -55,29 +55,29 @@
           "Libre"
         ],
         "Miguel": [
+          "Tarde",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana"
+        ],
+        "Sofía": [
+          "Mañana",
+          "Mañana",
+          "Libre",
+          "Libre",
           "Tarde",
           "Tarde",
           "Tarde"
         ],
-        "Sofía": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre"
-        ],
         "Diego": [
           "Tarde",
           "Tarde",
-          "Tarde",
           "Libre",
           "Libre",
+          "Mañana",
           "Mañana",
           "Mañana"
         ]
@@ -116,6 +116,15 @@
           "Libre"
         ],
         "Laura": [
+          "Tarde",
+          "Libre",
+          "Libre",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana"
+        ],
+        "Pedro": [
           "Mañana",
           "Libre",
           "Libre",
@@ -124,7 +133,7 @@
           "Tarde",
           "Tarde"
         ],
-        "Pedro": [
+        "Ana": [
           "Tarde",
           "Tarde",
           "Tarde",
@@ -133,7 +142,7 @@
           "Libre",
           "Libre"
         ],
-        "Ana": [
+        "Miguel": [
           "Libre",
           "Libre",
           "Tarde",
@@ -141,15 +150,6 @@
           "Tarde",
           "Tarde",
           "Tarde"
-        ],
-        "Miguel": [
-          "Libre",
-          "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
         ],
         "Sofía": [
           "Tarde",
@@ -204,16 +204,16 @@
           "Libre"
         ],
         "Laura": [
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre",
           "Mañana",
           "Mañana",
-          "Mañana"
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Pedro": [
-          "Partido",
+          "Tarde",
           "Libre",
           "Libre",
           "Mañana",
@@ -222,18 +222,18 @@
           "Mañana"
         ],
         "Ana": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
           "Libre",
-          "Libre"
+          "Libre",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Miguel": [
-          "Mañana",
-          "Mañana",
-          "Mañana",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Noche",
           "Noche",
           "Libre",
@@ -249,13 +249,13 @@
           "Tarde"
         ],
         "Diego": [
+          "Partido",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Libre",
-          "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Libre"
         ]
       },
       "roles": {
@@ -292,36 +292,36 @@
           "Libre"
         ],
         "Laura": [
+          "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre",
           "Mañana",
-          "Libre",
-          "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Mañana",
+          "Mañana"
         ],
         "Pedro": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
+          "Mañana",
+          "Mañana",
+          "Mañana",
           "Noche",
           "Noche",
           "Libre",
           "Libre"
         ],
         "Ana": [
-          "Mañana",
-          "Mañana",
           "Libre",
           "Libre",
+          "Tarde",
+          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
         ],
         "Miguel": [
+          "Partido",
           "Libre",
           "Libre",
-          "Mañana",
           "Mañana",
           "Mañana",
           "Mañana",
@@ -331,19 +331,19 @@
           "Tarde",
           "Tarde",
           "Tarde",
-          "Libre",
-          "Libre",
-          "Mañana",
-          "Mañana"
-        ],
-        "Diego": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
           "Tarde",
           "Tarde",
           "Libre",
           "Libre"
+        ],
+        "Diego": [
+          "Mañana",
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ]
       },
       "roles": {
@@ -380,22 +380,22 @@
           "Libre"
         ],
         "Laura": [
+          "Libre",
+          "Libre",
           "Tarde",
-          "Libre",
-          "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Pedro": [
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre",
           "Mañana",
           "Mañana",
-          "Mañana"
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Ana": [
           "Tarde",
@@ -407,8 +407,8 @@
           "Libre"
         ],
         "Miguel": [
-          "Mañana",
-          "Mañana",
+          "Tarde",
+          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde",
@@ -418,20 +418,20 @@
         "Sofía": [
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Diego": [
+          "Tarde",
           "Libre",
           "Libre",
           "Mañana",
           "Mañana",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Mañana",
+          "Mañana"
         ]
       },
       "roles": {
@@ -477,13 +477,13 @@
           "Mañana"
         ],
         "Pedro": [
-          "Mañana",
-          "Mañana",
-          "Libre",
-          "Libre",
           "Tarde",
           "Tarde",
-          "Tarde"
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre"
         ],
         "Ana": [
           "Libre",
@@ -495,6 +495,15 @@
           "Mañana"
         ],
         "Miguel": [
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
+        ],
+        "Sofía": [
           "Mañana",
           "Libre",
           "Libre",
@@ -503,19 +512,10 @@
           "Tarde",
           "Tarde"
         ],
-        "Sofía": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre"
-        ],
         "Diego": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
+          "Mañana",
+          "Mañana",
+          "Mañana",
           "Noche",
           "Noche",
           "Libre",
@@ -557,30 +557,30 @@
         ],
         "Laura": [
           "Mañana",
+          "Mañana",
           "Libre",
           "Libre",
-          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
         ],
         "Pedro": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
           "Libre",
-          "Libre"
+          "Libre",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Ana": [
-          "Mañana",
-          "Mañana",
-          "Libre",
-          "Libre",
           "Tarde",
           "Tarde",
-          "Tarde"
+          "Libre",
+          "Libre",
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Miguel": [
           "Tarde",
@@ -592,22 +592,22 @@
           "Libre"
         ],
         "Sofía": [
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Libre",
-          "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
+          "Libre"
         ],
         "Diego": [
           "Partido",
           "Libre",
           "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ]
       },
       "roles": {
@@ -644,13 +644,13 @@
           "Libre"
         ],
         "Laura": [
+          "Tarde",
+          "Tarde",
           "Libre",
           "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Pedro": [
           "Mañana",
@@ -662,6 +662,15 @@
           "Libre"
         ],
         "Ana": [
+          "Mañana",
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
+        ],
+        "Miguel": [
           "Tarde",
           "Tarde",
           "Tarde",
@@ -670,23 +679,14 @@
           "Mañana",
           "Mañana"
         ],
-        "Miguel": [
-          "Partido",
-          "Libre",
-          "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
-        ],
         "Sofía": [
-          "Mañana",
-          "Mañana",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Diego": [
           "Tarde",
@@ -732,27 +732,27 @@
           "Libre"
         ],
         "Laura": [
+          "Tarde",
+          "Tarde",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Pedro": [
-          "Partido",
           "Libre",
           "Libre",
+          "Mañana",
           "Mañana",
           "Mañana",
           "Mañana",
           "Mañana"
         ],
         "Ana": [
-          "Mañana",
-          "Mañana",
-          "Mañana",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Noche",
           "Noche",
           "Libre",
@@ -768,13 +768,13 @@
           "Libre"
         ],
         "Sofía": [
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre",
           "Mañana",
           "Mañana",
-          "Mañana"
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Diego": [
           "Mañana",
@@ -847,15 +847,6 @@
           "Libre"
         ],
         "Miguel": [
-          "Partido",
-          "Libre",
-          "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
-        ],
-        "Sofía": [
           "Mañana",
           "Libre",
           "Libre",
@@ -863,6 +854,15 @@
           "Tarde",
           "Tarde",
           "Tarde"
+        ],
+        "Sofía": [
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre",
+          "Mañana",
+          "Mañana"
         ],
         "Diego": [
           "Tarde",
@@ -909,9 +909,9 @@
         ],
         "Laura": [
           "Mañana",
+          "Mañana",
           "Libre",
           "Libre",
-          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
@@ -927,30 +927,30 @@
         ],
         "Ana": [
           "Partido",
-          "Partido",
           "Libre",
           "Libre",
           "Mañana",
-          "Tarde",
-          "Tarde"
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Miguel": [
-          "Mañana",
-          "Mañana",
-          "Mañana",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Noche",
           "Noche",
           "Libre",
           "Libre"
         ],
         "Sofía": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
           "Libre",
           "Libre",
-          "Mañana",
-          "Mañana"
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Diego": [
           "Tarde",
@@ -998,22 +998,40 @@
         "Laura": [
           "Tarde",
           "Tarde",
-          "Tarde",
           "Libre",
           "Libre",
+          "Mañana",
           "Mañana",
           "Mañana"
         ],
         "Pedro": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
+          "Mañana",
+          "Mañana",
+          "Mañana",
           "Noche",
           "Noche",
           "Libre",
           "Libre"
         ],
         "Ana": [
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
+        ],
+        "Miguel": [
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre",
+          "Mañana",
+          "Mañana"
+        ],
+        "Sofía": [
           "Tarde",
           "Tarde",
           "Tarde",
@@ -1022,29 +1040,11 @@
           "Libre",
           "Libre"
         ],
-        "Miguel": [
-          "Libre",
-          "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
-        ],
-        "Sofía": [
-          "Mañana",
-          "Mañana",
-          "Libre",
-          "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde"
-        ],
         "Diego": [
           "Partido",
           "Libre",
           "Libre",
-          "Tarde",
+          "Mañana",
           "Tarde",
           "Tarde",
           "Tarde"
@@ -1084,10 +1084,10 @@
           "Libre"
         ],
         "Laura": [
+          "Mañana",
+          "Mañana",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
@@ -1102,26 +1102,26 @@
           "Libre"
         ],
         "Ana": [
-          "Mañana",
-          "Mañana",
-          "Mañana",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Noche",
           "Noche",
           "Libre",
           "Libre"
         ],
         "Miguel": [
+          "Mañana",
           "Libre",
           "Libre",
-          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
         ],
         "Sofía": [
-          "Tarde",
-          "Tarde",
+          "Partido",
+          "Partido",
           "Libre",
           "Libre",
           "Mañana",
@@ -1129,9 +1129,9 @@
           "Mañana"
         ],
         "Diego": [
-          "Tarde",
           "Libre",
           "Libre",
+          "Mañana",
           "Mañana",
           "Mañana",
           "Mañana",
@@ -1181,15 +1181,6 @@
           "Mañana"
         ],
         "Pedro": [
-          "Mañana",
-          "Libre",
-          "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
-        ],
-        "Ana": [
           "Libre",
           "Libre",
           "Mañana",
@@ -1197,6 +1188,15 @@
           "Mañana",
           "Mañana",
           "Mañana"
+        ],
+        "Ana": [
+          "Mañana",
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Miguel": [
           "Tarde",
@@ -1219,7 +1219,7 @@
         "Diego": [
           "Mañana",
           "Mañana",
-          "Mañana",
+          "Tarde",
           "Noche",
           "Noche",
           "Libre",
@@ -1260,31 +1260,31 @@
           "Libre"
         ],
         "Laura": [
-          "Mañana",
-          "Mañana",
           "Libre",
           "Libre",
+          "Tarde",
+          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
         ],
         "Pedro": [
-          "Tarde",
           "Libre",
           "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
-        ],
-        "Ana": [
-          "Libre",
-          "Libre",
-          "Tarde",
+          "Partido",
           "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
+        ],
+        "Ana": [
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre"
         ],
         "Miguel": [
           "Mañana",
@@ -1298,18 +1298,18 @@
         "Sofía": [
           "Tarde",
           "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
           "Libre",
-          "Libre"
+          "Libre",
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Diego": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
+          "Partido",
           "Libre",
           "Libre",
+          "Mañana",
+          "Mañana",
           "Mañana",
           "Mañana"
         ]
@@ -1357,36 +1357,36 @@
           "Mañana"
         ],
         "Pedro": [
-          "Mañana",
-          "Mañana",
-          "Mañana",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Noche",
           "Noche",
           "Libre",
           "Libre"
         ],
         "Ana": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre"
-        ],
-        "Miguel": [
-          "Tarde",
+          "Partido",
+          "Partido",
           "Libre",
           "Libre",
-          "Mañana",
           "Mañana",
           "Mañana",
           "Mañana"
         ],
-        "Sofía": [
-          "Libre",
-          "Libre",
+        "Miguel": [
           "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Tarde",
+          "Libre",
+          "Libre"
+        ],
+        "Sofía": [
+          "Mañana",
+          "Libre",
+          "Libre",
           "Tarde",
           "Tarde",
           "Tarde",
@@ -1446,12 +1446,12 @@
         ],
         "Pedro": [
           "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde",
           "Libre",
-          "Libre"
+          "Libre",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Ana": [
           "Mañana",
@@ -1463,19 +1463,19 @@
           "Libre"
         ],
         "Miguel": [
+          "Mañana",
+          "Mañana",
           "Libre",
           "Libre",
-          "Partido",
-          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
         ],
         "Sofía": [
           "Tarde",
+          "Tarde",
           "Libre",
           "Libre",
-          "Mañana",
           "Mañana",
           "Mañana",
           "Mañana"
@@ -1483,11 +1483,11 @@
         "Diego": [
           "Tarde",
           "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Libre",
-          "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana"
+          "Libre"
         ]
       },
       "roles": {
@@ -1524,33 +1524,15 @@
           "Libre"
         ],
         "Laura": [
-          "Tarde",
-          "Tarde",
           "Libre",
           "Libre",
           "Mañana",
           "Mañana",
-          "Mañana"
-        ],
-        "Pedro": [
-          "Mañana",
-          "Libre",
-          "Libre",
-          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
         ],
-        "Ana": [
-          "Partido",
-          "Libre",
-          "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
-        ],
-        "Miguel": [
+        "Pedro": [
           "Tarde",
           "Tarde",
           "Tarde",
@@ -1559,10 +1541,28 @@
           "Libre",
           "Libre"
         ],
-        "Sofía": [
-          "Libre",
-          "Libre",
+        "Ana": [
           "Tarde",
+          "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre",
+          "Mañana",
+          "Mañana"
+        ],
+        "Miguel": [
+          "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre",
+          "Mañana",
+          "Mañana",
+          "Mañana"
+        ],
+        "Sofía": [
+          "Mañana",
+          "Libre",
+          "Libre",
           "Tarde",
           "Tarde",
           "Tarde",
@@ -1663,13 +1663,13 @@
           "Noche"
         ],
         "Rubén": [
-          "Partido",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Mañana",
+          "Mañana"
         ],
         "Gloria": [
           "Libre",
@@ -1677,17 +1677,17 @@
           "Mañana",
           "Mañana",
           "Mañana",
-          "Mañana",
-          "Mañana"
-        ],
-        "Tomás": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre",
           "Partido",
           "Partido"
+        ],
+        "Tomás": [
+          "Partido",
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Inés": [
           "Mañana",
@@ -1721,26 +1721,26 @@
           "Noche"
         ],
         "Rubén": [
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre",
-          "Noche",
-          "Noche",
-          "Partido"
-        ],
-        "Gloria": [
+          "Mañana",
           "Mañana",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
+          "Noche",
+          "Noche",
           "Tarde"
         ],
-        "Tomás": [
+        "Gloria": [
           "Partido",
-          "Mañana",
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Partido"
+        ],
+        "Tomás": [
+          "Tarde",
+          "Tarde",
           "Tarde",
           "Libre",
           "Libre",
@@ -1789,30 +1789,30 @@
         ],
         "Gloria": [
           "Tarde",
-          "Tarde",
-          "Tarde",
           "Libre",
           "Libre",
-          "Partido",
-          "Partido"
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Tomás": [
           "Partido",
+          "Mañana",
           "Libre",
           "Libre",
-          "Tarde",
           "Noche",
           "Noche",
           "Partido"
         ],
         "Inés": [
           "Mañana",
-          "Mañana",
-          "Libre",
-          "Libre",
           "Tarde",
           "Tarde",
-          "Tarde"
+          "Libre",
+          "Libre",
+          "Partido",
+          "Partido"
         ]
       },
       "roles": {
@@ -1839,14 +1839,14 @@
         "Rubén": [
           "Mañana",
           "Mañana",
-          "Mañana",
-          "Libre",
-          "Libre",
           "Tarde",
-          "Tarde"
+          "Libre",
+          "Libre",
+          "Partido",
+          "Partido"
         ],
         "Gloria": [
-          "Partido",
+          "Tarde",
           "Tarde",
           "Libre",
           "Libre",
@@ -1857,20 +1857,20 @@
         "Tomás": [
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Partido",
-          "Partido"
-        ],
-        "Inés": [
-          "Tarde",
-          "Libre",
-          "Libre",
+          "Mañana",
           "Mañana",
           "Mañana",
           "Mañana",
           "Mañana"
+        ],
+        "Inés": [
+          "Partido",
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ]
       },
       "roles": {
@@ -1895,13 +1895,13 @@
           "Noche"
         ],
         "Rubén": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre",
           "Partido",
-          "Partido"
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Gloria": [
           "Libre",
@@ -1913,19 +1913,19 @@
           "Mañana"
         ],
         "Tomás": [
-          "Partido",
           "Mañana",
+          "Mañana",
+          "Tarde",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Partido",
+          "Partido"
         ],
         "Inés": [
-          "Mañana",
-          "Libre",
-          "Libre",
           "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre",
           "Noche",
           "Noche",
           "Partido"
@@ -1953,10 +1953,10 @@
           "Noche"
         ],
         "Rubén": [
-          "Partido",
+          "Tarde",
+          "Tarde",
           "Libre",
           "Libre",
-          "Mañana",
           "Noche",
           "Noche",
           "Partido"
@@ -1964,29 +1964,29 @@
         "Gloria": [
           "Mañana",
           "Mañana",
-          "Mañana",
+          "Tarde",
           "Libre",
           "Libre",
           "Partido",
           "Partido"
         ],
         "Tomás": [
-          "Tarde",
-          "Tarde",
+          "Partido",
           "Libre",
           "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana"
-        ],
-        "Inés": [
-          "Libre",
-          "Libre",
-          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
+        ],
+        "Inés": [
+          "Libre",
+          "Libre",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ]
       },
       "roles": {
@@ -2013,24 +2013,24 @@
         "Rubén": [
           "Libre",
           "Libre",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Mañana"
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Partido",
+          "Partido"
         ],
         "Gloria": [
           "Partido",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Mañana",
+          "Mañana",
+          "Mañana",
+          "Mañana"
         ],
         "Tomás": [
-          "Mañana",
-          "Mañana",
+          "Tarde",
+          "Tarde",
           "Libre",
           "Libre",
           "Noche",
@@ -2038,13 +2038,13 @@
           "Partido"
         ],
         "Inés": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
+          "Mañana",
+          "Mañana",
+          "Mañana",
           "Libre",
           "Libre",
-          "Partido",
-          "Partido"
+          "Tarde",
+          "Tarde"
         ]
       },
       "roles": {
@@ -2069,16 +2069,16 @@
           "Noche"
         ],
         "Rubén": [
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Libre",
-          "Libre",
           "Partido",
-          "Mañana"
+          "Mañana",
+          "Mañana",
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde"
         ],
         "Gloria": [
-          "Tarde",
+          "Mañana",
           "Tarde",
           "Libre",
           "Libre",
@@ -2092,17 +2092,17 @@
           "Tarde",
           "Tarde",
           "Tarde",
-          "Tarde",
-          "Tarde"
+          "Partido",
+          "Partido"
         ],
         "Inés": [
-          "Partido",
+          "Tarde",
           "Libre",
           "Libre",
           "Mañana",
           "Mañana",
           "Mañana",
-          "Partido"
+          "Mañana"
         ]
       },
       "roles": {
@@ -2127,13 +2127,13 @@
           "Noche"
         ],
         "Rubén": [
-          "Mañana",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Partido",
+          "Partido"
         ],
         "Gloria": [
           "Libre",
@@ -2145,16 +2145,16 @@
           "Mañana"
         ],
         "Tomás": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre",
           "Partido",
-          "Partido"
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Inés": [
-          "Partido",
+          "Mañana",
           "Mañana",
           "Libre",
           "Libre",
@@ -2199,8 +2199,8 @@
           "Mañana",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde"
+          "Partido",
+          "Partido"
         ],
         "Tomás": [
           "Partido",
@@ -2217,8 +2217,8 @@
           "Tarde",
           "Tarde",
           "Tarde",
-          "Partido",
-          "Partido"
+          "Tarde",
+          "Tarde"
         ]
       },
       "roles": {
@@ -2249,16 +2249,16 @@
           "Mañana",
           "Mañana",
           "Mañana",
-          "Partido"
+          "Mañana"
         ],
         "Gloria": [
-          "Tarde",
+          "Partido",
           "Tarde",
           "Tarde",
           "Libre",
           "Libre",
           "Partido",
-          "Mañana"
+          "Partido"
         ],
         "Tomás": [
           "Mañana",
@@ -2270,7 +2270,7 @@
           "Partido"
         ],
         "Inés": [
-          "Partido",
+          "Tarde",
           "Libre",
           "Libre",
           "Tarde",
@@ -2301,7 +2301,7 @@
           "Noche"
         ],
         "Rubén": [
-          "Partido",
+          "Mañana",
           "Mañana",
           "Libre",
           "Libre",
@@ -2310,7 +2310,7 @@
           "Partido"
         ],
         "Gloria": [
-          "Mañana",
+          "Partido",
           "Libre",
           "Libre",
           "Tarde",
@@ -2359,13 +2359,13 @@
           "Noche"
         ],
         "Rubén": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
+          "Mañana",
           "Libre",
           "Libre",
-          "Partido",
-          "Partido"
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Gloria": [
           "Libre",
@@ -2377,13 +2377,13 @@
           "Mañana"
         ],
         "Tomás": [
-          "Mañana",
+          "Tarde",
+          "Tarde",
+          "Tarde",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Tarde"
+          "Partido",
+          "Partido"
         ],
         "Inés": [
           "Partido",
@@ -2417,10 +2417,10 @@
           "Noche"
         ],
         "Rubén": [
-          "Partido",
           "Tarde",
           "Libre",
           "Libre",
+          "Mañana",
           "Noche",
           "Noche",
           "Partido"
@@ -2431,14 +2431,14 @@
           "Mañana",
           "Libre",
           "Libre",
-          "Tarde",
-          "Tarde"
+          "Partido",
+          "Partido"
         ],
         "Tomás": [
+          "Partido",
           "Tarde",
           "Libre",
           "Libre",
-          "Mañana",
           "Mañana",
           "Mañana",
           "Mañana"
@@ -2449,8 +2449,8 @@
           "Tarde",
           "Tarde",
           "Tarde",
-          "Partido",
-          "Partido"
+          "Tarde",
+          "Tarde"
         ]
       },
       "roles": {
@@ -2480,17 +2480,17 @@
           "Mañana",
           "Mañana",
           "Mañana",
-          "Tarde",
-          "Tarde"
-        ],
-        "Gloria": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre",
           "Mañana",
           "Mañana"
+        ],
+        "Gloria": [
+          "Partido",
+          "Libre",
+          "Libre",
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Tarde"
         ],
         "Tomás": [
           "Mañana",
@@ -2502,11 +2502,11 @@
           "Partido"
         ],
         "Inés": [
-          "Partido",
-          "Libre",
-          "Libre",
           "Tarde",
           "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre",
           "Partido",
           "Partido"
         ]
@@ -2533,17 +2533,17 @@
           "Noche"
         ],
         "Rubén": [
-          "Tarde",
-          "Tarde",
-          "Tarde",
-          "Libre",
-          "Libre",
           "Mañana",
-          "Mañana"
+          "Mañana",
+          "Mañana",
+          "Libre",
+          "Libre",
+          "Partido",
+          "Partido"
         ],
         "Gloria": [
-          "Mañana",
-          "Mañana",
+          "Partido",
+          "Tarde",
           "Libre",
           "Libre",
           "Noche",
@@ -2553,20 +2553,20 @@
         "Tomás": [
           "Libre",
           "Libre",
-          "Mañana",
+          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
         ],
         "Inés": [
-          "Partido",
+          "Tarde",
           "Libre",
           "Libre",
           "Mañana",
           "Mañana",
-          "Partido",
-          "Partido"
+          "Mañana",
+          "Mañana"
         ]
       },
       "roles": {
@@ -2591,37 +2591,37 @@
           "Noche"
         ],
         "Rubén": [
-          "Mañana",
-          "Mañana",
-          "Mañana",
-          "Libre",
-          "Libre",
           "Partido",
-          "Partido"
-        ],
-        "Gloria": [
           "Libre",
           "Libre",
-          "Tarde",
           "Tarde",
           "Tarde",
           "Tarde",
           "Tarde"
         ],
-        "Tomás": [
-          "Tarde",
-          "Tarde",
+        "Gloria": [
           "Libre",
           "Libre",
+          "Mañana",
+          "Mañana",
           "Mañana",
           "Mañana",
           "Mañana"
         ],
-        "Inés": [
+        "Tomás": [
+          "Tarde",
+          "Tarde",
+          "Tarde",
+          "Libre",
+          "Libre",
           "Partido",
-          "Libre",
-          "Libre",
+          "Partido"
+        ],
+        "Inés": [
           "Mañana",
+          "Mañana",
+          "Libre",
+          "Libre",
           "Noche",
           "Noche",
           "Partido"
