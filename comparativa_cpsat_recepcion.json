@@ -210,7 +210,7 @@
       "Pedro": [
         "Tarde",
         "Tarde",
-        "Libre",
+        "Tarde",
         "Tarde",
         "Tarde",
         "Libre",
@@ -246,7 +246,7 @@
       "Diego": [
         "Mañana",
         "Libre",
-        "Tarde",
+        "Libre",
         "Tarde",
         "Tarde",
         "Tarde",
@@ -264,7 +264,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 4
+    "penalizacion_continuidad": 3
   },
   {
     "semana": "2026-08-24",
@@ -293,8 +293,8 @@
         "Libre",
         "Libre",
         "Libre",
-        "Mañana",
-        "Libre"
+        "Tarde",
+        "Tarde"
       ],
       "Pedro": [
         "Libre",
@@ -302,8 +302,8 @@
         "Libre",
         "Libre",
         "Libre",
-        "Tarde",
-        "Tarde"
+        "Mañana",
+        "Libre"
       ],
       "Ana": [
         "Tarde",
@@ -377,13 +377,13 @@
         "Libre"
       ],
       "Laura": [
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde"
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
       ],
       "Pedro": [
         "Libre",
@@ -413,22 +413,22 @@
         "Tarde"
       ],
       "Sofía": [
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
         "Mañana",
         "Mañana"
       ],
       "Diego": [
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana"
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
       ]
     },
     "roles": {
@@ -442,7 +442,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 2
+    "penalizacion_continuidad": 3
   },
   {
     "semana": "2026-09-07",
@@ -475,16 +475,16 @@
         "Mañana"
       ],
       "Pedro": [
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana"
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
       ],
       "Ana": [
-        "Libre",
+        "Mañana",
         "Libre",
         "Libre",
         "Noche",
@@ -511,13 +511,13 @@
         "Tarde"
       ],
       "Diego": [
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
         "Libre",
-        "Libre"
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
       ]
     },
     "roles": {
@@ -555,58 +555,58 @@
         "Libre"
       ],
       "Laura": [
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
-        "Mañana",
-        "Mañana"
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
       ],
       "Pedro": [
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Libre",
-        "Libre"
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
       ],
       "Ana": [
         "Tarde",
         "Tarde",
         "Tarde",
-        "Libre",
-        "Libre",
         "Tarde",
-        "Tarde"
+        "Libre",
+        "Mañana",
+        "Mañana"
       ],
       "Miguel": [
-        "Mañana",
-        "Mañana",
+        "Libre",
+        "Libre",
         "Libre",
         "Noche",
         "Noche",
-        "Libre",
-        "Libre"
+        "Tarde",
+        "Tarde"
       ],
       "Sofía": [
         "Libre",
         "Libre",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana"
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
       ],
       "Diego": [
         "Libre",
         "Libre",
         "Libre",
+        "Libre",
         "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde"
+        "Libre",
+        "Libre"
       ]
     },
     "roles": {
@@ -620,7 +620,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 5
+    "penalizacion_continuidad": 2
   },
   {
     "semana": "2026-09-21",
@@ -644,8 +644,8 @@
         "Libre"
       ],
       "Laura": [
-        "Tarde",
-        "Tarde",
+        "Libre",
+        "Libre",
         "Libre",
         "Libre",
         "Libre",
@@ -662,20 +662,20 @@
         "Tarde"
       ],
       "Ana": [
+        "Mañana",
         "Libre",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana"
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Libre",
+        "Libre"
       ],
       "Miguel": [
-        "Mañana",
         "Libre",
-        "Tarde",
-        "Tarde",
-        "Tarde",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
         "Libre",
         "Libre"
       ],
@@ -683,15 +683,15 @@
         "Libre",
         "Libre",
         "Libre",
+        "Tarde",
         "Libre",
-        "Libre",
-        "Libre",
-        "Libre"
+        "Mañana",
+        "Mañana"
       ],
       "Diego": [
-        "Libre",
-        "Libre",
-        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
         "Noche",
         "Noche",
         "Tarde",
@@ -709,7 +709,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 4
+    "penalizacion_continuidad": 3
   },
   {
     "semana": "2026-09-28",
@@ -733,13 +733,13 @@
         "Libre"
       ],
       "Laura": [
+        "Libre",
+        "Libre",
         "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde"
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
       ],
       "Pedro": [
         "Libre",
@@ -748,30 +748,30 @@
         "Noche",
         "Noche",
         "Tarde",
-        "Tarde"
-      ],
-      "Ana": [
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
         "Libre"
       ],
+      "Ana": [
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Tarde"
+      ],
       "Miguel": [
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana"
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
       ],
       "Sofía": [
         "Tarde",
         "Tarde",
-        "Tarde",
+        "Libre",
         "Tarde",
         "Tarde",
         "Libre",
@@ -779,10 +779,10 @@
       ],
       "Diego": [
         "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
         "Mañana",
         "Mañana"
       ]
@@ -798,7 +798,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 3
+    "penalizacion_continuidad": 4
   },
   {
     "semana": "2026-10-05",
@@ -822,20 +822,20 @@
         "Libre"
       ],
       "Laura": [
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
-        "Mañana",
-        "Mañana"
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
       ],
       "Pedro": [
-        "Libre",
         "Mañana",
         "Libre",
         "Libre",
-        "Mañana",
+        "Libre",
+        "Libre",
         "Libre",
         "Libre"
       ],
@@ -845,23 +845,23 @@
         "Tarde",
         "Noche",
         "Noche",
-        "Libre",
-        "Libre"
-      ],
-      "Miguel": [
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
         "Tarde",
         "Tarde"
       ],
-      "Sofía": [
-        "Mañana",
+      "Miguel": [
         "Libre",
         "Mañana",
         "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Sofía": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
         "Libre",
         "Mañana",
         "Mañana"
@@ -872,8 +872,8 @@
         "Libre",
         "Tarde",
         "Tarde",
-        "Tarde",
-        "Tarde"
+        "Libre",
+        "Libre"
       ]
     },
     "roles": {
@@ -887,7 +887,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 5
+    "penalizacion_continuidad": 2
   },
   {
     "semana": "2026-10-12",
@@ -920,20 +920,20 @@
         "Mañana"
       ],
       "Pedro": [
-        "Mañana",
-        "Libre",
-        "Libre",
-        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
         "Libre",
         "Mañana",
         "Mañana"
       ],
       "Ana": [
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
         "Libre",
         "Libre"
       ],
@@ -943,8 +943,8 @@
         "Libre",
         "Noche",
         "Noche",
-        "Tarde",
-        "Tarde"
+        "Libre",
+        "Libre"
       ],
       "Sofía": [
         "Tarde",
@@ -956,13 +956,13 @@
         "Tarde"
       ],
       "Diego": [
-        "Libre",
-        "Mañana",
-        "Mañana",
-        "Mañana",
         "Mañana",
         "Libre",
-        "Libre"
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde"
       ]
     },
     "roles": {
@@ -976,7 +976,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 6
+    "penalizacion_continuidad": 2
   },
   {
     "semana": "2026-10-19",
@@ -1003,12 +1003,21 @@
         "Libre",
         "Libre",
         "Libre",
-        "Tarde",
+        "Libre",
         "Libre",
         "Mañana",
         "Mañana"
       ],
       "Pedro": [
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Ana": [
         "Tarde",
         "Tarde",
         "Tarde",
@@ -1017,20 +1026,11 @@
         "Tarde",
         "Tarde"
       ],
-      "Ana": [
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana"
-      ],
       "Miguel": [
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
         "Tarde",
         "Libre",
         "Libre"
@@ -1038,16 +1038,16 @@
       "Sofía": [
         "Libre",
         "Libre",
-        "Libre",
-        "Libre",
+        "Mañana",
+        "Mañana",
         "Libre",
         "Libre",
         "Libre"
       ],
       "Diego": [
-        "Tarde",
-        "Tarde",
-        "Tarde",
+        "Libre",
+        "Libre",
+        "Libre",
         "Noche",
         "Noche",
         "Tarde",
@@ -1065,7 +1065,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 3
+    "penalizacion_continuidad": 4
   },
   {
     "semana": "2026-10-26",
@@ -1098,49 +1098,49 @@
         "Tarde"
       ],
       "Pedro": [
-        "Libre",
-        "Libre",
-        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
         "Noche",
         "Noche",
-        "Tarde",
-        "Tarde"
-      ],
-      "Ana": [
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
         "Libre",
         "Libre"
       ],
-      "Miguel": [
-        "Libre",
-        "Libre",
+      "Ana": [
         "Libre",
         "Libre",
         "Mañana",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Miguel": [
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Libre",
         "Mañana",
         "Mañana"
       ],
       "Sofía": [
-        "Mañana",
         "Libre",
         "Libre",
-        "Mañana",
         "Libre",
         "Libre",
-        "Libre"
+        "Libre",
+        "Tarde",
+        "Tarde"
       ],
       "Diego": [
         "Libre",
         "Mañana",
-        "Mañana",
         "Libre",
+        "Tarde",
+        "Tarde",
         "Libre",
-        "Mañana",
-        "Mañana"
+        "Libre"
       ]
     },
     "roles": {
@@ -1187,11 +1187,11 @@
         "Mañana"
       ],
       "Pedro": [
-        "Libre",
-        "Mañana",
-        "Mañana",
-        "Mañana",
-        "Mañana",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
         "Libre",
         "Libre"
       ],
@@ -1201,8 +1201,8 @@
         "Libre",
         "Noche",
         "Noche",
-        "Tarde",
-        "Tarde"
+        "Libre",
+        "Libre"
       ],
       "Miguel": [
         "Tarde",
@@ -1214,22 +1214,22 @@
         "Tarde"
       ],
       "Sofía": [
+        "Libre",
+        "Mañana",
         "Mañana",
         "Libre",
-        "Tarde",
-        "Tarde",
-        "Libre",
+        "Mañana",
         "Mañana",
         "Mañana"
       ],
       "Diego": [
-        "Tarde",
-        "Tarde",
+        "Mañana",
         "Libre",
         "Libre",
-        "Tarde",
+        "Mañana",
         "Libre",
-        "Libre"
+        "Tarde",
+        "Tarde"
       ]
     },
     "roles": {
@@ -1243,7 +1243,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 6
+    "penalizacion_continuidad": 4
   },
   {
     "semana": "2026-11-09",
@@ -1279,24 +1279,24 @@
         "Mañana",
         "Libre",
         "Libre",
-        "Mañana",
+        "Libre",
         "Mañana",
         "Mañana",
         "Mañana"
       ],
       "Ana": [
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
         "Libre",
         "Libre"
       ],
       "Miguel": [
         "Libre",
-        "Mañana",
-        "Mañana",
+        "Libre",
+        "Libre",
         "Noche",
         "Noche",
         "Libre",
@@ -1312,11 +1312,11 @@
         "Tarde"
       ],
       "Diego": [
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
         "Tarde",
         "Tarde"
       ]
@@ -1332,7 +1332,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 6
+    "penalizacion_continuidad": 4
   },
   {
     "semana": "2026-11-16",
@@ -1360,13 +1360,13 @@
         "Tarde",
         "Tarde",
         "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde"
+        "Libre",
+        "Mañana",
+        "Mañana"
       ],
       "Pedro": [
-        "Tarde",
-        "Tarde",
+        "Libre",
+        "Libre",
         "Tarde",
         "Tarde",
         "Tarde",
@@ -1374,7 +1374,7 @@
         "Tarde"
       ],
       "Ana": [
-        "Mañana",
+        "Libre",
         "Mañana",
         "Libre",
         "Mañana",
@@ -1383,11 +1383,11 @@
         "Mañana"
       ],
       "Miguel": [
+        "Mañana",
         "Libre",
+        "Mañana",
         "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
+        "Tarde",
         "Libre",
         "Libre"
       ],
@@ -1397,17 +1397,17 @@
         "Libre",
         "Libre",
         "Libre",
-        "Mañana",
+        "Libre",
         "Libre"
       ],
       "Diego": [
+        "Tarde",
+        "Tarde",
         "Libre",
-        "Libre",
-        "Mañana",
         "Noche",
         "Noche",
-        "Libre",
-        "Mañana"
+        "Tarde",
+        "Tarde"
       ]
     },
     "roles": {
@@ -1459,8 +1459,8 @@
         "Libre",
         "Noche",
         "Noche",
-        "Tarde",
-        "Tarde"
+        "Libre",
+        "Libre"
       ],
       "Ana": [
         "Tarde",
@@ -1477,24 +1477,24 @@
         "Tarde",
         "Tarde",
         "Tarde",
-        "Libre",
-        "Libre"
+        "Tarde",
+        "Tarde"
       ],
       "Sofía": [
-        "Libre",
-        "Libre",
-        "Libre",
+        "Mañana",
         "Mañana",
         "Libre",
+        "Mañana",
+        "Mañana",
         "Libre",
         "Libre"
       ],
       "Diego": [
-        "Mañana",
-        "Mañana",
-        "Mañana",
+        "Libre",
         "Libre",
         "Mañana",
+        "Libre",
+        "Libre",
         "Mañana",
         "Mañana"
       ]
@@ -1510,7 +1510,7 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 5
+    "penalizacion_continuidad": 6
   },
   {
     "semana": "2026-11-30",
@@ -1534,16 +1534,16 @@
         "Libre"
       ],
       "Laura": [
-        "Libre",
-        "Libre",
-        "Libre",
-        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
         "Libre",
         "Mañana",
         "Mañana"
       ],
       "Pedro": [
-        "Libre",
+        "Mañana",
         "Libre",
         "Libre",
         "Libre",
@@ -1557,11 +1557,11 @@
         "Libre",
         "Noche",
         "Noche",
-        "Libre",
-        "Libre"
+        "Tarde",
+        "Tarde"
       ],
       "Miguel": [
-        "Mañana",
+        "Libre",
         "Mañana",
         "Mañana",
         "Mañana",
@@ -1570,22 +1570,22 @@
         "Mañana"
       ],
       "Sofía": [
+        "Libre",
         "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde",
+        "Libre",
+        "Libre",
         "Tarde",
         "Tarde",
         "Tarde"
       ],
       "Diego": [
         "Tarde",
+        "Libre",
         "Tarde",
         "Tarde",
         "Tarde",
-        "Tarde",
-        "Tarde",
-        "Tarde"
+        "Libre",
+        "Libre"
       ]
     },
     "roles": {
@@ -1599,6 +1599,6 @@
       "Diego": "normal"
     },
     "violaciones": [],
-    "penalizacion_continuidad": 3
+    "penalizacion_continuidad": 6
   }
 ]
