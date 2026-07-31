@@ -249,9 +249,58 @@ Los schedules **difieren** pese al input idéntico → descarta la hipótesis (a
 
 Causa raíz identificada: `cp_model.CpSolver()` en `motor_cpsat.py` no fija `num_search_workers` (por defecto `0` = búsqueda en portafolio paralela, con varios hilos compitiendo) ni depende de que el `random_seed` (por defecto `1`, sí fijo) sea suficiente para determinar cuál de varios workers "gana" la carrera cuando hay empate en el valor óptimo — el orden de finalización entre hilos no es determinista. Verificado forzando `solver.parameters.num_search_workers = 1` (búsqueda mono-hilo): la misma cadena, corrida dos veces, produjo **JSON idéntico byte a byte**.
 
-**Efecto secundario importante al fijar `num_search_workers=1`:** además de estabilizar Mozos, expuso que `tests/test_racha_noches.py::test_estado_sucio_fuerza_descanso_inmediato` **deja de pasar** con la búsqueda mono-hilo — su aserción ("si N1 no hace Noche el lunes, el turno solo puede ser Libre, nunca otro") no está garantizada por ninguna restricción dura real del modelo; se cumplía solo porque el desempate paralelo (ahora confirmado no determinista) casualmente producía esa solución. Esto es, en sí mismo, el mismo patrón de "test que pasa por una coincidencia del solver, no por una propiedad garantizada" señalado en el punto 2 — pero en un test que **no** se puede arreglar con un import de una constante: requeriría revisar si la aserción original es correcta o demasiado estricta, lo cual está fuera del alcance de esta revisión puntual.
+**Efecto secundario importante al fijar `num_search_workers=1`:** además de estabilizar Mozos, expuso que `tests/test_racha_noches.py::test_estado_sucio_fuerza_descanso_inmediato` **deja de pasar** con la búsqueda mono-hilo.
 
-**Decisión tomada en esta revisión:** se revirtió el cambio de `num_search_workers` (vuelto a como estaba, sin pin) para no introducir una regresión de test no solicitada ni mezclarla con esta verificación — motor_cpsat.py queda igual que antes de este punto 3 (`git diff` sobre el fichero vacío tras la reversión). **Pendiente para el usuario:** decidir si se fija `num_search_workers=1` en producción (determinismo total, pero exige antes revisar/corregir `test_estado_sucio_fuerza_descanso_inmediato`) o se acepta la variación run-to-run documentada aquí como un trade-off conocido.
+**Decisión tomada en esta revisión:** se revirtió el cambio de `num_search_workers` (vuelto a como estaba, sin pin) para no introducir una regresión de test no solicitada ni mezclarla con esta verificación — motor_cpsat.py queda igual que antes de este punto 3 (`git diff` sobre el fichero, vacío tras la reversión).
+
+#### Revisión pedida por el usuario (antes de fijar el parámetro en ningún sitio): causa raíz del test roto + impacto en rendimiento
+
+**Causa raíz del test roto — confirmada con evidencia, no inferida.** Se leyó `agregar_restriccion_racha_noches` (motor_cpsat.py): la restricción 2 (descanso obligatorio) solo fuerza `Libre` en las posiciones INMEDIATAMENTE siguientes a una ventana de 5 días que resultó ser TODA "Noche" (`racha5` reificado sobre esa ventana concreta) — es exactamente "los 2 días siguientes a agotar una racha de 5", tal como está documentado, sin gap.
+
+En el escenario del test (`min_coverage`/`max_coverage` Noche=1, `NocheFijo` presente y no ausente esa semana), `NocheFijo` ya ocupa el ÚNICO cupo de Noche del lunes por su turno fijo — así que N1 **no puede estructuralmente** trabajar Noche el lunes (violaría `max_coverage`). El test asumía que las únicas opciones de N1 eran "Noche" o "Libre", pero nada en la restricción de racha (ni ninguna otra) prohíbe que N1 haga Mañana/Tarde/Partido el lunes si no continúa la racha — la restricción solo actúa cuando una racha de 5 SÍ se completa.
+
+Verificado empíricamente:
+```
+NocheFijo primeros 7 dias: ['Noche', 'Noche', 'Noche', 'Libre', 'Libre', 'Noche', 'Noche']
+N1 primeros 7 dias:        ['Tarde', 'Libre', 'Mañana', 'Noche', 'Noche', 'Tarde', 'Libre']
+Verificacion independiente de racha/descanso: PASA (sin excepcion)
+```
+`_verificar_todos` — el verificador independiente del propio archivo de test, que recorre la cadena concatenada de 16 semanas día a día SIN asumir nada sobre quién debía hacer qué, solo contando rachas y descansos reales — **pasa sin excepción** incluso en la ejecución donde la aserción específica del test falla. Esto es la confirmación definitiva: la restricción dura de Fase 3 funciona correctamente (opción **(b)**, no (a)). El bug está en el test (asume que N1 solo tiene Noche/Libre como opciones, cuando Tarde/Mañana/Partido son alternativas igual de válidas que no violan ninguna regla de racha) — **no se corrigió modelo_base.py ni motor_cpsat.py**, y el propio test tampoco se tocó en esta revisión (queda pendiente de decidir si se corrige la aserción o se elimina esa rama del test, ver más abajo).
+
+**Impacto en tiempo de resolución** (`solver.parameters.num_search_workers`: 0=por defecto/paralelo vs 1=mono-hilo), medido con `time.perf_counter()`/`solver.WallTime()`:
+
+```
+=== Recepción — plantilla REAL de producción (9 personas, data/plantilla.json) ===
+  por defecto (paralelo)      : 0.050s (status=OPTIMAL)
+  num_search_workers=1        : 0.048s (status=OPTIMAL)
+
+=== Mozos — plantilla REAL de producción (5 personas, data/mozos_plantilla.json) ===
+  por defecto (paralelo)      : 0.023s (status=OPTIMAL)
+  num_search_workers=1        : 0.030s (status=OPTIMAL)
+
+=== Recepción + Mozos combinados en un solo modelo (14 personas, cota superior hipotética — hoy se resuelven por separado) ===
+  por defecto (paralelo)      : 0.079s (status=OPTIMAL)
+  num_search_workers=1        : 0.167s (status=OPTIMAL)
+
+=== Sintético 20 personas ===
+  por defecto (paralelo)      : 0.137s (status=OPTIMAL)
+  num_search_workers=1        : 0.967s (status=OPTIMAL)
+
+=== Sintético 25 personas ===
+  workers=0: 0.176s status=OPTIMAL
+  workers=1: 5.267s status=OPTIMAL
+
+=== Sintético 30 personas ===
+  workers=0: 0.193s status=OPTIMAL
+  workers=1: 1.824s status=OPTIMAL
+```
+
+**Lectura:** a la escala REAL actual de producción (5-9 personas por departamento), el impacto es indistinguible del ruido de medición (decenas de milisegundos, en un caso `workers=1` incluso salió más rápido). La brecha empieza a notarse a partir de ~14-20 personas (hasta 7x más lento) y se vuelve significativa (varios segundos, hasta 30x más lento en el peor caso medido, con comportamiento no monótono típico de la búsqueda combinatoria de CP-SAT) en el rango de 25-30 personas — muy por encima de cualquier plantilla real existente hoy (la mayor, Recepción, tiene 9). **Con la escala actual del proyecto, el rendimiento NO es un argumento de peso contra fijar `num_search_workers=1`; sí lo sería si el equipo creciera a 20+ personas por departamento.**
+
+**Conclusión de esta revisión, entregada antes de tocar el parámetro (decisión de producto pendiente del usuario):**
+- El test roto (`test_estado_sucio_fuerza_descanso_inmediato`) tiene un bug propio (opción (b)), no revela ningún problema en la restricción de racha de Fase 3 — se puede corregir sin ninguna duda sobre si el modelo está bien.
+- El coste de rendimiento de fijar `num_search_workers=1` es despreciable a la escala real de hoy, y solo importaría si el proyecto creciera considerablemente en número de empleados por departamento.
+- **No se ha fijado el parámetro** en ningún sitio en esta sesión — motor_cpsat.py permanece sin cambios respecto a antes de esta revisión puntual.
 
 ### 4. Cuantificación del trade-off D>B (Recepción, 18 semanas)
 
