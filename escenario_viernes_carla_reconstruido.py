@@ -106,6 +106,27 @@ def construir_staff():
     ]
 
 
+N_SEMANAS_ESCENARIO = 8
+# Días sueltos (no en pareja consecutiva) para varios "normal", TODAS las
+# semanas — simula un compromiso recurrente parcial (p.ej. estudios,
+# cuidado familiar unos días fijos) que obliga a assign_days_off a
+# completar cada uno con un SEGUNDO día de pareja cada semana, consumiendo
+# de forma sostenida las opciones de pareja disponibles y acumulando
+# desequilibrio en pair_usage con el paso de las semanas — a diferencia
+# del ajuste de una sola semana (que el heurístico post-reparación
+# absorbe sin problema, ver runs previos documentados en el informe).
+# Módulo-level (no solo dentro de main()) para que
+# escenario_viernes_carla_cpsat.py pueda importar el MISMO escenario exacto.
+SUELTOS_RECURRENTES = {
+    "Ana": "Martes", "Diego": "Miércoles", "Carla": "Jueves",
+    "Luis": "Viernes", "Miguel": "Lunes",
+}
+# Además, el jefe falta (petición concedida) un miércoles de por medio,
+# activando el término/cobertura de ausencia (subjefe cubre) y
+# reduciendo también la flexibilidad de Laura semana sí, semana no.
+SEMANAS_AUSENCIA_JEFE = {1, 3, 5, 7}
+
+
 def main():
     cfg = construir_cfg()
     staff = construir_staff()
@@ -121,24 +142,6 @@ def main():
     prev_sunday_shifts = {}
     prev_last_shifts = {}
     prev_week_covers = {}
-
-    N_SEMANAS_ESCENARIO = 8
-    # Días sueltos (no en pareja consecutiva) para varios "normal", TODAS las
-    # semanas — simula un compromiso recurrente parcial (p.ej. estudios,
-    # cuidado familiar unos días fijos) que obliga a assign_days_off a
-    # completar cada uno con un SEGUNDO día de pareja cada semana, consumiendo
-    # de forma sostenida las opciones de pareja disponibles y acumulando
-    # desequilibrio en pair_usage con el paso de las semanas — a diferencia
-    # del ajuste de una sola semana (que el heurístico post-reparación
-    # absorbe sin problema, ver runs previos documentados en el informe).
-    SUELTOS_RECURRENTES = {
-        "Ana": "Martes", "Diego": "Miércoles", "Carla": "Jueves",
-        "Luis": "Viernes", "Miguel": "Lunes",
-    }
-    # Además, el jefe falta (petición concedida) un miércoles de por medio,
-    # activando el término/cobertura de ausencia (subjefe cubre) y
-    # reduciendo también la flexibilidad de Laura semana sí, semana no.
-    SEMANAS_AUSENCIA_JEFE = {1, 3, 5, 7}
 
     semana = SEMANA_INICIAL
     for i in range(N_SEMANAS_ESCENARIO):

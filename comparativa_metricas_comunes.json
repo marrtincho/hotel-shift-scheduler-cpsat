@@ -1,0 +1,26 @@
+{
+  "recepcion": {
+    "heuristico": {
+      "violaciones_duras": 0,
+      "roturas_continuidad_termino_B": 9,
+      "uso_partido": 10
+    },
+    "cpsat": {
+      "violaciones_duras": 0,
+      "roturas_continuidad_termino_B": 22,
+      "uso_partido": 0
+    }
+  },
+  "mozos": {
+    "heuristico": {
+      "violaciones_duras": 0,
+      "roturas_continuidad_termino_B": 28,
+      "uso_partido": 72
+    },
+    "cpsat": {
+      "violaciones_duras": 0,
+      "roturas_continuidad_termino_B": 14,
+      "uso_partido": 0
+    }
+  }
+}

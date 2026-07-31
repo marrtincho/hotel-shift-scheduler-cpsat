@@ -39,7 +39,7 @@ os.environ["DATA_DIR"] = SCRATCH_DATA
 from modelo_base import DAYS, generate_schedule_valido
 from modelo_recepcion import RECEPCION_CONFIG, STAFF_DEFAULT as RECEPCION_STAFF
 from modelo_mozos import MOZOS_CONFIG, STAFF_DEFAULT as MOZOS_STAFF
-from herramientas import cargar_roles, _semana_str
+from herramientas import cargar_roles, registrar_semana, _semana_str
 
 N_SEMANAS = 18
 SEMANA_INICIAL = date(2026, 8, 3)  # lunes
@@ -120,6 +120,15 @@ def generar_departamento(dept_id, base_cfg, staff_default):
         all_covers[_semana_str(semana)] = this_week_covers
         with open(cov_path, "w", encoding="utf-8") as f:
             json.dump(all_covers, f, ensure_ascii=False, indent=2)
+
+        # Igual que app.py tras generate_schedule_valido: persiste la semana
+        # en el historial real, para que _get_weekend_ratios/_get_shift_counts
+        # (leídas por la semana SIGUIENTE, tanto en el heurístico como más
+        # tarde en motor_cpsat) vean la evolución acumulada, no un historial
+        # vacío en cada semana. Sin esto, term A (equidad) nunca tendría
+        # presión real a lo largo de la cadena — se detectó al intentar
+        # reproducir la dispersión de findes y no encontrar ninguna.
+        registrar_semana(semana, full_schedule, staff_final, forzar=True, dept_id=dept_id)
 
         semanas_out.append({
             "semana": semana.isoformat(),

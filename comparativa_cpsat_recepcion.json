@@ -1,0 +1,1604 @@
+[
+  {
+    "semana": "2026-08-03",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Pedro": [
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ],
+      "Ana": [
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Miguel": [
+        "Tarde",
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Mañana"
+      ],
+      "Sofía": [
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Mañana",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Diego": [
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 3
+  },
+  {
+    "semana": "2026-08-10",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Ana": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ],
+      "Miguel": [
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Sofía": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Diego": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 2
+  },
+  {
+    "semana": "2026-08-17",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ],
+      "Ana": [
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Miguel": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ],
+      "Sofía": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Diego": [
+        "Mañana",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 4
+  },
+  {
+    "semana": "2026-08-24",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Libre"
+      ],
+      "Pedro": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Tarde"
+      ],
+      "Ana": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Miguel": [
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Sofía": [
+        "Mañana",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ],
+      "Diego": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Mañana"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 4
+  },
+  {
+    "semana": "2026-08-31",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Pedro": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre"
+      ],
+      "Ana": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Miguel": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Sofía": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Diego": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 2
+  },
+  {
+    "semana": "2026-09-07",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Ana": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ],
+      "Miguel": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Sofía": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Diego": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 3
+  },
+  {
+    "semana": "2026-09-14",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ],
+      "Ana": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Tarde"
+      ],
+      "Miguel": [
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre"
+      ],
+      "Sofía": [
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Diego": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 5
+  },
+  {
+    "semana": "2026-09-21",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Ana": [
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Miguel": [
+        "Mañana",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ],
+      "Sofía": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Diego": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 4
+  },
+  {
+    "semana": "2026-09-28",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Pedro": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ],
+      "Ana": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Miguel": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Sofía": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ],
+      "Diego": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 3
+  },
+  {
+    "semana": "2026-10-05",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Libre",
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Ana": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre"
+      ],
+      "Miguel": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Sofía": [
+        "Mañana",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Diego": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 5
+  },
+  {
+    "semana": "2026-10-12",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Ana": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ],
+      "Miguel": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ],
+      "Sofía": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Diego": [
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 6
+  },
+  {
+    "semana": "2026-10-19",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Ana": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Miguel": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ],
+      "Sofía": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Diego": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 3
+  },
+  {
+    "semana": "2026-10-26",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Pedro": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ],
+      "Ana": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ],
+      "Miguel": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Sofía": [
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Diego": [
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 6
+  },
+  {
+    "semana": "2026-11-02",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Ana": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ],
+      "Miguel": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Sofía": [
+        "Mañana",
+        "Libre",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Diego": [
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 6
+  },
+  {
+    "semana": "2026-11-09",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Ana": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Miguel": [
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre"
+      ],
+      "Sofía": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Diego": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 6
+  },
+  {
+    "semana": "2026-11-16",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Pedro": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Ana": [
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Miguel": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Sofía": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Libre"
+      ],
+      "Diego": [
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Mañana"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 5
+  },
+  {
+    "semana": "2026-11-23",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Tarde",
+        "Tarde"
+      ],
+      "Ana": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Miguel": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Libre",
+        "Libre"
+      ],
+      "Sofía": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Diego": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 5
+  },
+  {
+    "semana": "2026-11-30",
+    "schedule": {
+      "Carlos": [
+        "Noche",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche"
+      ],
+      "Juan": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Libre",
+        "Libre"
+      ],
+      "Laura": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Mañana",
+        "Mañana"
+      ],
+      "Pedro": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre",
+        "Libre"
+      ],
+      "Ana": [
+        "Libre",
+        "Libre",
+        "Libre",
+        "Noche",
+        "Noche",
+        "Libre",
+        "Libre"
+      ],
+      "Miguel": [
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana",
+        "Mañana"
+      ],
+      "Sofía": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ],
+      "Diego": [
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde",
+        "Tarde"
+      ]
+    },
+    "roles": {
+      "Carlos": "night_fixed",
+      "Juan": "jefe",
+      "Laura": "subjefe",
+      "Pedro": "normal",
+      "Ana": "normal",
+      "Miguel": "normal",
+      "Sofía": "adjunto_recepcion",
+      "Diego": "normal"
+    },
+    "violaciones": [],
+    "penalizacion_continuidad": 3
+  }
+]

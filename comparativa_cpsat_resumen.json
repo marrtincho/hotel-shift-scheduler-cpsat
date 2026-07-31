@@ -1,0 +1,35 @@
+{
+  "recepcion": {
+    "violaciones_duras": 0,
+    "penalizacion_continuidad": 75,
+    "uso_partido": 0,
+    "dispersion_findes": {
+      "min": 0.2,
+      "max": 0.26666666666666666,
+      "dispersion": 0.06666666666666665,
+      "detalle": {
+        "Sofía": 0.267,
+        "Diego": 0.222,
+        "Pedro": 0.235,
+        "Ana": 0.2,
+        "Miguel": 0.25
+      }
+    }
+  },
+  "mozos": {
+    "violaciones_duras": 0,
+    "penalizacion_continuidad": 38,
+    "uso_partido": 0,
+    "dispersion_findes": {
+      "min": 0.16666666666666666,
+      "max": 0.23529411764705882,
+      "dispersion": 0.06862745098039216,
+      "detalle": {
+        "Tomás": 0.188,
+        "Gloria": 0.167,
+        "Inés": 0.188,
+        "Rubén": 0.235
+      }
+    }
+  }
+}
