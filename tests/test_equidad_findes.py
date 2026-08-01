@@ -46,8 +46,14 @@ def _simular(n_semanas, semana_extra_staff=None):
     un empleado nuevo a partir de esa semana.
     """
     from herramientas import registrar_semana
-    from modelo_recepcion import RECEPCION_CONFIG
+    from app import _get_dept_config
     from modelo_base import generate_schedule
+
+    # cfg construido igual que en producción (app._get_dept_config), no la
+    # DeptConfig estática de modelo_recepcion.py: incorpora el parche de
+    # roles_excluidos_equidad (y fixed_roles/fixed_days_off/cobertura_roles)
+    # desde herramientas.cargar_roles, que es lo que todo camino real usa.
+    cfg = _get_dept_config("recepcion")
 
     plantilla    = _plantilla_base()
     prev_covers  = {}
@@ -66,7 +72,7 @@ def _simular(n_semanas, semana_extra_staff=None):
         sch, staff_final, _, _, next_covers, _ = generate_schedule(
             staff_list        = staff,
             week_start        = week_start,
-            cfg               = RECEPCION_CONFIG,
+            cfg               = cfg,
             prev_week_covers  = prev_covers,
             prev_sunday_shifts= prev_sunday,
         )
@@ -117,11 +123,17 @@ def test_equidad_12_semanas(data_dir):
     tiene debe ser <= 2.
     """
     from herramientas import cargar_historial
+    from app import _get_dept_config
 
     _simular(12)
 
     historial = cargar_historial("recepcion")
-    fixed     = {"jefe", "night_fixed"}
+    # Roles excluidos de equidad según la config real de producción (p.ej.
+    # jefe/night_fixed/subjefe): sincronizado con lo que assign_days_off
+    # realmente aplica, en vez de mantener una lista aparte a mano que puede
+    # desincronizarse (ver diagnóstico previo con Laura/subjefe).
+    cfg       = _get_dept_config("recepcion")
+    fixed     = set(cfg.roles_excluidos_equidad)
     nombres   = [p["name"] for p in _plantilla_base() if p["role"] not in fixed]
 
     finds = _contar_finds(historial, nombres)

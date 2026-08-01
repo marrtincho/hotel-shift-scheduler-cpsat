@@ -110,8 +110,9 @@ def _guardar_usuarios(usuarios: list[dict]):
         backup = USERS_FILE + ".bak"
         import shutil
         shutil.copy2(USERS_FILE, backup)
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(usuarios, f, ensure_ascii=False, indent=2)
+    # Escritura atómica: evita dejar usuarios.json corrupto (contiene los
+    # hashes de contraseña de todos los usuarios) ante un crash a mitad de escritura.
+    guardar_json_atomico(USERS_FILE, usuarios)
 
 def inicializar_usuarios():
     """
@@ -153,10 +154,19 @@ def listar_usuarios() -> list[dict]:
         for u in _cargar_usuarios()
     ]
 
+CARACTERES_PROHIBIDOS_NOMBRE = set('<>"\'`')
+
+def _nombre_seguro(nombre: str) -> bool:
+    """El nombre de usuario se muestra sin escapar en el panel de gestión de
+    usuarios; prohibir estos caracteres evita inyectar HTML/JS a través de él."""
+    return not (CARACTERES_PROHIBIDOS_NOMBRE & set(nombre or ""))
+
 def crear_usuario(username: str, nombre: str, rol: str,
                   password: str, empleado_vinculado: str = None) -> tuple[bool, str]:
     if rol not in PERMISOS:
         return False, f"Rol inválido: {rol}"
+    if not _nombre_seguro(nombre) or not _nombre_seguro(username):
+        return False, f"El nombre o usuario contiene caracteres no permitidos ({CARACTERES_PROHIBIDOS_NOMBRE})"
     usuarios = _cargar_usuarios()
     if any(u["username"].lower() == username.lower() for u in usuarios):
         return False, "Ese nombre de usuario ya existe"
@@ -186,6 +196,9 @@ def editar_usuario(uid: str, datos: dict) -> tuple[bool, str]:
         return False, "Usuario no encontrado"
 
     u = usuarios[idx]
+
+    if "nombre" in datos and not _nombre_seguro(datos["nombre"]):
+        return False, f"El nombre contiene caracteres no permitidos ({CARACTERES_PROHIBIDOS_NOMBRE})"
 
     # Proteger: no puede desactivarse o degradarse el último admin activo
     if u["rol"] == "admin":

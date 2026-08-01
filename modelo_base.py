@@ -119,6 +119,12 @@ def _get_weekend_ratios(dept_id: str, staff_actual: list) -> dict:
     el finde libre fue compensación por cobertura nocturna.
     Personas sin historial reciben el ratio medio del equipo.
     """
+    # NOTA (duplicación frágil): esta función relee cargar_roles(dept_id) en vez
+    # de recibir cfg.roles_excluidos_equidad (que ya trae este mismo dato,
+    # parcheado por app._get_dept_config). Hoy coinciden porque ambos leen la
+    # misma fuente sin caché, pero cualquier caller que construya un cfg sin
+    # pasar por _get_dept_config puede divergir de lo que ve esta función.
+    # No se corrige aquí — solo queda anotado.
     try:
         from herramientas import cargar_historial, cargar_roles
     except Exception:

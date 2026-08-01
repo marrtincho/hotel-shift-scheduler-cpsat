@@ -100,6 +100,15 @@ def cargar_plantilla(dept_id: str = "recepcion") -> list[dict]:
 def guardar_plantilla(staff: list[dict], dept_id: str = "recepcion"):
     _guardar_json(_dept_file("plantilla.json", dept_id), staff)
 
+CARACTERES_PROHIBIDOS_NOMBRE = set('<>"\'`')
+
+def _nombre_seguro(nombre: str) -> bool:
+    """El nombre se muestra sin escapar en varias vistas del frontend (listas
+    de plantilla, peticiones, vacaciones...) y también se interpola dentro de
+    atributos onclick con comillas simples. Prohibir estos caracteres evita
+    que se pueda inyectar HTML/JS a través del nombre de un empleado."""
+    return not (CARACTERES_PROHIBIDOS_NOMBRE & set(nombre))
+
 def validar_plantilla(staff: list[dict], excluir_idx: int = None,
                       dept_id: str = "recepcion") -> list[str]:
     """Comprueba restricciones de integridad. Devuelve lista de errores (vacía = OK)."""
@@ -110,6 +119,11 @@ def validar_plantilla(staff: list[dict], excluir_idx: int = None,
     for i, p in enumerate(staff):
         if i == excluir_idx:
             continue
+        if not _nombre_seguro(p.get("name", "")):
+            errores.append(
+                f"El nombre '{p['name']}' contiene caracteres no permitidos "
+                f"({CARACTERES_PROHIBIDOS_NOMBRE})."
+            )
         rol = p["role"]
         conteo_roles[rol] = conteo_roles.get(rol, 0) + 1
 

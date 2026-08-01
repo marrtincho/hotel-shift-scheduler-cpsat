@@ -75,6 +75,10 @@ else:
     app.secret_key = secrets.token_bytes(32)
     with open(_secret_file, "wb") as _f:
         _f.write(app.secret_key)
+    # Restringir permisos: esta clave firma las sesiones de todos los
+    # usuarios (incluido admin); si el fichero quedara legible por otros
+    # usuarios del sistema, podrían falsificar cookies de sesión.
+    os.chmod(_secret_file, 0o600)
 
 app.config["SESSION_COOKIE_HTTPONLY"] = True   # JS no puede leer la cookie
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # protección CSRF básica

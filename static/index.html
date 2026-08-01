@@ -1114,6 +1114,12 @@ function weekDates(off=0){
 function isoDate(d){ return d.toISOString().split('T')[0]; }
 function fmtDate(d){ return d.toLocaleDateString('es-ES',{day:'2-digit',month:'short'}); }
 function initials(name){ return name.trim().split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();}
+// Escapa texto libre (motivos, notas...) antes de insertarlo con innerHTML.
+// Los nombres de empleado/usuario ya se validan en el servidor para no
+// contener estos caracteres, pero motivos/notas son texto libre real.
+function escapeHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 function updateWeekLabel(){
   const dates = weekDates(weekOffset);
@@ -1313,7 +1319,7 @@ function renderDashPeticiones(){
     <div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div>
         <div style="font-size:12.5px;font-weight:500">${a.semana} — ${a.dias.join(', ')}</div>
-        <div style="font-size:11px;color:var(--text-2)">${a.origen==='empleado'?'Solicitada por ti':'Gestionada por el encargado'}${a.motivo?' · '+a.motivo:''}</div>
+        <div style="font-size:11px;color:var(--text-2)">${a.origen==='empleado'?'Solicitada por ti':'Gestionada por el encargado'}${a.motivo?' · '+escapeHtml(a.motivo):''}</div>
       </div>
       <button class="btn sm" onclick="cancelarPeticionDash('${a.semana}')">Cancelar</button>
     </div>`).join('');
@@ -2104,7 +2110,7 @@ async function loadVacaciones(){
         <div style="font-size:12px;color:var(--text-2);margin-top:2px">
           ${new Date(v.inicio+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short'})}
           → ${new Date(v.fin+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'})}
-          · ${v.dias} días${v.nota?' · '+v.nota:''}
+          · ${v.dias} días${v.nota?' · '+escapeHtml(v.nota):''}
         </div>
       </div>
       <span class="tag" style="${v.estado==='activo'?'background:#F0FDF4;color:#166534;border-color:#BBF7D0':v.estado==='próximo'?'':'background:var(--bg);color:var(--text-3)'}">${v.estado}</span>
@@ -2302,7 +2308,7 @@ function _petItemHtml(nombre, entrada, semana, idx, total, showReorder){
   const diasStr   = dias.length ? `Libre: <strong>${dias.join(', ')}</strong>` : '';
   const laStr     = la.length   ? `&nbsp;· LA extra: <strong>${la.join(', ')}</strong>` : '';
   const motivoStr = motivo
-    ? `<div style="font-size:11.5px;color:var(--text-2);margin-top:3px;font-style:italic">${motivo.replace(/</g,'&lt;')}</div>` : '';
+    ? `<div style="font-size:11.5px;color:var(--text-2);margin-top:3px;font-style:italic">${escapeHtml(motivo)}</div>` : '';
   const origenBadge = origen === 'jefe'
     ? `<span class="tag" style="font-size:10px;margin-left:6px" title="Creada/gestionada por encargado o admin">👑 jefe</span>` : '';
   const reorderHtml = showReorder ? `
