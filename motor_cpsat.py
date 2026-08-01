@@ -232,6 +232,62 @@ y por qué. Los términos F y H (complementario jefatura) no se tocaron en
 valor, pero sus comentarios de posición relativa se actualizaron para no
 quedar desconectados de la nueva relación B > D > F/H (ver comentarios
 junto a esas constantes).
+
+── Esta sesión (cierre de pendientes Fase 5) — término J: libre(s) debido(s)
+   antes de que empiecen las vacaciones ──────────────────────────────────
+Preferencia blanda NUEVA (no existe en modelo_base.py): cuando una persona
+tiene un bloque de VACACIONES multi-día (no una petición suelta de un día
+— ver _inicio_bloque_vacaciones sobre cómo se distingue con el dato de
+entrada ya existente `dias_vacaciones`, el mismo campo que usa la capa de
+presentación para mostrar "Vacaciones" en vez de "Libre") que empieza a
+mitad de esta semana, cuenta cuántos días TRABAJÓ esa persona en los días
+de esta semana ANTERIORES al inicio del bloque (días donde no está Libre
+ni de vacaciones todavía) y, según el tramo en que caiga ese conteo,
+PREFIERE colocar ese número de libres justo antes de que empiecen las
+vacaciones, formando un tramo continuo de descanso pegado al inicio del
+bloque:
+  0-1 días trabajados -> 0 libres debidos
+  2-4 días trabajados -> 1 libre debido  (el día inmediatamente anterior)
+  5-6 días trabajados -> 2 libres debidos (los 2 días inmediatamente
+                          anteriores)
+
+Diferencia de diseño clave frente a los demás términos: cuántos días
+trabajó la persona antes de sus vacaciones NO es un dato de entrada fijo
+— depende de si el propio solver resuelve esos días como trabajados o
+libres. Se modela dentro del CP-SAT con una expresión lineal (días NO
+Libre en el rango previo) y dos indicadores booleanos de umbral
+(step1: cuenta>=2, step2: cuenta>=5) cuya suma reproduce exactamente la
+escalera de arriba (0,1->0; 2,3,4->1; 5,6->2) — mismo patrón de reificación
+completa (bidireccional) que post1/post2 usan en agregar_restriccion_racha_
+noches, necesario porque step1/step2 no están atados por ninguna otra
+restricción y necesitan la igualdad exacta, no solo una implicación.
+
+Preferencia blanda de verdad (PESO_LIBRE_DEBIDO_VACACIONES, mismo orden de
+magnitud que F/H — preferencias de colocación concretas, no cuestiones de
+cobertura agregada): nunca fuerza x[...]==1, solo penaliza con
+"falta1"/"falta2" (AND de "el tramo exige este libre" y "ese día concreto
+NO quedó Libre" — mismo patrón de AND por reificación de 3 desigualdades
+que ya usa weekend_libre/break_var/both_s en este módulo). Si la cobertura
+mínima exige trabajar justo esos días, el término simplemente cede sin
+volver el modelo infactible (ver test de estrés en tests/).
+
+Aplica solo cuando el bloque de vacaciones no empieza en Lunes (día 0):
+si empieza el Lunes no hay ningún día anterior DENTRO de esta semana que
+contar, así que el conteo sería 0 de todas formas — se omite el término
+entero para esa persona en vez de sumar aritmética que siempre da cero.
+
+Mutuamente compatible con el término F (Domingo suelto del sustituto de
+cobertura nocturna): son preferencias independientes sobre personas/días
+potencialmente distintos, ninguna de las dos fuerza una celda de forma
+dura, así que sumarlas en el objetivo nunca puede producir una
+contradicción — solo pueden reforzarse (si coinciden en pedir Libre el
+mismo día) o competir en peso sin que ninguna "gane" de forma estructural.
+En la práctica, además, el sustituto de cobertura nocturna rara vez tiene
+también un bloque de vacaciones la misma semana en la que cubre — si
+estuviera de vacaciones esos días concretos, _bloqueados_por_peticion_o_
+vacacion (cobertura_nocturna.py) ya lo excluye como candidato — pero el
+solapamiento SÍ puede darse si las vacaciones empiezan después de los días
+que cubre; no se ha excluido a propósito (ver test de compatibilidad).
 """
 
 from datetime import date
@@ -311,6 +367,13 @@ PESO_SOBRECOBERTURA_DIURNA   = 30   # término I (NUEVO, Fase 5 — rediseño de
 # tal como pide el ejemplo de negocio. Con B=50 > I=30, preservar la
 # continuidad de alguien sigue ganando aunque eso implique sobre-cubrir un
 # turno diurno ese día (ver escenario B-vs-I, Paso 2 de esta sesión).
+PESO_LIBRE_DEBIDO_VACACIONES = 15   # término J (NUEVO, esta sesión — cierre
+# de pendientes Fase 5, ver docstring del módulo). Mismo valor y mismo tipo
+# de preferencia que F (Domingo suelto del sustituto): una colocación
+# concreta para una persona concreta, no una cuestión de cobertura agregada
+# (A/E/G) ni de reparto histórico (C) — cede con la misma facilidad que
+# F/H frente a cobertura mínima (restricción dura #2) y frente a B
+# (continuidad) si hiciera falta.
 
 
 def _tiene_par_consecutivo_disponible(cfg, dias_bloqueados: set) -> bool:
@@ -361,6 +424,66 @@ def _dias_cobertura_ausencia(staff_list: list, cfg, rol_cubierto: str, info: dic
         dias_ausencia |= set(cfg.fixed_days_off.get(rol_cubierto, []))
 
     return dias_ausencia, semana_completa
+
+
+def _inicio_bloque_vacaciones(person: dict):
+    """Día (0=Lunes..6=Domingo) en que empieza, DENTRO de esta semana, un
+    bloque de VACACIONES de `person` — o None si no aplica (término J, ver
+    docstring del módulo).
+
+    Distingue vacaciones de peticiones sueltas con el dato de entrada
+    person['dias_vacaciones']: un campo que SOLO existe cuando esos días
+    vienen de un registro de vacaciones.json con inicio/fin
+    (herramientas.aplicar_vacaciones), nunca de una petición individual
+    (herramientas.aplicar_peticiones no lo toca en absoluto) — es el mismo
+    campo que ya usa la capa de presentación (app.etiquetar_celda) para
+    mostrar "Vacaciones" en vez de "Libre" en el Excel. No es un campo
+    inventado para esta sesión: ya existe en producción con exactamente
+    este propósito de distinguir origen, así que "¿puedo distinguir
+    vacación de petición con el dato de entrada actual?" tiene respuesta
+    SÍ: basta con mirar person.get("dias_vacaciones") — no vacío implica
+    vacación real, vacío/ausente implica que cualquier forced_days_off que
+    tenga esa persona viene de peticiones (o de otra fuente ajena a
+    vacaciones.json).
+
+    DECISIÓN DE DISEÑO (no asumida sin comprobar): NO se exige que
+    dias_vacaciones tenga >=2 días DENTRO DE ESTA SEMANA para considerarlo
+    "bloque". motor_cpsat.py solo ve una semana a la vez — un bloque de
+    vacaciones que EMPIEZA el domingo de esta semana y continúa la semana
+    siguiente aparece aquí con dias_vacaciones=["Domingo"] (un solo día
+    visible), aunque el bloque real sea multi-día; exigir >=2 aquí
+    excluiría precisamente el caso "empieza el domingo con máxima presión
+    de días trabajados" que este término existe para cubrir. La protección
+    real contra "no una petición suelta de un día" no viene de contar
+    cuántos días de vacación se ven esta semana, sino de dos cosas ya
+    garantizadas: (a) dias_vacaciones nunca lo rellena una petición (ver
+    arriba), y (b) el propio conteo de días trabajados antes del inicio
+    hace que una vacación pegada al lunes (0-1 días previos) no genere
+    ningún libre debido de todas formas (tramo 0-1 -> 0), sea la vacación
+    de 1 día o de 10.
+
+    Condiciones para activarse:
+      - dias_vacaciones no vacío.
+      - Esos días forman un tramo CONSECUTIVO dentro de esta semana. Si no
+        lo fueran (dato anómalo — no se espera con el mecanismo actual de
+        inicio/fin, pero no se asume sin comprobar), se trata de forma
+        conservadora como "no aplica" en vez de inventar un inicio.
+      - El tramo no empieza en Lunes (día 0): si empezara el Lunes no
+        habría ningún día anterior DENTRO de esta semana que contar, así
+        que el conteo de días trabajados previos sería 0 de todas formas
+        (0-1 días -> 0 libres debidos) — se omite el término entero para
+        esa persona en vez de sumar aritmética que siempre da cero.
+    """
+    dias_vac = person.get("dias_vacaciones", [])
+    indices = sorted(DAYS.index(d) for d in dias_vac if d in DAYS)
+    if not indices:
+        return None
+    inicio, fin = indices[0], indices[-1]
+    if list(range(inicio, fin + 1)) != indices:
+        return None
+    if inicio == 0:
+        return None
+    return inicio
 
 
 def _construir_modelo(staff_list: list, week_start: date, cfg,
@@ -655,12 +778,328 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
             cobertura_real = sum(x[name, d, turno] for name in names)
             objetivo_terms.append(PESO_SOBRECOBERTURA_DIURNA * (cobertura_real - min_turno))
 
+    # J. Libre(s) debido(s) antes de que empiecen las vacaciones (NUEVO,
+    # esta sesión — cierre de pendientes Fase 5, ver docstring del módulo
+    # para el diseño completo). Solo se procesa para quien tiene un bloque
+    # de vacaciones multi-día que empieza a mitad de ESTA semana
+    # (_inicio_bloque_vacaciones distingue vacación de petición suelta y
+    # devuelve None si no aplica).
+    for name in names:
+        inicio = _inicio_bloque_vacaciones(by_name[name])
+        if inicio is None:
+            continue
+
+        # Conteo de días trabajados antes del inicio — expresión del
+        # modelo, no un dato precalculado: depende de qué resuelva el
+        # solver para esos días (Libre o no).
+        dias_previos = list(range(inicio))
+        cuenta_trabajados = len(dias_previos) - sum(x[name, d, "Libre"] for d in dias_previos)
+
+        # step1 <-> cuenta>=2 (activa el 1er libre debido).
+        # step2 <-> cuenta>=5 (activa el 2º libre debido, ADEMÁS del 1º).
+        # step1+step2 reproduce exactamente la escalera 0/1/2 pedida:
+        # 0,1->0; 2,3,4->1; 5,6->2. Reificación completa (ambas
+        # direcciones) porque ninguna otra restricción ata a estas
+        # variables — sin la igualdad exacta el solver podría dejarlas en
+        # 1 sin motivo real y el término penalizaría de más.
+        step1 = model.NewBoolVar(f"vac_step1_{name}")
+        model.Add(cuenta_trabajados >= 2).OnlyEnforceIf(step1)
+        model.Add(cuenta_trabajados <= 1).OnlyEnforceIf(step1.Not())
+
+        step2 = model.NewBoolVar(f"vac_step2_{name}")
+        model.Add(cuenta_trabajados >= 5).OnlyEnforceIf(step2)
+        model.Add(cuenta_trabajados <= 4).OnlyEnforceIf(step2.Not())
+
+        # falta1/falta2: AND de "el tramo exige este libre" y "ese día
+        # concreto no quedó Libre" — mismo patrón de AND por 3
+        # desigualdades que weekend_libre/break_var/both_s más arriba.
+        # Solo penalizan la AUSENCIA del libre debido; nunca fuerzan
+        # x[...]==1 (preferencia blanda de verdad, cede si hace falta).
+        pos1 = inicio - 1
+        falta1 = model.NewBoolVar(f"vac_falta1_{name}")
+        model.Add(falta1 <= step1)
+        model.Add(falta1 <= 1 - x[name, pos1, "Libre"])
+        model.Add(falta1 >= step1 + (1 - x[name, pos1, "Libre"]) - 1)
+        objetivo_terms.append(PESO_LIBRE_DEBIDO_VACACIONES * falta1)
+
+        if inicio >= 2:
+            pos2 = inicio - 2
+            falta2 = model.NewBoolVar(f"vac_falta2_{name}")
+            model.Add(falta2 <= step2)
+            model.Add(falta2 <= 1 - x[name, pos2, "Libre"])
+            model.Add(falta2 >= step2 + (1 - x[name, pos2, "Libre"]) - 1)
+            objetivo_terms.append(PESO_LIBRE_DEBIDO_VACACIONES * falta2)
+
     model.Minimize(sum(objetivo_terms))
 
     return model, x, names, by_name
 
 
-def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list) -> dict:
+# ═══════════════════════════════════════════════════════════════════════════
+# Diagnóstico de infactibilidad (esta sesión — Tema 3, cierre de pendientes
+# Fase 5)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# API confirmada disponible en la versión de ortools instalada (9.15.6755):
+# CpModel.AddAssumptions(lits) / CpSolver.SufficientAssumptionsForInfeasibility()
+# — el mecanismo estándar de ortools para encontrar un subconjunto MÍNIMO de
+# literales ("assumptions") que, impuestos junto al resto del modelo, no
+# tienen solución. Se construye una versión REDUCIDA del modelo real (solo
+# las restricciones duras de fase 1, sin fase 2/objetivo ni fase 3/racha —
+# la racha nunca es la única causa de una infactibilidad que fase 1 ya no
+# tuviera, porque agregar_restriccion_racha_noches solo AÑADE restricciones
+# sobre un modelo que fase 1 ya construyó) donde las piezas potencialmente
+# "cedibles" — vacaciones/peticiones (agrupadas por persona en tramos
+# contiguos: un bloque de vacación multi-día es UN solo motivo, no N) y
+# cobertura mínima por día/turno — están controladas por variables de
+# asunción en vez de fijadas incondicionalmente. Las piezas estructurales
+# del departamento (cobertura MÁXIMA, no_night_roles, turno fijo de rol,
+# no-Mañana-tras-Tarde/Noche) se dejan siempre activas: no son algo que un
+# encargado pueda "conceder" para resolver un conflicto puntual de una
+# semana, así que diagnosticar sobre ellas no ayudaría a decidir qué ceder
+# — si el conflicto real depende de alguna de ellas, el diagnóstico lo dice
+# explícitamente en vez de inventar una explicación con lo que sí puede ver.
+#
+# Solo diagnostica — nunca relaja nada automáticamente ni cambia el
+# resultado devuelto al llamador; la decisión de qué ceder la toma el
+# encargado manualmente después de leer el mensaje.
+
+def _agrupar_en_tramos(dias_ordenados: list) -> list:
+    """Agrupa una lista ORDENADA de índices de día en tramos de días
+    consecutivos: [0,1,2,4,6] -> [[0,1,2],[4],[6]]. Vacía -> []."""
+    if not dias_ordenados:
+        return []
+    tramos = [[dias_ordenados[0]]]
+    for d in dias_ordenados[1:]:
+        if d == tramos[-1][-1] + 1:
+            tramos[-1].append(d)
+        else:
+            tramos.append([d])
+    return tramos
+
+
+def _describir_bloque_libre(name: str, bloque: list) -> str:
+    if len(bloque) == 1:
+        return f"{name}: {DAYS[bloque[0]]} forzado libre (vacación/petición)"
+    return f"{name}: {DAYS[bloque[0]]}-{DAYS[bloque[-1]]} forzado libre (vacación/petición)"
+
+
+def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
+    """Versión reducida de _construir_modelo (solo restricciones duras de
+    fase 1) donde las piezas "cedibles" quedan controladas por variables de
+    asunción — ver la nota de diseño arriba para el alcance exacto (qué se
+    gatea y qué se deja siempre activo, y por qué).
+
+    Devuelve (model, x, names, asunciones: {BoolVar: descripción legible}).
+    Nunca se resuelve como modelo de producción real — solo se usa dentro
+    de _diagnosticar_infactibilidad.
+    """
+    model = cp_model.CpModel()
+    names = [p["name"] for p in staff_list]
+    by_name = {p["name"]: p for p in staff_list}
+
+    x = {}
+    for name in names:
+        for d in range(7):
+            for s in SHIFTS:
+                x[name, d, s] = model.NewBoolVar(f"dx_{name}_{d}_{s}")
+    for name in names:
+        for d in range(7):
+            model.AddExactlyOne(x[name, d, s] for s in SHIFTS)
+
+    asunciones = {}
+
+    # Cobertura: máxima siempre activa (política estructural); mínima
+    # gateada por asunción, agrupada por (día, turno) — es la unidad más
+    # pequeña con sentido para un encargado ("la cobertura mínima de Noche
+    # el Sábado").
+    turnos_con_cobertura = sorted(set(cfg.min_coverage) | set(cfg.max_coverage))
+    for s in turnos_con_cobertura:
+        mn = cfg.min_coverage.get(s, 0)
+        mx = cfg.max_coverage.get(s, len(names))
+        for d in range(7):
+            total = sum(x[name, d, s] for name in names)
+            model.Add(total <= mx)
+            if mn > 0:
+                a = model.NewBoolVar(f"asum_mincov_{s}_{d}")
+                model.Add(total >= mn).OnlyEnforceIf(a)
+                asunciones[a] = f"Cobertura mínima Noche={mn} el {DAYS[d]}" if s == "Noche" \
+                    else f"Cobertura mínima {s}={mn} el {DAYS[d]}"
+
+    # no_night_roles: siempre activa.
+    for name in names:
+        role = by_name[name].get("role")
+        if role in cfg.no_night_roles:
+            for d in range(7):
+                model.Add(x[name, d, "Noche"] == 0)
+
+    # No-Mañana-tras-Tarde/Noche: siempre activa (empalme con la semana
+    # anterior no se conoce aquí — el diagnóstico no lo necesita para el
+    # tipo de conflicto que existe para detectar, ver docstring del módulo).
+    for name in names:
+        for d in range(1, 7):
+            model.Add(
+                x[name, d, "Mañana"] + x[name, d - 1, "Tarde"] + x[name, d - 1, "Noche"] <= 1
+            )
+
+    # Vacaciones/peticiones — agrupadas por persona en tramos contiguos,
+    # gateadas por asunción (un bloque multi-día = un solo motivo).
+    forced_libre = {name: set() for name in names}
+    for name in names:
+        person = by_name[name]
+        forced_days = list(person.get("forced_days_off", [])) + list(person.get("extra_days_off", []))
+        for day_name in forced_days:
+            if day_name in DAYS:
+                forced_libre[name].add(DAYS.index(day_name))
+
+    for name in names:
+        role = by_name[name].get("role")
+        for d in cfg.fixed_days_off.get(role, []):
+            forced_libre[name].add(d)
+        if role == "night_fixed":
+            for d in cfg.night_fixed_days_off:
+                forced_libre[name].add(d)
+
+    for name in names:
+        for bloque in _agrupar_en_tramos(sorted(forced_libre[name])):
+            a = model.NewBoolVar(f"asum_libre_{name}_{bloque[0]}_{bloque[-1]}")
+            for d in bloque:
+                model.Add(x[name, d, "Libre"] == 1).OnlyEnforceIf(a)
+            asunciones[a] = _describir_bloque_libre(name, bloque)
+
+    # Turno fijo de rol (incluye night_fixed): política estructural, se
+    # aplica siempre en los días que no forman parte de ningún bloque
+    # gateado — aproximación deliberada: el diagnóstico solo necesita
+    # distinguir "vacación/petición" de "cobertura mínima" como motivos
+    # cedibles, no fragmentar además el turno fijo en función de qué
+    # asunciones concretas terminen activas.
+    for name in names:
+        role = by_name[name].get("role")
+        turno_fijo = cfg.fixed_roles.get(role)
+        if turno_fijo is None:
+            continue
+        for d in range(7):
+            if d in forced_libre[name]:
+                continue
+            model.Add(x[name, d, turno_fijo] == 1)
+
+    for name in names:
+        role = by_name[name].get("role")
+        if role != "night_fixed":
+            continue
+        for d in range(7):
+            if d in forced_libre[name]:
+                continue
+            model.Add(x[name, d, "Noche"] == 1)
+
+    return model, x, names, asunciones
+
+
+TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS = 10.0  # límite propio del diagnóstico —
+# ver nota extensa junto a _resolver_y_extraer (max_time_in_seconds=20.0)
+# sobre por qué el modelo PRINCIPAL necesita un tope frente al timeout de
+# 60s de gunicorn.conf.py. El diagnóstico corre DESPUÉS de que ese modelo
+# ya haya agotado hasta sus 20s concluyendo INFEASIBLE — sin límite
+# propio, medido empíricamente (Fase 5, esta sesión): un caso complejo
+# pero en realidad FACTIBLE del modelo reducido (60 personas, vacaciones
+# solapadas al azar, sin infactibilidad real que encontrar) tardó ~90s en
+# que CP-SAT terminara de decidir SAT/UNSAT — sumado a los hasta 20s del
+# modelo principal, se comería el timeout de 60s de gunicorn sin devolver
+# nada al encargado, ni siquiera el RuntimeError original. Un caso
+# genuinamente infactible a la misma escala (60 personas), en cambio, se
+# resolvió en ~0.07s — la lentitud no está en encontrar el conflicto real
+# (SufficientAssumptionsForInfeasibility converge rápido una vez que
+# Solve() ya confirmó INFEASIBLE), sino en el propio Solve() inicial
+# cuando el modelo reducido resulta ser factible pero difícil de decidir.
+# 10s dejan margen bajo el timeout de 60s incluso en el peor caso (20s
+# modelo principal + 10s diagnóstico + margen para el resto de la
+# petición HTTP), y son coherentes con el propósito del diagnóstico
+# (una ayuda rápida, no una prueba exhaustiva): si no concluye en 10s, se
+# informa explícitamente en vez de colgar la respuesta (ver más abajo).
+
+
+def _diagnosticar_infactibilidad(staff_list: list, cfg) -> str:
+    """Reconstruye el modelo reducido con asunciones
+    (_construir_modelo_diagnostico) y usa
+    solver.SufficientAssumptionsForInfeasibility() para encontrar el
+    subconjunto MÍNIMO de motivos "cedibles" (vacaciones/peticiones,
+    cobertura mínima puntual) que, combinados, no tienen solución.
+
+    Nunca lanza excepción por sí misma (solo diagnostica, ver nota de
+    diseño arriba): si no logra reproducir la infactibilidad con las
+    piezas que sabe gatear, si el conflicto resulta ser puramente
+    estructural (no depende de ninguna asunción), o si se agota
+    TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS sin llegar a una conclusión, lo
+    dice explícitamente en vez de colgar la respuesta o inventar una
+    explicación.
+    """
+    model, x, names, asunciones = _construir_modelo_diagnostico(staff_list, cfg)
+    solver = cp_model.CpSolver()
+    solver.parameters.num_search_workers = 1
+    solver.parameters.max_time_in_seconds = TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS
+    lits = list(asunciones.keys())
+    model.AddAssumptions(lits)
+    status = solver.Solve(model)
+
+    if status == cp_model.UNKNOWN:
+        return (
+            "El horario sigue siendo INFACTIBLE (ver status arriba); el "
+            "diagnóstico detallado de qué restricciones concretas chocan "
+            f"no estuvo disponible a tiempo (límite propio de "
+            f"{TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS:.0f}s agotado sin que el "
+            "modelo reducido de diagnóstico terminara de decidirse — no es "
+            "una segunda comprobación de si hay problema, solo de POR QUÉ). "
+            "Revisar manualmente."
+        )
+
+    if status != cp_model.INFEASIBLE:
+        return (
+            "Diagnóstico automático: no se pudo reproducir la infactibilidad "
+            "usando solo vacaciones/peticiones y cobertura mínima puntual — "
+            "el conflicto real depende de alguna restricción estructural "
+            "(cobertura máxima, roles sin Noche, turno fijo de rol, "
+            "no-Mañana-tras-Tarde/Noche) no cubierta por este diagnóstico "
+            "automático. Revisar manualmente."
+        )
+
+    indices_core = set(solver.SufficientAssumptionsForInfeasibility())
+    razones = sorted(
+        {desc for var, desc in asunciones.items() if var.Index() in indices_core}
+    )
+
+    if not razones:
+        return (
+            "Diagnóstico automático: la infactibilidad no depende de ninguna "
+            "vacación/petición ni de ningún mínimo de cobertura puntual — es "
+            "puramente estructural (roles fijos, turno fijo u otra "
+            "restricción de fase 1 no cedible). Revisar manualmente."
+        )
+
+    return "Diagnóstico automático — combinación mínima en conflicto: " + "; ".join(razones) + "."
+
+
+def _mensaje_infactible(solver: cp_model.CpSolver, status, staff_list: list = None, cfg=None) -> str:
+    """Mensaje de RuntimeError para status INFEASIBLE/etc. — compartido por
+    _resolver_y_extraer y _resolver_y_extraer_con_extra. Si se dispone de
+    staff_list/cfg (los callers de producción siempre los pasan; las
+    llamadas directas de tests con solo model/x/names, sin ellos, no),
+    añade el diagnóstico automático (Tema 3, ver más arriba). El
+    diagnóstico nunca lanza: si falla por cualquier motivo, se anota el
+    fallo en vez de perder el RuntimeError original."""
+    mensaje = (
+        "CP-SAT no encontró solución factible para las restricciones dadas "
+        f"(status={solver.StatusName(status)})."
+    )
+    if staff_list is not None and cfg is not None:
+        try:
+            mensaje += " " + _diagnosticar_infactibilidad(staff_list, cfg)
+        except Exception as exc:  # el diagnóstico es solo informativo
+            mensaje += f" (el diagnóstico automático falló: {exc!r})"
+    return mensaje
+
+
+def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list,
+                         staff_list: list = None, cfg=None) -> dict:
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 20.0  # 90.0 -> 20.0 (Fase 5,
     # decisión final tras el rediseño B>I>D): con PESO_ROTURAS_CONTINUIDAD=50
@@ -696,10 +1135,7 @@ def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list) -> dict:
     status = solver.Solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise RuntimeError(
-            "CP-SAT no encontró solución factible para las restricciones dadas "
-            f"(status={solver.StatusName(status)})."
-        )
+        raise RuntimeError(_mensaje_infactible(solver, status, staff_list, cfg))
 
     schedule = {name: ["" for _ in range(7)] for name in names}
     for name in names:
@@ -715,7 +1151,7 @@ def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list) -> dict:
 def generar_semana_cpsat(staff_list: list, week_start: date, cfg,
                           prev_sunday_shifts: dict = None) -> dict:
     model, x, names, by_name = _construir_modelo(staff_list, week_start, cfg, prev_sunday_shifts)
-    return _resolver_y_extraer(model, x, names)
+    return _resolver_y_extraer(model, x, names, staff_list, cfg)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -727,8 +1163,94 @@ VENTANA_NOCHES = 6       # ...esta cantidad de días consecutivos.
 DIAS_DESCANSO_TRAS_RACHA = 2
 
 
+def _racha_inicial_por_nombre(names: list, noches_ultimos_5_dias: dict) -> dict:
+    """Racha de noches consecutivas que cada persona trae de antes de esta
+    semana, mirando noches_ultimos_5_dias (mismo formato que recibe
+    agregar_restriccion_racha_noches) desde el día más cercano al lunes
+    (índice 4) hacia atrás, hasta el primer False.
+
+    Usada por el bucle de modo respaldo de
+    generar_semana_cpsat_con_cobertura_nocturna para saber, ANTES de fijar
+    ninguna cobertura de esta semana, con cuántas noches seguidas entra ya
+    cada candidato — sin esto, una persona que entra con p.ej. 4/5 ya
+    encadenadas podría recibir una 5ª noche el lunes y quedar sin que el
+    bucle sepa que le toca descanso el martes/miércoles."""
+    racha = {}
+    for name in names:
+        empalme = list(noches_ultimos_5_dias.get(name, [False] * 5))
+        streak = 0
+        for v in reversed(empalme):
+            if v:
+                streak += 1
+            else:
+                break
+        racha[name] = streak
+    return racha
+
+
+class _RachaTracker:
+    """Seguimiento determinista, en Python, de la racha de Noche y el
+    descanso obligatorio post-racha — usado por el bucle de modo respaldo
+    de generar_semana_cpsat_con_cobertura_nocturna (Tema 1, Fase 5, cierre
+    de pendientes) para saber, ANTES de fijar cada día, a quién NO debe
+    proponer porque ya le toca descanso.
+
+    Extraída como clase independiente (antes vivía inline dentro del
+    bucle) por dos motivos: (1) evitar duplicar la aritmética si en el
+    futuro hace falta en más de un sitio, y (2) — el motivo de esta
+    sesión — poder REPRODUCIRLA de forma aislada en tests y compararla,
+    día a día, contra lo que agregar_restriccion_racha_noches calcula de
+    verdad DENTRO del modelo CP-SAT para las mismas personas/semanas (ver
+    tests/test_racha_respaldo_multisemana.py). Si esta clase alguna vez
+    diverge de esa restricción — por ejemplo un día de diferencia en
+    cómo cuenta cada una — ese test debe detectarlo directamente, no solo
+    por la ausencia de un INFEASIBLE espurio (que solo detecta el caso de
+    sub-predicción, no el de sobre-predicción ni un desfase que la
+    holgura de personal disimule).
+
+    La aritmética es EXACTAMENTE la misma que agregar_restriccion_racha_
+    noches aplica dentro del modelo (MAX_NOCHES_VENTANA noches seguidas ->
+    DIAS_DESCANSO_TRAS_RACHA de descanso obligatorio), solo que evaluada
+    día a día en Python, antes de resolver, sobre la persona que el propio
+    bucle de modo respaldo va fijando como cobertura externa — no sobre
+    variables del solver.
+    """
+
+    def __init__(self, names: list, noches_ultimos_5_dias: dict):
+        self.names = list(names)
+        self.racha_actual = _racha_inicial_por_nombre(self.names, noches_ultimos_5_dias)
+        self.descanso_pendiente = {n: 0 for n in self.names}
+
+    def bloqueados(self) -> set:
+        """Nombres que, a fecha de HOY (antes de decidir quién cubre hoy),
+        siguen en su descanso obligatorio post-racha pendiente de días
+        anteriores."""
+        return {n for n, restantes in self.descanso_pendiente.items() if restantes > 0}
+
+    def registrar(self, elegido: str) -> None:
+        """El día de hoy ya se decidió: `elegido` cubrió Noche. Consume un
+        día de descanso pendiente para quien lo tuviera (aunque no sea
+        `elegido` — el descanso transcurre igual, se haya cubierto o no la
+        noche con otra persona); avanza la racha de `elegido` y la rompe
+        para el resto (solo una cobertura externa por día en modo
+        respaldo); si la racha de `elegido` alcanza el máximo, activa su
+        descanso obligatorio."""
+        for n in self.names:
+            if self.descanso_pendiente.get(n, 0) > 0:
+                self.descanso_pendiente[n] -= 1
+
+        self.racha_actual[elegido] = self.racha_actual.get(elegido, 0) + 1
+        for n in self.names:
+            if n != elegido:
+                self.racha_actual[n] = 0
+        if self.racha_actual[elegido] >= MAX_NOCHES_VENTANA:
+            self.descanso_pendiente[elegido] = DIAS_DESCANSO_TRAS_RACHA
+            self.racha_actual[elegido] = 0
+
+
 def _resolver_y_extraer_con_extra(model: cp_model.CpModel, x: dict, names: list,
-                                   extra_vars: dict) -> tuple:
+                                   extra_vars: dict,
+                                   staff_list: list = None, cfg=None) -> tuple:
     """Igual que _resolver_y_extraer, pero además lee el valor resuelto de
     variables auxiliares del modelo (p.ej. las de racha_postweek). Función
     NUEVA y separada — _resolver_y_extraer no se toca, para no romper el
@@ -771,10 +1293,7 @@ def _resolver_y_extraer_con_extra(model: cp_model.CpModel, x: dict, names: list,
     status = solver.Solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise RuntimeError(
-            "CP-SAT no encontró solución factible para las restricciones dadas "
-            f"(status={solver.StatusName(status)})."
-        )
+        raise RuntimeError(_mensaje_infactible(solver, status, staff_list, cfg))
 
     schedule = {name: ["" for _ in range(7)] for name in names}
     for name in names:
@@ -961,6 +1480,26 @@ def generar_semana_cpsat_con_cobertura_nocturna(
     # término F simplemente no se activa ahí.
     nombre_sustituto_unico = None
     if modo_respaldo_activo(staff_list, estado_rotacion):
+        # Seguimiento de racha en modo respaldo (Fase 5, verificación del
+        # mismo tipo de bug ya corregido para dias_cubrir, esta vez para el
+        # descanso obligatorio post-racha de 5 noches, restricción de Fase
+        # 3 en agregar_restriccion_racha_noches): las 7 llamadas de este
+        # bucle fijan cobertura_externa[d] ANTES de que esa restricción se
+        # añada al modelo (más abajo). Si la selección de candidato no sabe
+        # nada de la racha que ella misma va encadenando día a día dentro
+        # de esta misma semana, puede volver a proponer a la misma persona
+        # una 6ª noche seguida, o proponerla para un día que ya le tocaría
+        # de descanso obligatorio tras su 5ª — produciendo el mismo tipo de
+        # INFEASIBLE espurio que dias_cubrir corrigió para vacaciones/
+        # peticiones, pero ahora por chocar con la racha en vez de con una
+        # ausencia real. Se replica en Python, día a día, exactamente la
+        # misma lógica de "racha de 5 → 2 de descanso obligatorio" que
+        # agregar_restriccion_racha_noches aplicará luego dentro del
+        # modelo — determinista, sin variables del solver, igual que
+        # _tiene_par_consecutivo_disponible hace para el término F.
+        names_racha = [p["name"] for p in staff_list]
+        tracker = _RachaTracker(names_racha, noches_ultimos_5_dias)
+
         for d in range(7):
             # dias_cubrir={d} (Fase 5, corrección de INFEASIBLE espurio):
             # cada llamada de modo respaldo decide un día CONCRETO, no los
@@ -971,10 +1510,17 @@ def generar_semana_cpsat_con_cobertura_nocturna(
             # vacación/petición, y la línea de abajo fijaba Noche=1 sobre
             # esa misma celda: dos restricciones duras contradictorias,
             # INFEASIBLE que no reflejaba una imposibilidad real.
+            #
+            # bloqueados_por_racha (NUEVO, esta verificación): nombres que
+            # a fecha de HOY (antes de decidir el día d) todavía tienen
+            # descanso obligatorio post-racha pendiente de días anteriores
+            # de esta misma semana — ver _RachaTracker.
             nombre, estado_rotacion = seleccionar_candidato_cobertura_nocturna(
-                staff_list, cfg, estado_rotacion, dias_cubrir={d}
+                staff_list, cfg, estado_rotacion, dias_cubrir={d},
+                bloqueados_por_racha=tracker.bloqueados(),
             )
             cobertura_externa[d] = nombre
+            tracker.registrar(nombre)
     else:
         nombre, estado_rotacion = seleccionar_candidato_cobertura_nocturna(
             staff_list, cfg, estado_rotacion
@@ -997,7 +1543,9 @@ def generar_semana_cpsat_con_cobertura_nocturna(
         extra_vars_planas[f"{name}__lunes"] = post1
         extra_vars_planas[f"{name}__martes"] = post2
 
-    schedule, valores_extra = _resolver_y_extraer_con_extra(model, x, names, extra_vars_planas)
+    schedule, valores_extra = _resolver_y_extraer_con_extra(
+        model, x, names, extra_vars_planas, staff_list, cfg
+    )
 
     forced_days_off_extra = {}
     for name in names:

@@ -357,3 +357,62 @@ def test_modo_respaldo_infactibilidad_real_cuando_todos_bloqueados_ese_dia():
         seleccionar_candidato_cobertura_nocturna(
             staff, cfg, estado, dias_cubrir={dia_indice_lunes}
         )
+
+
+# ─── Tema 1 (sesión Fase 5, cierre de pendientes): mismo tipo de bug que ───
+# ─── dias_cubrir, pero para el descanso obligatorio post-racha de noches ───
+#
+# Verificación: la elegibilidad de seleccionar_candidato_cobertura_nocturna
+# no sabía nada, por sí sola, de que alguien pudiera estar en su descanso
+# obligatorio de 2 días tras agotar una racha de 5 noches (restricción de
+# Fase 3, agregar_restriccion_racha_noches en motor_cpsat.py) — esa
+# restricción se añade al modelo DESPUÉS de que este módulo ya fijó
+# cobertura_externa (Noche=1) para los 7 días de la semana en modo
+# respaldo. Arreglo con el MISMO patrón que dias_cubrir: nuevo parámetro
+# bloqueados_por_racha, un conjunto de nombres a excluir para el día que
+# decide esta llamada concreta — quien orquesta (motor_cpsat.py) es quien
+# calcula, día a día y de forma determinista en Python, quién está en ese
+# descanso (ver _racha_inicial_por_nombre y el bucle de modo respaldo en
+# generar_semana_cpsat_con_cobertura_nocturna).
+
+def test_bloqueados_por_racha_se_salta_en_modo_respaldo():
+    """Con Ana pasada explícitamente en bloqueados_por_racha (simulando que
+    el llamador ya detectó que Ana está en su descanso obligatorio
+    post-racha ese día), la función debe saltarla igual que hace con
+    quien tiene el día forzado libre por vacación/petición, y devolver a
+    otra persona realmente elegible."""
+    orden = ["Ana", "Diego", "Miguel"]
+    staff = _staff(orden, night_fixed=None)
+    cfg = _cfg()
+    estado = _estado_base(orden)
+
+    elegido, estado = seleccionar_candidato_cobertura_nocturna(
+        staff, cfg, estado, dias_cubrir={0}, bloqueados_por_racha={"Ana"}
+    )
+
+    assert elegido != "Ana", (
+        f"Ana estaba en bloqueados_por_racha (descanso obligatorio "
+        f"post-racha); no debía ser elegida. Elegido: {elegido!r}"
+    )
+    assert elegido in ("Diego", "Miguel"), (
+        f"El día debía cubrirlo alguien realmente elegible (Diego o "
+        f"Miguel), no basta con que no sea Ana. Elegido: {elegido!r}"
+    )
+
+
+def test_bloqueados_por_racha_infactibilidad_real_cuando_todos_bloqueados():
+    """Si TODOS los candidatos elegibles están en descanso obligatorio
+    post-racha el mismo día (caso extremo pero posible con plantilla
+    pequeña), sigue sin haber nadie que pueda cubrir esa noche —
+    RuntimeError con el mismo mensaje que el resto de casos de
+    infactibilidad real de esta función, no un valor inventado."""
+    orden = ["Ana", "Diego", "Miguel"]
+    staff = _staff(orden, night_fixed=None)
+    cfg = _cfg()
+    estado = _estado_base(orden)
+
+    with pytest.raises(RuntimeError, match="[Nn]adie.*elegible"):
+        seleccionar_candidato_cobertura_nocturna(
+            staff, cfg, estado, dias_cubrir={0},
+            bloqueados_por_racha={"Ana", "Diego", "Miguel"},
+        )

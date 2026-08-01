@@ -362,3 +362,62 @@ def test_control_negativo_sin_restriccion_de_racha_6_noches_es_factible():
     agregar_restriccion_racha_noches(model2, x2, names2, noches_vacio)
     with pytest.raises(RuntimeError):
         _resolver_y_extraer(model2, x2, names2)
+
+
+# ─── Escenario 5 (Tema 1, sesión Fase 5 — cierre de pendientes): modo ──────
+# ─── respaldo dentro de UNA sola semana no debe producir INFEASIBLE ────────
+# ─── espurio por chocar con su propia racha ────────────────────────────────
+
+def test_respaldo_dentro_de_una_semana_no_produce_infeasible_espurio_por_racha():
+    """Verificación de si el mismo tipo de bug que dias_cubrir corrigió
+    (INFEASIBLE espurio por elegibilidad ciega a una restricción dura que
+    se añade después) también existía para la racha: en modo respaldo, las
+    7 llamadas a seleccionar_candidato_cobertura_nocturna dentro de la
+    MISMA semana fijan cobertura_externa ANTES de que
+    agregar_restriccion_racha_noches se añada al modelo. Si esas llamadas
+    no saben nada de la racha que ELLAS MISMAS van encadenando, pueden
+    proponer una 6ª noche seguida para la misma persona, o proponerla
+    justo en sus 2 días de descanso obligatorio tras la 5ª — chocando con
+    la restricción dura añadida después.
+
+    Se fuerza el escenario con el histórico de balance sesgado (N1 con
+    covers=0, el resto con covers=1000): balance puro (_elegir_balance_puro,
+    el criterio de modo respaldo) hace que N1 gane las 7 llamadas de la
+    semana salvo que algo la bloquee explícitamente — con 6 personas
+    disponibles para cubrir Noche, evitar que UNA sola encadene más de 5
+    seguidas es trivialmente posible, así que cualquier RuntimeError aquí
+    sería espurio, no una imposibilidad real."""
+    nombres = ["N1", "N2", "N3", "N4", "N5", "N6"]
+    cfg = _cfg()
+    staff = [{"name": "Jefe", "role": "jefe"}] + [
+        {"name": n, "role": "normal"} for n in nombres
+    ]
+    estado = _estado_rotacion_inicial(nombres)
+    estado["historico_balance"] = {
+        "N1": {"covers": 0, "pending": 0},
+        **{n: {"covers": 1000, "pending": 0} for n in nombres[1:]},
+    }
+
+    resultado = generar_semana_cpsat_con_cobertura_nocturna(
+        staff, SEMANA_INICIO, cfg, estado, noches_ultimos_5_dias={}
+    )  # no debe lanzar RuntimeError
+
+    for n in nombres:
+        _verificar_racha_y_descanso(
+            resultado["schedule"][n], n, contexto="[escenario 5 — respaldo 1 semana] "
+        )
+
+    # Confirmación de que el escenario realmente estresó el mecanismo: sin
+    # el arreglo, la selección seguiría prefiriendo a N1 (covers=0..4,
+    # siempre por debajo de 1000) incluso durante su propio descanso
+    # obligatorio. Con el arreglo, N1 cubre exactamente 5 noches (el
+    # máximo antes de que le toque descansar), no más.
+    noches_n1 = resultado["schedule"]["N1"].count("Noche")
+    assert noches_n1 == 5, (
+        f"N1 debía cubrir exactamente 5 noches en este escenario "
+        f"deliberadamente sesgado (el máximo antes del descanso "
+        f"obligatorio) — si cubriera más, el bloqueo por racha no está "
+        f"actuando; si cubriera menos, el escenario no está forzando de "
+        f"verdad el choque que este test existe para probar. Cubrió "
+        f"{noches_n1}: {resultado['schedule']['N1']}"
+    )

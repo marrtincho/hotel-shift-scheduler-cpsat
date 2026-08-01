@@ -101,18 +101,25 @@ def _bloqueados_por_peticion_o_vacacion(staff_list: list, cfg, dias_cubrir: set 
     return bloqueados
 
 
-def _elegibles(staff_list: list, cfg, dias_cubrir: set = None) -> list:
+def _elegibles(staff_list: list, cfg, dias_cubrir: set = None,
+               bloqueados_por_racha: set = None) -> list:
     """Regla 1: rol no en cfg.no_night_roles, no es night_fixed, no
     bloqueado por vacación/petición concedida en los días de `dias_cubrir`
     (ver _bloqueados_por_peticion_o_vacacion para el significado exacto de
     este parámetro y por qué None reproduce el comportamiento de modo
-    normal sin cambios)."""
+    normal sin cambios), y no bloqueado por descanso obligatorio post-racha
+    de noches (bloqueados_por_racha — ver docstring de
+    seleccionar_candidato_cobertura_nocturna, parámetro NUEVO Fase 5,
+    verificación del mismo patrón de bug que dias_cubrir pero para la
+    restricción de racha de 5 noches, no para vacaciones/peticiones)."""
     bloqueados = _bloqueados_por_peticion_o_vacacion(staff_list, cfg, dias_cubrir)
+    bloqueados_racha = set(bloqueados_por_racha or ())
     return [
         p for p in staff_list
         if p.get("role") not in cfg.no_night_roles
         and p.get("role") != "night_fixed"
         and p["name"] not in bloqueados
+        and p["name"] not in bloqueados_racha
     ]
 
 
@@ -235,7 +242,8 @@ def _elegir_orden_fijo(elegibles: list, estado: dict) -> tuple:
 
 
 def seleccionar_candidato_cobertura_nocturna(staff_list: list, cfg, estado_rotacion: dict,
-                                              dias_cubrir: set = None) -> tuple:
+                                              dias_cubrir: set = None,
+                                              bloqueados_por_racha: set = None) -> tuple:
     """Elige quién cubre la próxima noche/gap de night_fixed. Ver el
     contrato de uso en el docstring del módulo para cuántas veces llamarla
     por semana según el modo activo.
@@ -254,9 +262,25 @@ def seleccionar_candidato_cobertura_nocturna(staff_list: list, cfg, estado_rotac
         esa llamada está decidiendo — omitirlo reintroduce el bug
         original (bloqueo comprobado contra el día equivocado).
 
+    bloqueados_por_racha: nombres que NO deben proponerse para el día que
+    decide esta llamada porque están en su descanso obligatorio de 2 días
+    tras agotar una racha de 5 noches (restricción de Fase 3,
+    agregar_restriccion_racha_noches en motor_cpsat.py). Parámetro NUEVO
+    (Fase 5, verificación del mismo tipo de bug que dias_cubrir, esta vez
+    para la racha en vez de vacaciones/peticiones — ver docstring de
+    motor_cpsat.generar_semana_cpsat_con_cobertura_nocturna, sección
+    "seguimiento de racha en modo respaldo", para cómo se calcula este
+    conjunto día a día). Solo tiene sentido en modo RESPALDO: es donde
+    esta función se llama varias veces dentro de la MISMA semana y puede
+    volver a proponer, sin saberlo, a alguien que el propio bucle del
+    llamador ya hizo encadenar 5 noches seguidas. En modo normal (una sola
+    llamada/semana, el sustituto solo cubre 2 días fijos no consecutivos
+    de por sí con el resto de la semana) no hace falta: se puede omitir
+    (None) sin cambiar el comportamiento.
+
     Devuelve (nombre_elegido, estado_rotacion_actualizado).
     """
-    elegibles = _elegibles(staff_list, cfg, dias_cubrir)
+    elegibles = _elegibles(staff_list, cfg, dias_cubrir, bloqueados_por_racha)
     if not elegibles:
         raise RuntimeError("Nadie en staff_list es elegible para cubrir la noche esta semana.")
 
