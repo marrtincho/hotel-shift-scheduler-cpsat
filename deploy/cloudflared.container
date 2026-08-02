@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare Tunnel
+After=network-online.target
+
+[Container]
+Image=docker.io/cloudflare/cloudflared:latest
+Exec=tunnel run
+EnvironmentFile=%h/.config/horarios/env
+Network=host
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

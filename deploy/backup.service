@@ -1,0 +1,6 @@
+[Unit]
+Description=Backup de datos de Horarios Recepcion
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/horarios-backup.sh

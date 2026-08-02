@@ -1,0 +1,16 @@
+[Unit]
+Description=Horarios Recepcion
+After=network-online.target
+
+[Container]
+Image=localhost/horarios:latest
+PublishPort=127.0.0.1:8000:8000
+Volume=%h/horarios-data:/app/data:Z
+Environment=DATA_DIR=/app/data
+EnvironmentFile=%h/.config/horarios/env
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

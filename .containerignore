@@ -1,0 +1,9 @@
+data/
+data-ejemplo/
+tests/
+.git
+.idea
+*.xlsx
+__pycache__
+*.bak
+requirements-dev.txt
