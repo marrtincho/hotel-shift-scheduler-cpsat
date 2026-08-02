@@ -651,6 +651,24 @@ def _calcular_prev_last_shifts(schedule_semana_anterior: dict, staff_list: list)
     return resultado
 
 
+def _estado_rotacion_inicial_cpsat(staff_list: list, cfg) -> dict:
+    """Semilla de estado_rotacion (cobertura_nocturna.py) para el primer uso
+    del motor CP-SAT en un departamento: sin esto, _elegir_orden_fijo revienta
+    con 'orden está vacío' porque {} no trae ningún candidato. Mismo criterio
+    de elegibilidad que seleccionar_candidato_cobertura_nocturna: fuera
+    night_fixed (cubre sus propias noches) y los roles sin noche de cfg."""
+    elegibles = [p["name"] for p in staff_list
+                 if p.get("role") != "night_fixed" and p.get("role") not in cfg.no_night_roles]
+    return {
+        "orden": elegibles,
+        "siguiente_turno": elegibles[0] if elegibles else None,
+        "deudas": {n: 0 for n in elegibles},
+        "usar_orden_fijo": True,
+        "historico_balance": {},
+        "ausencias_night_fixed_consecutivas": 0,
+    }
+
+
 def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: str,
                              prev_sunday_shifts: dict = None):
     """Adapta generar_semana_cpsat_con_cobertura_nocturna (motor_cpsat.py) a
@@ -669,7 +687,8 @@ def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: s
     estado_path = os.path.join(DATA_DIR, f"cpsat_estado_{dept_id}.json")
     estado_previo = json.loads(open(estado_path, encoding="utf-8").read()) \
         if os.path.exists(estado_path) else {}
-    estado_rotacion       = estado_previo.get("estado_rotacion", {})
+    estado_rotacion       = estado_previo.get("estado_rotacion") \
+        or _estado_rotacion_inicial_cpsat(staff_list, cfg)
     noches_ultimos_5_dias = estado_previo.get("noches_ultimos_5_dias", {})
     forced_extra          = estado_previo.get("forced_days_off_extra", {})
 
