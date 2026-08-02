@@ -38,6 +38,7 @@ from herramientas import (
     DOTACION_VACACIONES_DEFAULT,
     _semana_str, DIAS_SEMANA,
     registrar_intervencion, cargar_intervenciones,
+    motor_cpsat_activo,
 )
 from estadisticas import (
     invalidar_cache as invalidar_cache_estadisticas,
@@ -650,6 +651,52 @@ def _calcular_prev_last_shifts(schedule_semana_anterior: dict, staff_list: list)
     return resultado
 
 
+def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: str,
+                             prev_sunday_shifts: dict = None):
+    """Adapta generar_semana_cpsat_con_cobertura_nocturna (motor_cpsat.py) a
+    la misma tupla de retorno que generate_schedule_valido (modelo_base.py),
+    para que el resto de generar_horario() no necesite saber qué motor se usó.
+
+    El motor CP-SAT necesita estado propio entre semanas (estado_rotacion de
+    la cobertura nocturna, noches_ultimos_5_dias para la restricción de
+    racha, y forced_days_off_extra -- el equivalente CP-SAT de
+    prev_week_covers/next_week_rest_days del heurístico) que no encaja en
+    night_covers_{dept}.json (formato propio del heurístico) -- se persiste
+    aparte en cpsat_estado_{dept}.json.
+    """
+    from motor_cpsat import generar_semana_cpsat_con_cobertura_nocturna
+
+    estado_path = os.path.join(DATA_DIR, f"cpsat_estado_{dept_id}.json")
+    estado_previo = json.loads(open(estado_path, encoding="utf-8").read()) \
+        if os.path.exists(estado_path) else {}
+    estado_rotacion       = estado_previo.get("estado_rotacion", {})
+    noches_ultimos_5_dias = estado_previo.get("noches_ultimos_5_dias", {})
+    forced_extra          = estado_previo.get("forced_days_off_extra", {})
+
+    for person in staff_list:
+        dias = forced_extra.get(person["name"])
+        if dias:
+            existentes = person.get("forced_days_off", [])
+            person["forced_days_off"] = list(dict.fromkeys(existentes + dias))
+
+    resultado = generar_semana_cpsat_con_cobertura_nocturna(
+        staff_list=staff_list,
+        week_start=week_start,
+        cfg=cfg,
+        estado_rotacion=estado_rotacion,
+        noches_ultimos_5_dias=noches_ultimos_5_dias,
+        prev_sunday_shifts=prev_sunday_shifts,
+    )
+
+    open(estado_path, "w", encoding="utf-8").write(json.dumps({
+        "estado_rotacion":       resultado["estado_rotacion"],
+        "noches_ultimos_5_dias": resultado["noches_ultimos_5_dias"],
+        "forced_days_off_extra": resultado["forced_days_off_extra"],
+    }, ensure_ascii=False, indent=2))
+
+    return resultado["schedule"], staff_list, week_start, {}, {}, []
+
+
 def _calcular_advertencias(full_schedule: dict, staff_final: list[dict], cfg,
                            prev_sunday_shifts: dict = None) -> list[dict]:
     """Fuente única de advertencias del horario, en formato estructurado para
@@ -797,16 +844,26 @@ def api_generar():
         prev_sunday_shifts = {nombre: turnos[6] for nombre, turnos in prev_sched.items() if len(turnos) == 7}
         prev_last_shifts   = _calcular_prev_last_shifts(prev_sched, staff)
 
-    from modelo_base import generate_schedule_valido
-    full_schedule, staff_final, ws_date, night_cover, this_week_covers, violaciones = \
-        generate_schedule_valido(
-            staff_list=copy.deepcopy(staff),
-            week_start=semana,
-            cfg=cfg,
-            prev_week_covers=prev_week_covers,
-            prev_sunday_shifts=prev_sunday_shifts,
-            prev_last_shifts=prev_last_shifts,
-        )
+    if motor_cpsat_activo():
+        full_schedule, staff_final, ws_date, night_cover, this_week_covers, violaciones = \
+            _generar_con_motor_cpsat(
+                staff_list=copy.deepcopy(staff),
+                week_start=semana,
+                cfg=cfg,
+                dept_id=dept_id,
+                prev_sunday_shifts=prev_sunday_shifts,
+            )
+    else:
+        from modelo_base import generate_schedule_valido
+        full_schedule, staff_final, ws_date, night_cover, this_week_covers, violaciones = \
+            generate_schedule_valido(
+                staff_list=copy.deepcopy(staff),
+                week_start=semana,
+                cfg=cfg,
+                prev_week_covers=prev_week_covers,
+                prev_sunday_shifts=prev_sunday_shifts,
+                prev_last_shifts=prev_last_shifts,
+            )
 
     import json as _j
     all_covers = _j.loads(open(cov_path).read()) if os.path.exists(cov_path) else {}
