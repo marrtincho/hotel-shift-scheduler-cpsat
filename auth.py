@@ -25,7 +25,7 @@ from flask import session, request, jsonify
 # ─── RUTAS ────────────────────────────────────────────────────────────────────
 
 try:
-    from herramientas import DATA_DIR, guardar_json_atomico
+    from herramientas import DATA_DIR, guardar_json_atomico, _nombre_seguro, CARACTERES_PROHIBIDOS_NOMBRE
 except ImportError:
     DATA_DIR = os.environ.get(
         "DATA_DIR",
@@ -38,6 +38,12 @@ except ImportError:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp, path)
+    CARACTERES_PROHIBIDOS_NOMBRE = set('<>"\'`')
+    def _nombre_seguro(nombre: str) -> bool:
+        """Fallback local si herramientas no está disponible: el nombre de
+        usuario se muestra sin escapar en el panel de gestión de usuarios;
+        prohibir estos caracteres evita inyectar HTML/JS a través de él."""
+        return not (CARACTERES_PROHIBIDOS_NOMBRE & set(nombre or ""))
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -155,13 +161,6 @@ def listar_usuarios() -> list[dict]:
         {k: v for k, v in u.items() if k not in ("hash", "salt")}
         for u in _cargar_usuarios()
     ]
-
-CARACTERES_PROHIBIDOS_NOMBRE = set('<>"\'`')
-
-def _nombre_seguro(nombre: str) -> bool:
-    """El nombre de usuario se muestra sin escapar en el panel de gestión de
-    usuarios; prohibir estos caracteres evita inyectar HTML/JS a través de él."""
-    return not (CARACTERES_PROHIBIDOS_NOMBRE & set(nombre or ""))
 
 def crear_usuario(username: str, nombre: str, rol: str,
                   password: str, empleado_vinculado: str = None) -> tuple[bool, str]:

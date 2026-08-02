@@ -107,7 +107,7 @@ def _nombre_seguro(nombre: str) -> bool:
     de plantilla, peticiones, vacaciones...) y también se interpola dentro de
     atributos onclick con comillas simples. Prohibir estos caracteres evita
     que se pueda inyectar HTML/JS a través del nombre de un empleado."""
-    return not (CARACTERES_PROHIBIDOS_NOMBRE & set(nombre))
+    return not (CARACTERES_PROHIBIDOS_NOMBRE & set(nombre or ""))
 
 def validar_plantilla(staff: list[dict], excluir_idx: int = None,
                       dept_id: str = "recepcion") -> list[str]:

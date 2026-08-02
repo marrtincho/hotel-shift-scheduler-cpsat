@@ -38,7 +38,7 @@ from herramientas import (
     DOTACION_VACACIONES_DEFAULT,
     _semana_str, DIAS_SEMANA,
     registrar_intervencion, cargar_intervenciones,
-    motor_cpsat_activo,
+    motor_cpsat_activo, guardar_json_atomico,
 )
 from estadisticas import (
     invalidar_cache as invalidar_cache_estadisticas,
@@ -92,6 +92,43 @@ inicializar_usuarios()
 def lunes_de(fecha_str: str) -> date:
     d = date.fromisoformat(fecha_str)
     return d - timedelta(days=d.weekday())
+
+def _normalizar_dept(dept_id: str) -> str:
+    """Único departamento válido si no es uno de los dos soportados: mismo
+    fallback silencioso a 'recepcion' que usaban por separado todos los
+    endpoints de horario/plantilla."""
+    return dept_id if dept_id in ("recepcion", "mozos") else "recepcion"
+
+def _night_covers_path(dept_id: str) -> str:
+    return os.path.join(DATA_DIR, f"night_covers_{dept_id}.json")
+
+def _leer_night_covers(dept_id: str) -> dict:
+    """{semana_str: this_week_covers} de todas las semanas generadas de ese
+    departamento -- ver api_generar sobre qué es this_week_covers."""
+    path = _night_covers_path(dept_id)
+    return json.loads(open(path, encoding="utf-8").read()) if os.path.exists(path) else {}
+
+def _guardar_night_covers(dept_id: str, all_covers: dict) -> None:
+    guardar_json_atomico(_night_covers_path(dept_id), all_covers)
+
+_CAMPOS_INTERNOS_STAFF = {
+    "days_off", "night_cover_this_week", "covered_nights_prev_week",
+    "forced_days_off", "extra_days_off",
+}
+
+def _clean_staff_list(staff_list: list) -> list:
+    """Quita del staff los campos de uso interno del motor de generación
+    (días libres/forzados calculados) antes de devolverlo al frontend."""
+    return [{k: v for k, v in p.items() if k not in _CAMPOS_INTERNOS_STAFF} for p in staff_list]
+
+def _festivos_json(semana: date) -> list:
+    """Festivos de la semana en el formato JSON que devuelven por igual
+    api_generar, api_vaciar_horario y api_horario_semana."""
+    return [
+        {"fecha": f["date"].isoformat(), "nombre": f["nombre"],
+         "tipo": f["tipo"], "dia_semana": f["dia_semana"]}
+        for f in festivos_en_semana(semana)
+    ]
 
 def etiquetar_celda(nombre: str, dia_idx: int, valor_celda: str, dias_vacaciones_persona) -> str:
     """Capa de presentación: distingue "Libre" por vacaciones de cualquier
@@ -335,8 +372,7 @@ def api_auditoria_intervenciones():
     tratos desiguales del encargado sin impedirle trabajar — es un registro
     para inspección posterior, no una restricción en el momento de actuar."""
     dept_id = request.args.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     hoy   = date.today()
     hasta = request.args.get("hasta") or hoy.isoformat()
     desde = request.args.get("desde") or (hoy - timedelta(days=90)).isoformat()
@@ -707,11 +743,11 @@ def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: s
         prev_sunday_shifts=prev_sunday_shifts,
     )
 
-    open(estado_path, "w", encoding="utf-8").write(json.dumps({
+    guardar_json_atomico(estado_path, {
         "estado_rotacion":       resultado["estado_rotacion"],
         "noches_ultimos_5_dias": resultado["noches_ultimos_5_dias"],
         "forced_days_off_extra": resultado["forced_days_off_extra"],
-    }, ensure_ascii=False, indent=2))
+    })
 
     return resultado["schedule"], staff_list, week_start, {}, {}, []
 
@@ -819,8 +855,7 @@ def api_generar():
     body    = request.json or {}
     fecha   = body.get("semana", date.today().isoformat())
     dept_id = body.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     semana  = lunes_de(fecha)
     cfg     = _get_dept_config(dept_id)
 
@@ -845,11 +880,7 @@ def api_generar():
     # (p.ej. cubre Sáb+Dom, descansa Lun+Mar — de la semana que viene, no de
     # la misma).
     prev_key = _semana_str(semana - timedelta(weeks=1))
-    cov_path = os.path.join(DATA_DIR, f"night_covers_{dept_id}.json")
-    prev_week_covers = {}
-    if os.path.exists(cov_path):
-        import json as _j
-        prev_week_covers = _j.loads(open(cov_path, encoding="utf-8").read()).get(prev_key, {})
+    prev_week_covers = _leer_night_covers(dept_id).get(prev_key, {})
 
     # Las reglas de descanso (no Mañana tras Tarde/Noche, descanso obligatorio
     # tras Noche) no se reinician al cambiar de semana: se mira qué turno hizo
@@ -884,10 +915,9 @@ def api_generar():
                 prev_last_shifts=prev_last_shifts,
             )
 
-    import json as _j
-    all_covers = _j.loads(open(cov_path).read()) if os.path.exists(cov_path) else {}
+    all_covers = _leer_night_covers(dept_id)
     all_covers[_semana_str(semana)] = this_week_covers
-    open(cov_path, "w").write(_j.dumps(all_covers, ensure_ascii=False, indent=2))
+    _guardar_night_covers(dept_id, all_covers)
 
     # Se recalculan las advertencias en formato estructurado en vez de usar
     # `violaciones` (strings sueltos, uso interno de generate_schedule_valido
@@ -895,11 +925,7 @@ def api_generar():
     # los demás endpoints que devuelven "advertencias" al frontend.
     advertencias = _calcular_advertencias(full_schedule, staff_final, cfg, prev_sunday_shifts)
 
-    festivos = [
-        {"fecha": f["date"].isoformat(), "nombre": f["nombre"],
-         "tipo": f["tipo"], "dia_semana": f["dia_semana"]}
-        for f in festivos_en_semana(semana)
-    ]
+    festivos = _festivos_json(semana)
 
     registrar_semana(semana, full_schedule, staff_final, forzar=True, dept_id=dept_id)
     registrar_festivos_semana(semana, full_schedule, staff_final)
@@ -912,10 +938,7 @@ def api_generar():
         invalidar_cache_estadisticas("recepcion")
     registrar_accion("GENERAR_HORARIO", f"Dept:{dept_id} Semana:{semana.isoformat()}")
 
-    clean_staff = []
-    skip = {"days_off","night_cover_this_week","covered_nights_prev_week","forced_days_off","extra_days_off"}
-    for p in staff_final:
-        clean_staff.append({k: v for k, v in p.items() if k not in skip})
+    clean_staff = _clean_staff_list(staff_final)
 
     return ok({
         "semana": semana.isoformat(), "dept": dept_id,
@@ -937,8 +960,7 @@ def api_vaciar_horario():
     body    = request.json or {}
     fecha   = body.get("semana", date.today().isoformat())
     dept_id = body.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     semana  = lunes_de(fecha)
     cfg     = _get_dept_config(dept_id)
 
@@ -960,16 +982,9 @@ def api_vaciar_horario():
     registrar_accion("VACIAR_HORARIO_MANUAL", f"Dept:{dept_id} Semana:{semana.isoformat()}")
 
     advertencias = _calcular_advertencias(full_schedule, staff, cfg, _prev_sunday_shifts(dept_id, semana))
-    festivos = [
-        {"fecha": f["date"].isoformat(), "nombre": f["nombre"],
-         "tipo": f["tipo"], "dia_semana": f["dia_semana"]}
-        for f in festivos_en_semana(semana)
-    ]
+    festivos = _festivos_json(semana)
 
-    clean_staff = []
-    skip = {"days_off","night_cover_this_week","covered_nights_prev_week","forced_days_off","extra_days_off"}
-    for p in staff:
-        clean_staff.append({k: v for k, v in p.items() if k not in skip})
+    clean_staff = _clean_staff_list(staff)
 
     return ok({
         "semana": semana.isoformat(), "dept": dept_id,
@@ -984,8 +999,7 @@ def api_vaciar_horario():
 def api_horario_semana():
     """Devuelve el horario ya generado de una semana sin volver a generarlo."""
     dept_id = request.args.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     semana    = lunes_de(request.args.get("semana", date.today().isoformat()))
     historial = cargar_historial(dept_id)
     key       = _semana_str(semana)
@@ -998,11 +1012,7 @@ def api_horario_semana():
     cfg          = _get_dept_config(dept_id)
     advertencias = _calcular_advertencias(entrada["schedule"], entrada["staff"], cfg,
                                           _prev_sunday_shifts(dept_id, semana))
-    festivos = [
-        {"fecha": f["date"].isoformat(), "nombre": f["nombre"],
-         "tipo": f["tipo"], "dia_semana": f["dia_semana"]}
-        for f in festivos_en_semana(semana)
-    ]
+    festivos = _festivos_json(semana)
     return ok({
         "existe": True, "semana": key, "dept": dept_id, "bloqueada": bloqueada,
         "schedule": etiquetar_schedule(entrada["schedule"], entrada["staff"]),
@@ -1016,8 +1026,7 @@ def api_eliminar_horario_semana():
     """Borra el horario generado de una semana, dejándola como si nunca se
     hubiera generado (vuelve al estado 'Aún no se ha generado')."""
     dept_id = request.args.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     semana = lunes_de(request.args.get("semana", date.today().isoformat()))
 
     if _semana_bloqueada(semana) and usuario_actual()["rol"] != "admin":
@@ -1034,11 +1043,9 @@ def api_eliminar_horario_semana():
     # Compensación de cobertura nocturna que esta semana le debía a la
     # siguiente (this_week_covers, ver api_generar): si se borra el
     # horario que la generó, no debe seguir aplicándose.
-    cov_path = os.path.join(DATA_DIR, f"night_covers_{dept_id}.json")
-    if os.path.exists(cov_path):
-        all_covers = json.loads(open(cov_path, encoding="utf-8").read())
-        if all_covers.pop(key, None) is not None:
-            open(cov_path, "w").write(json.dumps(all_covers, ensure_ascii=False, indent=2))
+    all_covers = _leer_night_covers(dept_id)
+    if all_covers.pop(key, None) is not None:
+        _guardar_night_covers(dept_id, all_covers)
 
     _recalcular_la_desde_historial(dept_id)
     invalidar_cache_estadisticas(dept_id)
@@ -1054,8 +1061,7 @@ def api_editar_turno():
     """Modifica manualmente el turno de una persona un día concreto en un horario ya generado."""
     body    = request.json or {}
     dept_id = body.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     nombre  = body.get("nombre")
     dia_idx = body.get("dia_idx")
     turno   = body.get("turno")
@@ -2003,8 +2009,7 @@ def api_coverage_get():
     """Devuelve la configuración completa de coverage de un departamento:
     todos los perfiles y cuál está activo."""
     dept_id = request.args.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     config   = cargar_coverage_config()
     dept_cfg = config.get(dept_id, {})
     return ok({
@@ -2021,8 +2026,7 @@ def api_coverage_set_activo():
     Body: {dept, perfil}"""
     body    = request.json or {}
     dept_id = body.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     perfil = body.get("perfil", "").strip()
     if not perfil:
         return err("El campo 'perfil' es obligatorio")
@@ -2047,8 +2051,7 @@ def api_coverage_edit_perfil():
     Body: {dept, perfil_id, min_coverage, max_coverage}"""
     body      = request.json or {}
     dept_id   = body.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     perfil_id = body.get("perfil_id", "").strip()
     if not perfil_id:
         return err("El campo 'perfil_id' es obligatorio")
@@ -2088,8 +2091,7 @@ def api_set_horarios_turnos():
     """Body: {dept, horarios: {Mañana:[{inicio,fin}], ...}}"""
     body     = request.json or {}
     dept_id  = body.get("dept", "recepcion")
-    if dept_id not in ("recepcion", "mozos"):
-        dept_id = "recepcion"
+    dept_id = _normalizar_dept(dept_id)
     horarios = body.get("horarios")
     if not isinstance(horarios, dict):
         return err("Falta el campo 'horarios'")

@@ -3171,7 +3171,7 @@ function renderAuditoriaDetalle(){
         <span><strong>${i.empleado_afectado||'—'}</strong> · ${AUD_TIPO_LABEL[i.tipo]||i.tipo} · ${cambio}</span>
         <span style="color:var(--text-3);font-family:'DM Mono',monospace;font-size:11px">${fecha}</span>
       </div>
-      <div style="color:var(--text-2);margin-top:3px">Por: ${i.usuario} (${i.rol_usuario})${i.justificacion?' — '+i.justificacion:''}</div>
+      <div style="color:var(--text-2);margin-top:3px">Por: ${escapeHtml(i.usuario)} (${escapeHtml(i.rol_usuario)})${i.justificacion?' — '+escapeHtml(i.justificacion):''}</div>
     </div>`;
   }).join('');
 }
