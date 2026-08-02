@@ -1162,3 +1162,26 @@ def registrar_intervencion(*, usuario: str, rol_usuario: str, dept: str, tipo: s
         "justificacion":     justificacion or "",
     })
     guardar_json_atomico(INTERVENCIONES_FILE, intervenciones)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 5 — INTERRUPTOR DEL MOTOR CP-SAT
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Apagado por defecto: generate_schedule_valido (modelo_base.py, heurístico)
+# sigue siendo el motor en producción salvo que se active explícitamente.
+# La variable de entorno, si está definida, tiene prioridad sobre el fichero
+# de configuración persistida.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CONFIG_MOTOR_FILE = os.path.join(DATA_DIR, "config_motor.json")
+
+
+def motor_cpsat_activo() -> bool:
+    """True si el motor CP-SAT (motor_cpsat.py) debe usarse en vez del
+    heurístico (modelo_base.py) para generar horarios."""
+    env = os.environ.get("USAR_MOTOR_CPSAT")
+    if env is not None:
+        return env.strip().lower() in ("1", "true", "yes", "on")
+    data = _cargar_json(CONFIG_MOTOR_FILE, {})
+    return bool(data.get("activo", False))
