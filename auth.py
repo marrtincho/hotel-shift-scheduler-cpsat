@@ -52,6 +52,7 @@ PERMISOS = {
         "gestionar_roles",
         "ver_plantilla", "editar_plantilla",
         "generar_horario", "exportar_horario",
+        "eliminar_horario_semana", "vaciar_horario_manual",
         "ver_historial", "eliminar_historial",
         "ver_festivos", "ver_compensaciones", "editar_compensaciones",
         "ver_vacaciones", "editar_vacaciones",
@@ -63,6 +64,7 @@ PERMISOS = {
     "encargado": {
         "ver_plantilla", "editar_plantilla",
         "generar_horario", "exportar_horario",
+        "eliminar_horario_semana",
         "ver_historial",
         "ver_festivos", "ver_compensaciones", "editar_compensaciones",
         "ver_vacaciones", "editar_vacaciones",

@@ -218,6 +218,7 @@ nav{padding:10px 0;flex:1}
 .sc.Partido{background:var(--partido);color:var(--partido-t)}
 .sc.Libre{background:var(--libre);color:var(--libre-t)}
 .sc.Vacaciones{background:var(--vacaciones);color:var(--vacaciones-t)}
+.sc.SIN_ASIGNAR{background:transparent;color:var(--text-3);border:1px dashed var(--border-strong)}
 .sc.fest{box-shadow:0 0 0 2px var(--festivo-t)}
 .sc.celda-conflicto{outline:2.5px solid #F97316;outline-offset:1px}
 .sc.editable{cursor:pointer}
@@ -372,6 +373,8 @@ function closeModal(id){
         <button class="btn sm ghost" id="btn-next">Sig →</button>
       </div>
       <button class="btn pri sm" id="btn-generar">⟳ Generar</button>
+      <button class="btn sm" id="btn-vaciar" title="Deja la semana en blanco (SIN_ASIGNAR) para asignar los turnos a mano">✎ Asignar a mano</button>
+      <button class="btn sm danger" id="btn-borrar-semana" title="Borra el horario generado de esta semana">🗑 Borrar</button>
       <button class="btn sm" id="btn-exportar">↓ Excel</button>
     </div>
     <div id="user-badge-area" style="margin-left:12px;display:flex;align-items:center;gap:8px"></div>
@@ -1151,11 +1154,16 @@ function semanaBloqueadaParaGenerar(off){
 }
 
 function updateGenerarState(){
-  const btnGen = document.getElementById('btn-generar');
-  const btnExp = document.getElementById('btn-exportar');
-  btnGen.style.display = tienePermiso('generar_horario') ? '' : 'none';
-  btnExp.style.display = tienePermiso('exportar_horario') ? '' : 'none';
-  if(semanaBloqueadaParaGenerar(weekOffset)){
+  const btnGen    = document.getElementById('btn-generar');
+  const btnExp    = document.getElementById('btn-exportar');
+  const btnVaciar = document.getElementById('btn-vaciar');
+  const btnBorrar = document.getElementById('btn-borrar-semana');
+  btnGen.style.display    = tienePermiso('generar_horario') ? '' : 'none';
+  btnExp.style.display    = tienePermiso('exportar_horario') ? '' : 'none';
+  btnVaciar.style.display = tienePermiso('vaciar_horario_manual') ? '' : 'none';
+  btnBorrar.style.display = tienePermiso('eliminar_horario_semana') ? '' : 'none';
+  const bloqueada = semanaBloqueadaParaGenerar(weekOffset);
+  if(bloqueada){
     btnGen.disabled = true;
     btnGen.textContent = '🔒 Semana fija';
     btnGen.title = 'Esta semana ya pasó. Solo un administrador puede regenerarla.';
@@ -1164,6 +1172,8 @@ function updateGenerarState(){
     btnGen.textContent = '⟳ Generar';
     btnGen.title = '';
   }
+  btnVaciar.disabled = bloqueada;
+  btnBorrar.disabled = bloqueada || !(lastStaff && lastStaff.length);
 }
 
 // ── MI PANEL (EMPLEADO) — mobile-first, bloques 1-6 ──────────────────────
@@ -1470,6 +1480,7 @@ async function cargarHorarioSemana(){
   if(!r.data.existe){
     lastSchedule = null; lastStaff = null; lastFestivos = []; lastAdvertencias = [];
     renderSchedule({staff:[], schedule:{}, festivos:[], advertencias:[], dept: currentDept});
+    updateGenerarState();
     showAlert('info', semanaBloqueadaParaGenerar(weekOffset)
       ? 'Esta semana pasó sin generarse y quedó fija. Solo un administrador puede generarla.'
       : 'Aún no se ha generado el horario de esta semana. Pulsa "Generar".');
@@ -1479,6 +1490,7 @@ async function cargarHorarioSemana(){
   lastStaff = r.data.staff;
   lastFestivos = r.data.festivos||[];
   lastAdvertencias = r.data.advertencias||[];
+  updateGenerarState();
   renderSchedule(r.data);
   if(r.data.advertencias.length)
     showAlert('warn',`${r.data.advertencias.length} advertencia(s) en el horario — celdas resaltadas, detalle debajo de la parrilla.`);
@@ -1510,6 +1522,46 @@ document.getElementById('btn-generar').onclick = async ()=>{
     showAlert('warn',`${r.data.advertencias.length} advertencia(s) en el horario — celdas resaltadas, detalle debajo de la parrilla.`);
   else
     showAlert('ok','Horario generado correctamente — sin infracciones.');
+};
+
+document.getElementById('btn-vaciar').onclick = async ()=>{
+  if(semanaBloqueadaParaGenerar(weekOffset)){
+    showAlert('err','Esta semana ya pasó y quedó fija. Solo un administrador puede modificarla.');
+    return;
+  }
+  if(!confirm('¿Dejar la semana en blanco para asignar los turnos a mano? Si ya había un horario generado, se sustituye.')) return;
+  const btn = document.getElementById('btn-vaciar');
+  btn.innerHTML = '<span class="spinner"></span> Vaciando...';
+  btn.disabled = true;
+  const semana = isoDate(getMonday(weekOffset));
+  const r = await api('POST','/horario/vaciar',{semana, dept: currentDept});
+  updateGenerarState();
+  if(!r.ok){ showAlert('err',r.error); return; }
+  lastSchedule = r.data.schedule;
+  lastStaff = r.data.staff;
+  lastFestivos = r.data.festivos||[];
+  lastAdvertencias = r.data.advertencias||[];
+  updateGenerarState();
+  renderSchedule(r.data);
+  showAlert('info','Semana en blanco. Asigna los turnos a mano en la parrilla.');
+};
+
+document.getElementById('btn-borrar-semana').onclick = async ()=>{
+  if(semanaBloqueadaParaGenerar(weekOffset)){
+    showAlert('err','Esta semana ya pasó y quedó fija. Solo un administrador puede modificarla.');
+    return;
+  }
+  if(!confirm('¿Borrar el horario generado de esta semana? Esta acción no se puede deshacer.')) return;
+  const btn = document.getElementById('btn-borrar-semana');
+  btn.innerHTML = '<span class="spinner"></span> Borrando...';
+  btn.disabled = true;
+  const semana = isoDate(getMonday(weekOffset));
+  const r = await api('DELETE',`/horario/semana?semana=${semana}&dept=${currentDept}`);
+  if(!r.ok){ showAlert('err',r.error); updateGenerarState(); return; }
+  lastSchedule = null; lastStaff = null; lastFestivos = []; lastAdvertencias = [];
+  renderSchedule({staff:[], schedule:{}, festivos:[], advertencias:[], dept: currentDept});
+  updateGenerarState();
+  showAlert('ok','Horario de la semana borrado.');
 };
 
 document.getElementById('btn-exportar').onclick = async ()=>{

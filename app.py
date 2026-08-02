@@ -926,6 +926,59 @@ def api_generar():
         "peticiones_denegadas": pets_denegadas,
     })
 
+@app.route("/api/horario/vaciar", methods=["POST"])
+@permiso_requerido("vaciar_horario_manual")
+def api_vaciar_horario():
+    """Deja el horario de la semana en blanco (todas las celdas SIN_ASIGNAR,
+    sin pasar por el motor de generación) para que el admin las asigne a
+    mano, celda a celda, con /api/horario/turno. A diferencia de
+    api_generar, no ejecuta ningún solver -- solo prepara la plantilla
+    (vacaciones, peticiones) y guarda un horario vacío en el historial."""
+    body    = request.json or {}
+    fecha   = body.get("semana", date.today().isoformat())
+    dept_id = body.get("dept", "recepcion")
+    if dept_id not in ("recepcion", "mozos"):
+        dept_id = "recepcion"
+    semana  = lunes_de(fecha)
+    cfg     = _get_dept_config(dept_id)
+
+    if _semana_bloqueada(semana) and usuario_actual()["rol"] != "admin":
+        return err("Esta semana ya pasó y quedó fija. Solo un administrador puede modificarla.", 403)
+
+    staff_base = cargar_plantilla(dept_id)
+    staff = aplicar_vacaciones(staff_base, semana, dept_id)
+    min_w = sum(cfg.min_coverage.values())
+    staff, pets_denegadas = aplicar_peticiones_con_prioridad(staff, semana, dept_id, min_w)
+
+    full_schedule = {p["name"]: ["SIN_ASIGNAR"] * 7 for p in staff}
+
+    registrar_semana(semana, full_schedule, staff, forzar=True, dept_id=dept_id)
+    _recalcular_la_desde_historial(dept_id)
+    invalidar_cache_estadisticas(dept_id)
+    if dept_id != "recepcion":
+        invalidar_cache_estadisticas("recepcion")
+    registrar_accion("VACIAR_HORARIO_MANUAL", f"Dept:{dept_id} Semana:{semana.isoformat()}")
+
+    advertencias = _calcular_advertencias(full_schedule, staff, cfg, _prev_sunday_shifts(dept_id, semana))
+    festivos = [
+        {"fecha": f["date"].isoformat(), "nombre": f["nombre"],
+         "tipo": f["tipo"], "dia_semana": f["dia_semana"]}
+        for f in festivos_en_semana(semana)
+    ]
+
+    clean_staff = []
+    skip = {"days_off","night_cover_this_week","covered_nights_prev_week","forced_days_off","extra_days_off"}
+    for p in staff:
+        clean_staff.append({k: v for k, v in p.items() if k not in skip})
+
+    return ok({
+        "semana": semana.isoformat(), "dept": dept_id,
+        "schedule": etiquetar_schedule(full_schedule, staff),
+        "staff": clean_staff,
+        "advertencias": advertencias, "festivos": festivos, "dias": DAYS,
+        "peticiones_denegadas": pets_denegadas,
+    })
+
 @app.route("/api/horario/semana", methods=["GET"])
 @login_requerido
 def api_horario_semana():
@@ -956,6 +1009,44 @@ def api_horario_semana():
         "staff": entrada["staff"],
         "advertencias": advertencias, "festivos": festivos, "dias": DAYS,
     })
+
+@app.route("/api/horario/semana", methods=["DELETE"])
+@permiso_requerido("eliminar_horario_semana")
+def api_eliminar_horario_semana():
+    """Borra el horario generado de una semana, dejándola como si nunca se
+    hubiera generado (vuelve al estado 'Aún no se ha generado')."""
+    dept_id = request.args.get("dept", "recepcion")
+    if dept_id not in ("recepcion", "mozos"):
+        dept_id = "recepcion"
+    semana = lunes_de(request.args.get("semana", date.today().isoformat()))
+
+    if _semana_bloqueada(semana) and usuario_actual()["rol"] != "admin":
+        return err("Esta semana ya pasó y quedó fija. Solo un administrador puede modificarla.", 403)
+
+    historial = cargar_historial(dept_id)
+    key = _semana_str(semana)
+    if key not in historial:
+        return err("Esta semana no tiene horario generado", 404)
+
+    del historial[key]
+    guardar_historial(historial, dept_id)
+
+    # Compensación de cobertura nocturna que esta semana le debía a la
+    # siguiente (this_week_covers, ver api_generar): si se borra el
+    # horario que la generó, no debe seguir aplicándose.
+    cov_path = os.path.join(DATA_DIR, f"night_covers_{dept_id}.json")
+    if os.path.exists(cov_path):
+        all_covers = json.loads(open(cov_path, encoding="utf-8").read())
+        if all_covers.pop(key, None) is not None:
+            open(cov_path, "w").write(json.dumps(all_covers, ensure_ascii=False, indent=2))
+
+    _recalcular_la_desde_historial(dept_id)
+    invalidar_cache_estadisticas(dept_id)
+    if dept_id != "recepcion":
+        invalidar_cache_estadisticas("recepcion")
+    registrar_accion("ELIMINAR_HORARIO", f"Dept:{dept_id} Semana:{key}")
+
+    return ok({"semana": key, "dept": dept_id, "existe": False})
 
 @app.route("/api/horario/turno", methods=["PUT"])
 @permiso_requerido("generar_horario")
