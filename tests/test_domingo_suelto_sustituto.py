@@ -34,7 +34,6 @@ from motor_cpsat import (
     _resolver_y_extraer,
     _tiene_par_consecutivo_disponible,
     generar_semana_cpsat_con_cobertura_nocturna,
-    PESO_DOMINGO_SUSTITUTO,
 )
 
 SEMANA = date(2099, 2, 3)  # Lunes en futuro lejano
@@ -84,7 +83,16 @@ def _cfg_recepcion(**overrides) -> DeptConfig:
 def _staff_mozos(forced_por_nombre=None):
     forced_por_nombre = forced_por_nombre or {}
     staff = [{"name": "NightFixed", "role": "night_fixed"}]
-    for n in ("N1", "N2", "N3", "N4"):
+    # N5/N6 (NUEVO, esta sesión — regla de rotación de cobertura nocturna):
+    # con el Domingo del sustituto ahora forzado Libre de forma DURA (ver
+    # docstring del módulo, sección actualizada), N1 acumula más días
+    # forzados que antes (Fri+Sat de cobertura + Domingo + su propio
+    # patrón) — solo 4 "normal" no siempre dejan margen para que N2-N4
+    # también cumplan su propio patrón de 2 libres junto con la cobertura
+    # mínima diaria, en escenarios donde N1 ADEMÁS tiene vacaciones
+    # propias. 2 personas extra dan el margen que hacía falta sin
+    # participar de ningún bloqueo/aserción de los tests.
+    for n in ("N1", "N2", "N3", "N4", "N5", "N6"):
         p = {"name": n, "role": "normal"}
         if n in forced_por_nombre:
             p["forced_days_off"] = forced_por_nombre[n]
@@ -130,7 +138,7 @@ def test_domingo_disponible_se_elige_como_suelto():
     staff = _staff_mozos({"N1": ["Martes", "Jueves"]})
     assert not _tiene_par_consecutivo_disponible(cfg, {1, 3})  # confirma el gating
 
-    model, x, names, _ = _construir_modelo(staff, SEMANA, cfg, nombre_sustituto_cobertura="N1")
+    model, x, names, _ = _construir_modelo(staff, SEMANA, cfg, nombre_sustituto_cobertura="N1", dias_bloqueados_externos={"N1": {4, 5}})
     model.Add(x["N1", 4, "Noche"] == 1)  # Viernes
     model.Add(x["N1", 5, "Noche"] == 1)  # Sábado
 
@@ -197,44 +205,51 @@ def test_encadenamiento_produce_tres_dias_libres_consecutivos():
     )
 
 
-# ─── Estrés: Domingo rompería cobertura → el modelo cede ───────────────────
+# ─── Estrés: Domingo es regla dura → NUNCA cede, ni bajo presión de cobertura ─
 
-def test_cede_cuando_domingo_rompe_cobertura_minima():
+def test_no_cede_domingo_es_regla_dura_incluso_si_rompe_cobertura_minima():
+    """NOTA (esta sesión — regla de negocio confirmada por el usuario): el
+    Domingo del sustituto que cubre Viernes+Sábado ya NO es una preferencia
+    blanda (término F) que pueda ceder bajo presión de cobertura — es una
+    restricción DURA (ver restricción #7, caso especial). Este test antes
+    verificaba que el modelo "cedía" (N1 trabajaba el domingo) cuando no
+    quedaba nadie más para cubrir Mañana+Tarde; ahora, con la regla dura,
+    ese mismo conflicto debe reportarse como INFEASIBLE genuino — el hueco
+    de cobertura no puede resolverse a costa de la regla de descanso del
+    sustituto. Staff mínimo (N1-N4, SIN el buffer N5/N6 de otros tests de
+    este archivo) para preservar la escasez real que crea el conflicto."""
     cfg = _cfg_mozos()
-    # N1 sin par consecutivo disponible (término F activo) Y N2+N3 de
-    # vacaciones el domingo: si N1 también librara ese día, solo quedaría
-    # N4 para cubrir Mañana+Tarde (mínimo 1 cada uno) — imposible con una
-    # sola persona.
-    staff = _staff_mozos({
-        "N1": ["Martes", "Jueves"],
-        "N2": ["Domingo"],
-        "N3": ["Domingo"],
-    })
+    staff = [
+        {"name": "NightFixed", "role": "night_fixed"},
+        {"name": "N1", "role": "normal", "forced_days_off": ["Martes", "Jueves"]},
+        {"name": "N2", "role": "normal", "forced_days_off": ["Domingo"]},
+        {"name": "N3", "role": "normal", "forced_days_off": ["Domingo"]},
+        {"name": "N4", "role": "normal"},
+    ]
 
-    model, x, names, _ = _construir_modelo(staff, SEMANA, cfg, nombre_sustituto_cobertura="N1")
+    model, x, names, _ = _construir_modelo(staff, SEMANA, cfg, nombre_sustituto_cobertura="N1", dias_bloqueados_externos={"N1": {4, 5}})
     model.Add(x["N1", 4, "Noche"] == 1)
     model.Add(x["N1", 5, "Noche"] == 1)
 
-    sched = _resolver_y_extraer(model, x, names)  # no debe lanzar RuntimeError
-
-    assert sched["N1"][6] != "Libre", (
-        f"Se esperaba que N1 NO librara el domingo (cobertura mínima lo "
-        f"exige, N2/N3 de vacaciones ese día): {sched['N1']}"
-    )
+    with pytest.raises(RuntimeError, match="INFEASIBLE"):
+        _resolver_y_extraer(model, x, names)
 
 
 # ─── No afecta a quien no es el sustituto ───────────────────────────────────
 
 def test_no_afecta_a_quien_no_es_el_sustituto():
-    """Con el término F activo para N1 (sin par consecutivo disponible),
-    forzar que N2 (NO es el sustituto) trabaje el Domingo no debe costar
-    nada en el objetivo. Forzar lo mismo para N1 sí debe encarecerlo en
-    exactamente PESO_DOMINGO_SUSTITUTO."""
+    """NOTA (esta sesión — regla dura): forzar que N2 (NO es el sustituto)
+    trabaje el Domingo no afecta en nada la regla del sustituto (N1 sigue
+    forzado a librar el domingo, sin cambio de objetivo). Forzar que N1
+    (el sustituto real) trabaje el domingo ahora contradice directamente la
+    restricción dura #7 (x[N1,6,"Libre"]==1) — ya no es una cuestión de
+    coste (antes PESO_DOMINGO_SUSTITUTO), es un conflicto duro genuino:
+    debe reportarse INFEASIBLE."""
     cfg = _cfg_mozos()
     staff = _staff_mozos({"N1": ["Martes", "Jueves"]})
 
     def _resolver(forzar_domingo_trabajado_de):
-        model, x, names, _ = _construir_modelo(staff, SEMANA, cfg, nombre_sustituto_cobertura="N1")
+        model, x, names, _ = _construir_modelo(staff, SEMANA, cfg, nombre_sustituto_cobertura="N1", dias_bloqueados_externos={"N1": {4, 5}})
         model.Add(x["N1", 4, "Noche"] == 1)
         model.Add(x["N1", 5, "Noche"] == 1)
         model.Add(x[forzar_domingo_trabajado_de, 6, "Libre"] == 0)
@@ -242,26 +257,22 @@ def test_no_afecta_a_quien_no_es_el_sustituto():
         return objetivo
 
     model_base, x_base, names_base, _ = _construir_modelo(
-        staff, SEMANA, cfg, nombre_sustituto_cobertura="N1"
+        staff, SEMANA, cfg, nombre_sustituto_cobertura="N1",
+        dias_bloqueados_externos={"N1": {4, 5}},
     )
     model_base.Add(x_base["N1", 4, "Noche"] == 1)
     model_base.Add(x_base["N1", 5, "Noche"] == 1)
     _, objetivo_base = _solve_con_objetivo(model_base, x_base, names_base)
 
     objetivo_n2_trabaja_domingo = _resolver("N2")
-    objetivo_n1_trabaja_domingo = _resolver("N1")
-
     assert objetivo_n2_trabaja_domingo == objetivo_base, (
         f"Forzar que N2 (no es el sustituto) trabaje el domingo no debería "
-        f"cambiar el objetivo (término F no debe incluirlo): base="
-        f"{objetivo_base}, con N2 forzado={objetivo_n2_trabaja_domingo}"
+        f"cambiar el objetivo (la regla dura de N1 es independiente de N2): "
+        f"base={objetivo_base}, con N2 forzado={objetivo_n2_trabaja_domingo}"
     )
-    assert objetivo_n1_trabaja_domingo == objetivo_base + PESO_DOMINGO_SUSTITUTO, (
-        f"Forzar que N1 (el sustituto) trabaje el domingo debería encarecer "
-        f"el objetivo en exactamente PESO_DOMINGO_SUSTITUTO "
-        f"({PESO_DOMINGO_SUSTITUTO}): base={objetivo_base}, con N1 forzado="
-        f"{objetivo_n1_trabaja_domingo}"
-    )
+
+    with pytest.raises(RuntimeError, match="INFEASIBLE"):
+        _resolver("N1")
 
 
 # ─── No se activa en recepción (prefer_next_week_for_cover=False) ──────────
@@ -270,6 +281,14 @@ def test_no_se_activa_en_recepcion():
     cfg = _cfg_recepcion()
     assert cfg.prefer_next_week_for_cover is False
 
+    # N1-N7 (no solo N1-N5): con la restricción dura de patrón de libres
+    # (motor_cpsat.DIAS_LIBRES_SEGUIDOS_POR_SEMANA), 6 "normal" ya cubrían
+    # la demanda diaria exactamente al límite (0 de margen: oferta ==
+    # demanda persona-día) — factible en teoría pero sin ningún margen
+    # para que el par CONSECUTIVO de cada uno encaje en una rotación real,
+    # infactible en la práctica por un motivo ajeno a lo que este test
+    # verifica (el gating de prefer_next_week_for_cover en recepción). Un
+    # 7º "normal" da el margen real que hacía falta.
     staff = [
         {"name": "Jefe", "role": "jefe"},
         {"name": "N1", "role": "normal"},
@@ -277,6 +296,8 @@ def test_no_se_activa_en_recepcion():
         {"name": "N3", "role": "normal"},
         {"name": "N4", "role": "normal"},
         {"name": "N5", "role": "normal"},
+        {"name": "N6", "role": "normal"},
+        {"name": "N7", "role": "normal"},
     ]
 
     model_sin, x_sin, names_sin, _ = _construir_modelo(staff, SEMANA, cfg)
@@ -312,30 +333,47 @@ def test_solapamiento_racha_5_noches_y_sustituto_misma_persona_misma_semana():
          (Viernes+Sábado) esta semana -> por sí solo forzaría "Lunes"+
          "Martes" la semana siguiente, sin condición.
 
-    Se fuerza el escenario con SOLO entradas legítimas del orquestador real
-    (generar_semana_cpsat_con_cobertura_nocturna, sin tocar _construir_
-    modelo): NocheFijo tiene una ausencia PARCIAL (forced_days_off =
-    Martes+Miércoles+Jueves, p.ej. una baja de 3 días) que dentro de esa
-    misma semana se solapa con sus días fijos Viernes+Sábado -> deja
-    Martes-Sábado sin cobertura de Noche. Dando a todo el resto de la
-    plantilla un rol en cfg.no_night_roles, Objetivo queda como la ÚNICA
-    persona elegible para Noche, así que min_coverage Noche=1 la fuerza
-    estructuralmente a cubrir esos 5 días -- sin necesidad de forzar
-    directamente ninguna celda del modelo. La ausencia es solo de 3 días
-    (no toda la semana), así que no activa el modo respaldo (el contador de
-    ausencias consecutivas de night_fixed sigue en 0) y la selección de
-    sustituto sigue el camino normal de una sola llamada.
+    NOTA (esta sesión — hallazgo de producción, restricción dura NUEVA de
+    patrón de libres, motor_cpsat.DIAS_LIBRES_SEGUIDOS_POR_SEMANA): la
+    versión original de este test dejaba que la necesidad de Objetivo
+    cubrir Martes-Sábado emergiera SOLO de la presión de cobertura mínima
+    + cfg.no_night_roles (sin forzar directamente ninguna celda), tal como
+    decidiría el orquestador real. Eso ya no es compatible con la
+    restricción dura nueva: _construir_modelo solo sabe qué días están
+    "no disponibles" para el patrón de libres de una persona a través de
+    dias_bloqueados_externos (días YA fijados por una restricción añadida
+    DESPUÉS de _construir_modelo, ver su docstring) — los días Martes-
+    Jueves de este escenario NO se fijan así (emergen de la optimización,
+    no de una asignación externa previa), así que la restricción nueva no
+    podía saber que esos días eran estructuralmente obligatorios para
+    Objetivo, y el patrón de 2 libres (que caería en Lunes+Domingo, no
+    consecutivos entre sí) competía con la cobertura mínima de forma
+    espuria. Se reconstruye el escenario con _construir_modelo +
+    agregar_restriccion_racha_noches directamente (mismo patrón que otros
+    tests de este archivo, p.ej. test_no_afecta_a_quien_no_es_el_
+    sustituto), indicando explícitamente dias_bloqueados_externos para que
+    la restricción nueva disponga de la misma información que tendría en
+    el escenario real, y replicando a mano (no reimplementando, solo
+    aplicando literalmente) las 5 líneas de unión incondicional que
+    generar_semana_cpsat_con_cobertura_nocturna ya aplica sobre
+    forced_days_off_extra — la lógica de unión en sí no cambia."""
+    from motor_cpsat import agregar_restriccion_racha_noches, _resolver_y_extraer_con_extra
 
-    Verifica que forced_days_off_extra["Objetivo"] sea EXACTAMENTE la unión
-    ["Lunes", "Martes"] -- sin duplicados y sin que un mecanismo pise al
-    otro (mecanismo 1 solo pide "Lunes"; mecanismo 2 pide "Lunes"+"Martes"
-    incondicional; la unión no debe perder "Martes" ni duplicar "Lunes")."""
     cfg = _cfg_mozos(
         min_coverage={"Mañana": 2, "Tarde": 2, "Noche": 1, "Partido": 0},
         max_coverage={"Mañana": 4, "Tarde": 4, "Noche": 1, "Partido": 1},
         no_night_roles={"diurno"},
+        night_fixed_days_off=[4, 5],
+        prefer_next_week_for_cover=True,
     )
     staff = [
+        # NocheFijo cubre Noche con normalidad Lunes y Domingo (turno fijo,
+        # solo ausente Martes-Jueves por forced_days_off y Viernes+Sábado
+        # por night_fixed_days_off) — sin esta persona, Objetivo sería el
+        # ÚNICO candidato posible también Lunes/Domingo (nadie más está
+        # fuera de cfg.no_night_roles), lo que chocaría de forma genuina
+        # con su propio patrón de libres (necesita estar libre esos 2 días
+        # concretos) — no es lo que este test existe para probar.
         {"name": "NocheFijo", "role": "night_fixed",
          "forced_days_off": ["Martes", "Miércoles", "Jueves"]},
         {"name": "Objetivo", "role": "normal"},
@@ -343,36 +381,81 @@ def test_solapamiento_racha_5_noches_y_sustituto_misma_persona_misma_semana():
         {"name": "D2", "role": "diurno"},
         {"name": "D3", "role": "diurno"},
         {"name": "D4", "role": "diurno"},
+        {"name": "D5", "role": "diurno"},
+        {"name": "D6", "role": "diurno"},
     ]
-    estado_rotacion = {
-        "orden": ["Objetivo"],
-        "siguiente_turno": "Objetivo",
-        "deudas": {},
-        "usar_orden_fijo": True,
-        "historico_balance": {},
-        "ausencias_night_fixed_consecutivas": 0,
-    }
 
-    resultado = generar_semana_cpsat_con_cobertura_nocturna(
-        staff, SEMANA, cfg, estado_rotacion, noches_ultimos_5_dias={},
+    model, x, names, by_name = _construir_modelo(
+        staff, SEMANA, cfg, nombre_sustituto_cobertura="Objetivo",
+        dias_bloqueados_externos={"Objetivo": {1, 2, 3, 4, 5}},
     )
+    for d in range(1, 6):  # Martes-Sábado: Objetivo cubre Noche (único elegible)
+        model.Add(x["Objetivo", d, "Noche"] == 1)
 
-    turnos = resultado["schedule"]["Objetivo"]
+    # NOTA (esta sesión — regla de racha mínima de 2, MIN_NOCHES_RACHA):
+    # NocheFijo trabaja Noche por turno fijo Lunes y Domingo (Martes-Jueves
+    # forzado libre por vacación, Viernes+Sábado por night_fixed_days_off).
+    # Un empalme VACÍO ({} -> [False]*5 para todos) es IRREAL para un
+    # night_fixed en marcha: su patrón semanal recurrente SIEMPRE trabaja el
+    # Domingo anterior (turno fijo), así que el Lunes de esta semana NUNCA
+    # está genuinamente aislado en producción — el empalme correcto debe
+    # reflejar ese Domingo pasado en Noche (índice 4), igual que pasaría con
+    # el estado real. Sin este dato, el Lunes de NocheFijo parece una noche
+    # suelta aislada y choca de forma espuria con MIN_NOCHES_RACHA(2).
+    # personas_bloque_continua={"NocheFijo"}: réplica manual de la misma
+    # exención que generar_semana_cpsat_con_cobertura_nocturna aplica siempre
+    # a night_fixed (ver motor_cpsat.py) — su Domingo en Noche es turno fijo
+    # estructural, no un arranque nuevo que necesite verificarse contra el
+    # Sábado (que para NocheFijo es Libre por night_fixed_days_off, no por
+    # elección). Sin esta exención, la regla conservadora de Domingo
+    # (Domingo<=Sábado) chocaría de forma espuria con su propio turno fijo.
+    postweek_vars = agregar_restriccion_racha_noches(
+        model, x, names,
+        noches_ultimos_5_dias={"NocheFijo": [False, False, False, False, True]},
+        personas_bloque_continua={"NocheFijo"},
+    )
+    extra_vars = {}
+    for n in names:
+        extra_vars[f"{n}__lunes"], extra_vars[f"{n}__martes"] = postweek_vars[n]
+
+    schedule, valores_extra = _resolver_y_extraer_con_extra(model, x, names, extra_vars)
+
+    turnos = schedule["Objetivo"]
     assert turnos[1:6] == ["Noche"] * 5, (
         f"Precondición del escenario: se esperaba Objetivo con Noche "
-        f"Martes-Sábado (única elegible, cobertura mínima la fuerza), "
-        f"fue {turnos}"
+        f"Martes-Sábado: {turnos}"
     )
     assert turnos[6] == "Libre", (
         f"Domingo de esta semana debía ser 'Libre' (mitad del descanso "
         f"post-racha que SÍ cabe dentro de la semana), fue {turnos[6]!r}"
     )
-    assert resultado["estado_rotacion"]["ausencias_night_fixed_consecutivas"] == 0, (
-        "una ausencia parcial (3 días, no toda la semana) no debe activar "
-        "el contador de ausencias consecutivas de night_fixed"
+    assert valores_extra["Objetivo__lunes"] == 1, (
+        "el mecanismo 1 (descanso post-racha) debía activar 'Lunes' para "
+        "la semana siguiente (racha de 5 termina en Sábado, 1 de los 2 "
+        "días de descanso cae fuera de esta semana)"
+    )
+    assert valores_extra["Objetivo__martes"] == 0, (
+        "por sí solo, el mecanismo 1 NO debía pedir 'Martes' (el otro día "
+        "de descanso, Domingo, sí cupo dentro de esta semana)"
     )
 
-    extra = resultado["forced_days_off_extra"].get("Objetivo")
+    # Unión de ambos mecanismos — misma lógica, literal, que
+    # generar_semana_cpsat_con_cobertura_nocturna aplica sobre el
+    # diccionario que ya construyó a partir de postweek_vars (mecanismo 1)
+    # antes de fusionar con la compensación incondicional (mecanismo 2).
+    forced_days_off_extra = {}
+    dias = []
+    if valores_extra["Objetivo__lunes"]:
+        dias.append("Lunes")
+    if valores_extra["Objetivo__martes"]:
+        dias.append("Martes")
+    if dias:
+        forced_days_off_extra["Objetivo"] = dias
+    if cfg.prefer_next_week_for_cover:
+        existentes = forced_days_off_extra.get("Objetivo", [])
+        forced_days_off_extra["Objetivo"] = list(dict.fromkeys(existentes + ["Lunes", "Martes"]))
+
+    extra = forced_days_off_extra.get("Objetivo")
     assert extra == ["Lunes", "Martes"], (
         f"Se esperaba la unión exacta de ambos mecanismos (['Lunes', "
         f"'Martes']), sin que uno pisara al otro: {extra}"
@@ -384,53 +467,37 @@ def test_solapamiento_racha_5_noches_y_sustituto_misma_persona_misma_semana():
 
 # ─── Gating: con par consecutivo disponible, gana la continuidad ───────────
 
-def test_gating_prefiere_par_consecutivo_sobre_domingo_suelto():
-    """Reproduce el escenario de estrés que detectó el bug original: N1 SIN
-    ningún día bloqueado (par consecutivo estructuralmente disponible), y
-    una trampa de escasez real que fuerza, SI N1 trabaja tanto Lunes como
-    Martes, turnos distintos entre ambos días (rotura de continuidad
-    inevitable — Partido bloqueado como escapatoria):
-
-      - N2 agota el único hueco de Tarde el Lunes.
-      - N3 agota el único hueco de Mañana el Martes.
-      - N1 forzado a librar Miércoles (común a ambas alternativas) y a
-        trabajar Jueves; exactamente uno de {Martes, Domingo} es su
-        segundo libre (opción real, no una tercera vía).
-
-    Opción A (par consecutivo Martes+Miércoles, sin romper continuidad,
-    sin domingo): antes del fix costaba 15 (término F sin gating). Con el
-    gating, el término F ni se añade (hay par consecutivo disponible) ->
-    coste 0.
-    Opción B (Miércoles+Domingo sueltos, Lunes+Martes trabajados con
-    turnos distintos): coste 5 (rotura), término F ausente igualmente.
-
-    Antes del fix el solver elegía B (5 < 15). Con el gating, el término F
-    no compite en absoluto para N1 (hay par consecutivo disponible) — el
-    objetivo se reduce a minimizar solo B, así que ahora debe elegir A.
-    """
-    cfg = _cfg_mozos(
-        max_coverage={"Mañana": 1, "Tarde": 1, "Noche": 1, "Partido": 0},  # Partido bloqueado
-    )
+def test_domingo_no_exige_par_consecutivo_aunque_haya_uno_disponible():
+    """NOTA (esta sesión — regla de negocio confirmada por el usuario): el
+    mozo que cubre Viernes+Sábado libra SIEMPRE el Domingo (regla dura,
+    restricción #7 caso especial) y el día libre restante puede colocarse
+    donde haga falta, SIN exigir que forme un par consecutivo — ni siquiera
+    cuando hay uno estructuralmente disponible (a diferencia de cualquier
+    otra persona normal, para quien restricción #7 SÍ exige un par cuando
+    existe). Se fuerza Miércoles Libre y Jueves trabajado: el Domingo YA
+    cubre uno de los 2 libres, así que el patrón solo exige 1 Libre más
+    entre los días no forzados — Miércoles ya lo satisface, y Martes queda
+    libre para trabajar sin violar nada."""
+    cfg = _cfg_mozos()
     staff = _staff_mozos()  # N1 sin días bloqueados -> par consecutivo SÍ disponible
-    assert _tiene_par_consecutivo_disponible(cfg, set())  # confirma la precondición del gating
+    assert _tiene_par_consecutivo_disponible(cfg, set())  # confirma que SÍ había un par posible
 
-    model, x, names, _ = _construir_modelo(staff, SEMANA, cfg, nombre_sustituto_cobertura="N1")
+    model, x, names, _ = _construir_modelo(staff, SEMANA, cfg, nombre_sustituto_cobertura="N1", dias_bloqueados_externos={"N1": {4, 5}})
     model.Add(x["N1", 4, "Noche"] == 1)   # Viernes: cubre
     model.Add(x["N1", 5, "Noche"] == 1)   # Sábado: cubre
     model.Add(x["N1", 2, "Libre"] == 1)   # Miércoles: libre siempre (común)
-    model.Add(x["N1", 0, "Libre"] == 0)   # Lunes: debe trabajar
-    model.Add(x["N1", 3, "Libre"] == 0)   # Jueves: debe trabajar
-    model.Add(x["N1", 1, "Libre"] + x["N1", 6, "Libre"] == 1)  # exactamente uno: Martes o Domingo
-    model.Add(x["N2", 0, "Tarde"] == 1)   # agota el único slot de Tarde el Lunes
-    model.Add(x["N3", 1, "Mañana"] == 1)  # agota el único slot de Mañana el Martes
+    model.Add(x["N1", 3, "Libre"] == 0)   # Jueves: debe trabajar (Miércoles no puede emparejarse con Jueves)
 
     sched = _resolver_y_extraer(model, x, names)
 
-    lunes, martes, domingo = sched["N1"][0], sched["N1"][1], sched["N1"][6]
-    assert martes == "Libre", (
-        f"Se esperaba que el gating hiciera preferir el par consecutivo "
-        f"Martes+Miércoles (sin romper continuidad) en vez de sacrificarlo "
-        f"por el domingo suelto: horario N1={sched['N1']}"
+    domingo = sched["N1"][6]
+    assert domingo == "Libre", (
+        f"El Domingo del sustituto de Viernes+Sábado es SIEMPRE Libre "
+        f"(regla dura), con o sin par consecutivo disponible: {sched['N1']}"
     )
-    assert domingo != "Libre"
-    assert lunes == "Mañana", f"Lunes forzado por escasez a Mañana, fue {lunes}"
+    libres_lunes_a_jueves = sched["N1"][0:4].count("Libre")
+    assert libres_lunes_a_jueves == 1, (
+        f"Entre Lunes y Jueves debía haber exactamente 1 Libre más (el "
+        f"segundo del patrón de 2, ya satisfecho por Miércoles, sin exigir "
+        f"que forme par con nada): horario N1={sched['N1']}"
+    )

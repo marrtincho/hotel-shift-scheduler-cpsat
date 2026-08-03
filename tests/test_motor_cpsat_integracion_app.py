@@ -45,6 +45,13 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(herramientas, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(herramientas, "BACKUP_DIR", str(backup))
     monkeypatch.setattr(herramientas, "INTERVENCIONES_FILE", str(tmp_path / "intervenciones.json"))
+    # CONFIG_MOTOR_FILE (interruptor del motor CP-SAT) se calcula sobre
+    # herramientas.DATA_DIR en el momento de IMPORTAR el módulo, no se
+    # recalcula solo por monkeypatchear DATA_DIR arriba -- sin esto, el
+    # fallback de motor_cpsat_activo() leería el fichero REAL de
+    # producción (data/config_motor.json) en vez de quedar aislado en
+    # tmp_path, contaminando estos tests con el estado real del switch.
+    monkeypatch.setattr(herramientas, "CONFIG_MOTOR_FILE", str(tmp_path / "config_motor.json"))
     monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
     monkeypatch.delenv("USAR_MOTOR_CPSAT", raising=False)
     return tmp_path
@@ -172,6 +179,20 @@ def test_generar_con_cpsat_activo_mozos_respeta_contrato_de_seis_valores(
 
 def test_estado_cpsat_persiste_y_se_recupera_entre_semanas_encadenadas(
         client, data_dir, monkeypatch):
+    """NOTA (esta sesión — Opción B del diagnóstico de "Noche fantasma" tras
+    edición manual): estado_rotacion (orden fijo + deudas, una cola de
+    turnos que no es un hecho observable en el schedule) sigue
+    persistiéndose sin cambios en cpsat_estado_{dept}.json. noches_ultimos_
+    5_dias y forced_days_off_extra YA NO se guardan ahí -- se derivan
+    siempre del historial real en cada llamada (app._derivar_estado_racha_
+    cpsat_desde_historial), así que este test ya no los busca en el
+    fichero: en su lugar, confirma que lo que recibió generar_semana_cpsat_
+    con_cobertura_nocturna en cada llamada coincide con lo que esa función
+    de derivación calcula a partir del historial real ya guardado tras la
+    semana anterior (ver tests/test_estado_cpsat_deriva_de_historial.py
+    para la cobertura completa de ese mecanismo, incluida su interacción
+    con ediciones manuales)."""
+    import app as app_module
     import motor_cpsat
     from herramientas import guardar_plantilla
     from modelo_mozos import STAFF_DEFAULT as MOZOS_STAFF
@@ -194,6 +215,7 @@ def test_estado_cpsat_persiste_y_se_recupera_entre_semanas_encadenadas(
 
     estado_path = os.path.join(str(data_dir), "cpsat_estado_mozos.json")
     estados_en_disco = []
+    cfg = app_module._get_dept_config("mozos")
 
     for i in range(3):
         semana = SEMANA_MOZOS + timedelta(weeks=i)
@@ -207,25 +229,32 @@ def test_estado_cpsat_persiste_y_se_recupera_entre_semanas_encadenadas(
 
     assert len(llamadas) == 3
 
-    # Cada entrada guardada en disco trae las tres claves que
-    # _generar_con_motor_cpsat necesita reconstruir en la llamada siguiente.
+    # El fichero ya solo persiste estado_rotacion -- ver nota de la
+    # docstring arriba (Opción B del diagnóstico de esta sesión).
     for estado in estados_en_disco:
-        assert set(estado.keys()) == {
-            "estado_rotacion", "noches_ultimos_5_dias", "forced_days_off_extra",
-        }
+        assert set(estado.keys()) == {"estado_rotacion"}
 
     # Semana 1: no había fichero de estado previo -> arranca de la semilla
     # inicial (_estado_rotacion_inicial_cpsat), no de un estado_rotacion vacío.
     assert llamadas[0]["estado_rotacion"]["orden"]
     assert llamadas[0]["noches_ultimos_5_dias"] == {}
 
-    # Semana 2 y 3: reciben EXACTAMENTE lo que quedó persistido tras la
-    # llamada anterior -- la prueba de que el estado se recupera de verdad
-    # entre semanas, no solo que el fichero existe.
+    # Semana 2 y 3: estado_rotacion se recupera EXACTAMENTE de lo
+    # persistido tras la llamada anterior (sin cambios respecto a antes),
+    # y noches_ultimos_5_dias coincide con lo que la derivación calcula a
+    # partir del historial real ya guardado tras la semana anterior (no
+    # con ninguna copia cacheada -- ya no existe ninguna).
+    semana2 = SEMANA_MOZOS + timedelta(weeks=1)
+    semana3 = SEMANA_MOZOS + timedelta(weeks=2)
+    noches_esperadas_2, _ = app_module._derivar_estado_racha_cpsat_desde_historial(
+        "mozos", semana2, cfg)
+    noches_esperadas_3, _ = app_module._derivar_estado_racha_cpsat_desde_historial(
+        "mozos", semana3, cfg)
+
     assert llamadas[1]["estado_rotacion"] == estados_en_disco[0]["estado_rotacion"]
-    assert llamadas[1]["noches_ultimos_5_dias"] == estados_en_disco[0]["noches_ultimos_5_dias"]
+    assert llamadas[1]["noches_ultimos_5_dias"] == noches_esperadas_2
     assert llamadas[2]["estado_rotacion"] == estados_en_disco[1]["estado_rotacion"]
-    assert llamadas[2]["noches_ultimos_5_dias"] == estados_en_disco[1]["noches_ultimos_5_dias"]
+    assert llamadas[2]["noches_ultimos_5_dias"] == noches_esperadas_3
 
 
 # ═══════════════════════════════════════════════════════════════════════════

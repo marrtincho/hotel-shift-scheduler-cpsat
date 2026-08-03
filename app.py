@@ -705,28 +705,108 @@ def _estado_rotacion_inicial_cpsat(staff_list: list, cfg) -> dict:
     }
 
 
+def _derivar_estado_racha_cpsat_desde_historial(dept_id: str, week_start: date, cfg) -> tuple:
+    """Deriva noches_ultimos_5_dias y forced_days_off_extra SIEMPRE del
+    historial real ya guardado (mismo patrón que _prev_sunday_shifts arriba),
+    en vez de leer una copia cacheada en cpsat_estado_{dept}.json.
+
+    Motivo (diagnóstico de esta sesión): esos dos valores, cuando se
+    persistían tal cual los calculó el solver en el momento de generar,
+    quedaban desincronizados en cuanto alguien editaba a mano (api_editar_
+    turno) el domingo o los últimos días de una racha de noches de la
+    semana ya generada -- el fichero de caché nunca se enteraba de esa
+    edición, así que la semana siguiente heredaba una "Noche fantasma" que
+    ya no existía en el horario real. Derivándolos aquí, en cada llamada,
+    del schedule REAL tal como quedó en el historial (que api_editar_turno
+    sí actualiza), la clase entera de bug desaparece: nunca hay una copia
+    aparte de la realidad que pueda desincronizarse.
+
+    Solo hace falta mirar la semana INMEDIATAMENTE anterior (week_start - 7
+    días): los dos mecanismos que alimentan forced_days_off_extra caen
+    enteramente dentro de esos 7 días reales, sin necesitar empalme más
+    atrás -- ver razonamiento completo en los comentarios de abajo.
+    """
+    historial = cargar_historial(dept_id)
+    prev_key = _semana_str(week_start - timedelta(weeks=1))
+    prev_schedule = historial.get(prev_key, {}).get("schedule", {})
+
+    noches_ultimos_5_dias = {}
+    forced_days_off_extra = {}
+    cubrieron_night_fixed_days_off = set()
+
+    for nombre, turnos in prev_schedule.items():
+        if len(turnos) != 7:
+            continue
+        # Empalme para la restricción de racha de la semana que se va a
+        # generar: miércoles a domingo de la semana anterior (mismo formato
+        # que noches_siguiente en motor_cpsat.generar_semana_cpsat_con_
+        # cobertura_nocturna).
+        noches_ultimos_5_dias[nombre] = [turnos[d] == "Noche" for d in range(2, 7)]
+
+        # Mecanismo 1 (descanso de racha que no cupo dentro de la semana):
+        # en agregar_restriccion_racha_noches, los ÚNICOS arranques de
+        # racha-de-5 que pueden desbordar hacia la semana siguiente (g=6 y
+        # g=7 en esa función) corresponden exactamente a "Martes-Sábado" y
+        # "Miércoles-Domingo" de la semana anterior -- ambos tramos caen
+        # enteramente dentro de sus 7 días reales, sin necesitar mirar más
+        # atrás en el historial.
+        termina_sabado  = turnos[1:6] == ["Noche"] * 5   # Martes-Sábado
+        termina_domingo = turnos[2:7] == ["Noche"] * 5   # Miércoles-Domingo
+        dias_extra = []
+        if termina_sabado or termina_domingo:
+            dias_extra.append(DAYS[0])
+        if termina_domingo:
+            dias_extra.append(DAYS[1])
+        if dias_extra:
+            forced_days_off_extra[nombre] = dias_extra
+
+        if cfg.night_fixed_days_off and all(
+            d < len(turnos) and turnos[d] == "Noche" for d in cfg.night_fixed_days_off
+        ):
+            cubrieron_night_fixed_days_off.add(nombre)
+
+    # Mecanismo 2 (compensación incondicional Lun+Mar del sustituto único de
+    # cobertura nocturna, cfg.prefer_next_week_for_cover): solo aplica si,
+    # en el schedule real de la semana anterior, UNA sola persona cubrió
+    # Noche en TODOS los días de cfg.night_fixed_days_off -- si fueron
+    # varias personas distintas (modo respaldo, rotación día a día) no hay
+    # "el sustituto de esta semana", igual que nombre_sustituto_unico queda
+    # None en ese caso dentro de generar_semana_cpsat_con_cobertura_nocturna.
+    if cfg.prefer_next_week_for_cover and len(cubrieron_night_fixed_days_off) == 1:
+        sustituto = next(iter(cubrieron_night_fixed_days_off))
+        existentes = forced_days_off_extra.get(sustituto, [])
+        forced_days_off_extra[sustituto] = list(
+            dict.fromkeys(existentes + [DAYS[0], DAYS[1]])
+        )
+
+    return noches_ultimos_5_dias, forced_days_off_extra
+
+
 def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: str,
                              prev_sunday_shifts: dict = None):
     """Adapta generar_semana_cpsat_con_cobertura_nocturna (motor_cpsat.py) a
     la misma tupla de retorno que generate_schedule_valido (modelo_base.py),
     para que el resto de generar_horario() no necesite saber qué motor se usó.
 
-    El motor CP-SAT necesita estado propio entre semanas (estado_rotacion de
-    la cobertura nocturna, noches_ultimos_5_dias para la restricción de
-    racha, y forced_days_off_extra -- el equivalente CP-SAT de
-    prev_week_covers/next_week_rest_days del heurístico) que no encaja en
-    night_covers_{dept}.json (formato propio del heurístico) -- se persiste
-    aparte en cpsat_estado_{dept}.json.
+    estado_rotacion (orden fijo de cobertura y deudas -- una cola de turnos,
+    no un hecho observable en el schedule) sigue persistiéndose en
+    cpsat_estado_{dept}.json, igual que antes. noches_ultimos_5_dias y
+    forced_days_off_extra YA NO se leen de ahí -- se derivan siempre del
+    historial real en cada llamada (ver _derivar_estado_racha_cpsat_desde_
+    historial), para que una edición manual de turno se refleje sin
+    necesitar que ningún endpoint de edición recalcule nada por su cuenta.
     """
     from motor_cpsat import generar_semana_cpsat_con_cobertura_nocturna
 
     estado_path = os.path.join(DATA_DIR, f"cpsat_estado_{dept_id}.json")
     estado_previo = json.loads(open(estado_path, encoding="utf-8").read()) \
         if os.path.exists(estado_path) else {}
-    estado_rotacion       = estado_previo.get("estado_rotacion") \
+    estado_rotacion = estado_previo.get("estado_rotacion") \
         or _estado_rotacion_inicial_cpsat(staff_list, cfg)
-    noches_ultimos_5_dias = estado_previo.get("noches_ultimos_5_dias", {})
-    forced_extra          = estado_previo.get("forced_days_off_extra", {})
+
+    noches_ultimos_5_dias, forced_extra = _derivar_estado_racha_cpsat_desde_historial(
+        dept_id, week_start, cfg
+    )
 
     for person in staff_list:
         dias = forced_extra.get(person["name"])
@@ -744,9 +824,7 @@ def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: s
     )
 
     guardar_json_atomico(estado_path, {
-        "estado_rotacion":       resultado["estado_rotacion"],
-        "noches_ultimos_5_dias": resultado["noches_ultimos_5_dias"],
-        "forced_days_off_extra": resultado["forced_days_off_extra"],
+        "estado_rotacion": resultado["estado_rotacion"],
     })
 
     return resultado["schedule"], staff_list, week_start, {}, {}, []
@@ -895,14 +973,30 @@ def api_generar():
         prev_last_shifts   = _calcular_prev_last_shifts(prev_sched, staff)
 
     if motor_cpsat_activo():
-        full_schedule, staff_final, ws_date, night_cover, this_week_covers, violaciones = \
-            _generar_con_motor_cpsat(
-                staff_list=copy.deepcopy(staff),
-                week_start=semana,
-                cfg=cfg,
-                dept_id=dept_id,
-                prev_sunday_shifts=prev_sunday_shifts,
-            )
+        # El motor CP-SAT, a diferencia del heurístico (que siempre devuelve
+        # algo, con reintentos/relajación internos), puede lanzar RuntimeError
+        # cuando las restricciones duras no tienen ninguna solución posible
+        # (INFEASIBLE genuino). Sin capturarlo aquí, la excepción queda sin
+        # manejar: Flask devuelve su página de error 500 por defecto (HTML,
+        # no JSON), y el frontend (que espera SIEMPRE poder parsear la
+        # respuesta como JSON) lanza una excepción al intentar r.json() sobre
+        # HTML -- el botón "Generando..." nunca llega a la línea que lo
+        # restaura, quedando bloqueado indefinidamente en la interfaz (y, con
+        # gunicorn en un solo worker/hilo, cualquier otra petición -- incluido
+        # "Borrar" -- queda en cola detrás sin poder procesarse mientras el
+        # navegador sigue esperando esta respuesta que nunca llegó en el
+        # formato esperado).
+        try:
+            full_schedule, staff_final, ws_date, night_cover, this_week_covers, violaciones = \
+                _generar_con_motor_cpsat(
+                    staff_list=copy.deepcopy(staff),
+                    week_start=semana,
+                    cfg=cfg,
+                    dept_id=dept_id,
+                    prev_sunday_shifts=prev_sunday_shifts,
+                )
+        except RuntimeError as e:
+            return err(str(e), 422)
     else:
         from modelo_base import generate_schedule_valido
         full_schedule, staff_final, ws_date, night_cover, this_week_covers, violaciones = \
@@ -1074,9 +1168,6 @@ def api_editar_turno():
         return err("Día inválido")
     if turno not in SHIFTS:
         return err(f"Turno inválido: {turno}")
-    error_justificacion = _validar_justificacion(justificacion)
-    if error_justificacion:
-        return err(error_justificacion)
 
     historial = cargar_historial(dept_id)
     key = _semana_str(semana)

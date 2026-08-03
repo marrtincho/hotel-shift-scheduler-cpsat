@@ -1509,19 +1509,25 @@ document.getElementById('btn-generar').onclick = async ()=>{
   const btn = document.getElementById('btn-generar');
   btn.innerHTML = '<span class="spinner"></span> Generando...';
   btn.disabled = true;
-  const semana = isoDate(getMonday(weekOffset));
-  const r = await api('POST','/horario/generar',{semana, dept: currentDept});
-  updateGenerarState();
-  if(!r.ok){ showAlert('err',r.error); return; }
-  lastSchedule = r.data.schedule;
-  lastStaff = r.data.staff;
-  lastFestivos = r.data.festivos||[];
-  lastAdvertencias = r.data.advertencias||[];
-  renderSchedule(r.data);
-  if(r.data.advertencias.length)
-    showAlert('warn',`${r.data.advertencias.length} advertencia(s) en el horario — celdas resaltadas, detalle debajo de la parrilla.`);
-  else
-    showAlert('ok','Horario generado correctamente — sin infracciones.');
+  try{
+    const semana = isoDate(getMonday(weekOffset));
+    const r = await api('POST','/horario/generar',{semana, dept: currentDept});
+    if(!r.ok){ showAlert('err',r.error); return; }
+    lastSchedule = r.data.schedule;
+    lastStaff = r.data.staff;
+    lastFestivos = r.data.festivos||[];
+    lastAdvertencias = r.data.advertencias||[];
+    renderSchedule(r.data);
+    if(r.data.advertencias.length)
+      showAlert('warn',`${r.data.advertencias.length} advertencia(s) en el horario — celdas resaltadas, detalle debajo de la parrilla.`);
+    else
+      showAlert('ok','Horario generado correctamente — sin infracciones.');
+  } finally {
+    // SIEMPRE se restaura el botón, incluso si algo lanza una excepción
+    // inesperada arriba -- un botón atascado en "Generando..." para
+    // siempre es peor que un error visible que al menos permite reintentar.
+    updateGenerarState();
+  }
 };
 
 document.getElementById('btn-vaciar').onclick = async ()=>{
@@ -1533,17 +1539,19 @@ document.getElementById('btn-vaciar').onclick = async ()=>{
   const btn = document.getElementById('btn-vaciar');
   btn.innerHTML = '<span class="spinner"></span> Vaciando...';
   btn.disabled = true;
-  const semana = isoDate(getMonday(weekOffset));
-  const r = await api('POST','/horario/vaciar',{semana, dept: currentDept});
-  updateGenerarState();
-  if(!r.ok){ showAlert('err',r.error); return; }
-  lastSchedule = r.data.schedule;
-  lastStaff = r.data.staff;
-  lastFestivos = r.data.festivos||[];
-  lastAdvertencias = r.data.advertencias||[];
-  updateGenerarState();
-  renderSchedule(r.data);
-  showAlert('info','Semana en blanco. Asigna los turnos a mano en la parrilla.');
+  try{
+    const semana = isoDate(getMonday(weekOffset));
+    const r = await api('POST','/horario/vaciar',{semana, dept: currentDept});
+    if(!r.ok){ showAlert('err',r.error); return; }
+    lastSchedule = r.data.schedule;
+    lastStaff = r.data.staff;
+    lastFestivos = r.data.festivos||[];
+    lastAdvertencias = r.data.advertencias||[];
+    renderSchedule(r.data);
+    showAlert('info','Semana en blanco. Asigna los turnos a mano en la parrilla.');
+  } finally {
+    updateGenerarState();
+  }
 };
 
 document.getElementById('btn-borrar-semana').onclick = async ()=>{
@@ -1555,13 +1563,16 @@ document.getElementById('btn-borrar-semana').onclick = async ()=>{
   const btn = document.getElementById('btn-borrar-semana');
   btn.innerHTML = '<span class="spinner"></span> Borrando...';
   btn.disabled = true;
-  const semana = isoDate(getMonday(weekOffset));
-  const r = await api('DELETE',`/horario/semana?semana=${semana}&dept=${currentDept}`);
-  if(!r.ok){ showAlert('err',r.error); updateGenerarState(); return; }
-  lastSchedule = null; lastStaff = null; lastFestivos = []; lastAdvertencias = [];
-  renderSchedule({staff:[], schedule:{}, festivos:[], advertencias:[], dept: currentDept});
-  updateGenerarState();
-  showAlert('ok','Horario de la semana borrado.');
+  try{
+    const semana = isoDate(getMonday(weekOffset));
+    const r = await api('DELETE',`/horario/semana?semana=${semana}&dept=${currentDept}`);
+    if(!r.ok){ showAlert('err',r.error); return; }
+    lastSchedule = null; lastStaff = null; lastFestivos = []; lastAdvertencias = [];
+    renderSchedule({staff:[], schedule:{}, festivos:[], advertencias:[], dept: currentDept});
+    showAlert('ok','Horario de la semana borrado.');
+  } finally {
+    updateGenerarState();
+  }
 };
 
 document.getElementById('btn-exportar').onclick = async ()=>{
@@ -1629,12 +1640,8 @@ function abrirEditorTurno(span){
   sel.onchange = async ()=>{
     const turno  = sel.value;
     if(turno === actualInterno){ cerrar(); return; }  // sin cambio real, no pedir justificación
-    // Justificación obligatoria de la intervención manual: un único paso
-    // (prompt nativo), sin abrir un modal aparte para no añadir fricción.
-    const justificacion = (prompt(`Justificación para cambiar el turno de ${nombre} (mínimo 5 caracteres):`) || '').trim();
-    if(justificacion.length < 5){ toast('Edición cancelada: falta justificación (mínimo 5 caracteres)','err'); cerrar(); return; }
     const semana = isoDate(getMonday(weekOffset));
-    const r = await api('PUT','/horario/turno',{dept: currentDept, semana, nombre, dia_idx: dia, turno, justificacion});
+    const r = await api('PUT','/horario/turno',{dept: currentDept, semana, nombre, dia_idx: dia, turno});
     if(!r.ok){ toast(r.error,'err'); cerrar(); return; }
     lastSchedule    = r.data.schedule;
     lastAdvertencias = r.data.advertencias||[];
@@ -2692,7 +2699,18 @@ async function api(method, path, body=null){
   const opts = {method, headers:{'Content-Type':'application/json'}};
   if(body) opts.body = JSON.stringify(body);
   const r = await fetch('/api'+path, opts);
-  const d = await r.json();
+  // Defensivo: un error no manejado en el backend (excepción sin capturar)
+  // hace que Flask devuelva su página de error 500 por defecto (HTML, no
+  // JSON) -- sin este try/catch, r.json() lanzaría una excepción aquí que
+  // dejaría cualquier botón "Generando.../Borrando..." bloqueado para
+  // siempre en la interfaz, porque el código que lo restaura nunca llegaría
+  // a ejecutarse (ver diagnóstico de esta sesión).
+  let d;
+  try{
+    d = await r.json();
+  }catch(e){
+    return {ok:false, error:`Error inesperado del servidor (${r.status}). Vuelve a intentarlo o contacta al administrador si persiste.`};
+  }
   if(d.login){ showLogin(); return d; }
   return d;
 }

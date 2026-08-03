@@ -135,7 +135,14 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(herramientas, "BACKUP_DIR", str(backup))
     monkeypatch.setattr(herramientas, "INTERVENCIONES_FILE", str(tmp_path / "intervenciones.json"))
     monkeypatch.setattr(cupos, "CUPOS_EXTRA_FILE", str(tmp_path / "cupos_extra.json"))
+    # CONFIG_MOTOR_FILE (interruptor del motor CP-SAT) se calcula sobre
+    # herramientas.DATA_DIR en el momento de IMPORTAR el módulo -- sin
+    # aislarlo aquí también, motor_cpsat_activo() leería el fichero REAL
+    # de producción (data/config_motor.json) como fallback, contaminando
+    # este test con el estado real del switch en vez de quedar aislado.
+    monkeypatch.setattr(herramientas, "CONFIG_MOTOR_FILE", str(tmp_path / "config_motor.json"))
     monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("USAR_MOTOR_CPSAT", raising=False)
     return tmp_path
 
 

@@ -37,6 +37,7 @@ from motor_cpsat import (
     generar_semana_cpsat_con_cobertura_nocturna,
     _RachaTracker,
     MAX_NOCHES_VENTANA,
+    MIN_NOCHES_RACHA,
 )
 
 SEMANA_INICIAL = date(2099, 4, 6)  # Lunes en futuro lejano
@@ -211,8 +212,16 @@ def test_viernes_de_carla_12_semanas_modo_respaldo_sin_infeasible_y_tracker_coin
         # Réplica INDEPENDIENTE del tracker (mismo código que usa
         # internamente generar_semana_cpsat_con_cobertura_nocturna, pero
         # instanciado aquí para poder capturar, día a día, qué predecía
-        # ANTES de saber el resultado real de cada día).
-        tracker = _RachaTracker(names, noches_ultimos_5_dias)
+        # ANTES de saber el resultado real de cada día). Pasa
+        # descanso_pendiente_inicial (NUEVO, esta sesión) igual que la
+        # llamada real — sin esto, esta réplica sub-predice el descanso
+        # pendiente que cruza el límite de semana (el mismo tipo de fallo
+        # que este test existe para detectar, pero en la réplica del test,
+        # no en el mecanismo real).
+        tracker = _RachaTracker(
+            names, noches_ultimos_5_dias,
+            descanso_pendiente_inicial=estado_rotacion.get("descanso_pendiente_inicial", {}),
+        )
         for d in range(7):
             tracker_predicciones[dia_absoluto + d] = set(tracker.bloqueados())
             elegido_real = next(
@@ -367,3 +376,179 @@ def test_racha_que_completa_al_filo_del_finde_tracker_coincide_con_forced_days_o
             "arrastrar nada extra a la semana siguiente para él: "
             f"{resultado['forced_days_off_extra']}"
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Bloques de cobertura en modo respaldo (NUEVO, esta sesión — regla de
+# rotación de cobertura nocturna en bloques de 4-5 noches seguidas)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _bloques_de_noches(turnos: list) -> list:
+    """Agrupa una secuencia concatenada de turnos en la longitud de cada
+    tramo consecutivo de 'Noche' (un "bloque"). [Noche,Noche,Libre,Noche] ->
+    [2, 1]."""
+    bloques = []
+    i, n = 0, len(turnos)
+    while i < n:
+        if turnos[i] == "Noche":
+            j = i
+            while j < n and turnos[j] == "Noche":
+                j += 1
+            bloques.append(j - i)
+            i = j
+        else:
+            i += 1
+    return bloques
+
+
+def test_bloques_modo_respaldo_caen_en_4_o_5_sin_interrupciones():
+    """8 semanas de modo respaldo permanente (Jefe + 7 "normal", sin
+    night_fixed, sin vacaciones/peticiones para nadie): sin ninguna
+    interrupción posible, TODOS los bloques de Noche de TODAS las personas
+    deben caer exactamente en {4, 5} (BLOQUE_RESPALDO_MIN/MAX) — nunca 1,
+    2, 3, 6 o más. Confirma la regla de negocio (bloques de noches
+    seguidas, no noche suelta a la vez) con un escáner INDEPENDIENTE sobre
+    la salida concatenada, no confiando en que el propio mecanismo se
+    autodeclare correcto."""
+    cfg = _cfg()
+    nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7"]
+    staff = [{"name": "Jefe", "role": "jefe"}] + [
+        {"name": n, "role": "normal"} for n in nombres
+    ]
+    estado_rotacion = _estado_rotacion_inicial(staff, cfg)
+    noches_ultimos_5_dias = {}
+    prev_sunday_shifts = {}
+    forced_extra_prev = {}
+    concatenado = {n: [] for n in nombres}
+
+    n_semanas = 8
+    for i in range(n_semanas):
+        semana = SEMANA_INICIAL + timedelta(weeks=i)
+        staff_semana = copy.deepcopy(staff)
+        for p in staff_semana:
+            extra = forced_extra_prev.get(p["name"])
+            if extra:
+                existentes = p.get("forced_days_off", [])
+                p["forced_days_off"] = list(dict.fromkeys(existentes + extra))
+
+        resultado = generar_semana_cpsat_con_cobertura_nocturna(
+            staff_semana, semana, cfg, estado_rotacion, noches_ultimos_5_dias,
+            prev_sunday_shifts=prev_sunday_shifts,
+        )
+        schedule = resultado["schedule"]
+        for n in nombres:
+            concatenado[n].extend(schedule[n])
+
+        estado_rotacion = resultado["estado_rotacion"]
+        noches_ultimos_5_dias = resultado["noches_ultimos_5_dias"]
+        forced_extra_prev = resultado["forced_days_off_extra"]
+        prev_sunday_shifts = {n: schedule[n][6] for n in nombres}
+
+    # El bloque del titular EN CURSO al terminar la simulación (si lo hay)
+    # queda genuinamente incompleto — no es una interrupción real, solo el
+    # corte de la ventana de observación (n_semanas), así que se excluye de
+    # la comprobación de longitud exacta (su tramo final, aún sin terminar,
+    # es precisamente ese bloque abierto).
+    bloque_final = estado_rotacion.get("bloque_actual") or {}
+    titular_en_curso = bloque_final.get("nombre")
+
+    total_bloques = 0
+    for n in nombres:
+        bloques = _bloques_de_noches(concatenado[n])
+        # Si n es quien queda a mitad de bloque al final de la simulación,
+        # su ÚLTIMO tramo de Noche es ese bloque abierto — se descarta.
+        if n == titular_en_curso and bloques:
+            bloques = bloques[:-1]
+        total_bloques += len(bloques)
+        for longitud in bloques:
+            assert longitud in (4, 5), (
+                f"{n} tiene un bloque de Noche de longitud {longitud} "
+                f"(esperado 4 o 5, sin ninguna vacación/petición que "
+                f"pudiera justificar una interrupción en este escenario): "
+                f"{concatenado[n]}"
+            )
+    assert total_bloques > 0, (
+        f"en {n_semanas} semanas de modo respaldo permanente no se formó "
+        "ningún bloque de Noche — el escenario no estresó el mecanismo de "
+        "bloques en absoluto"
+    )
+
+
+def test_bloque_se_interrumpe_por_vacacion_y_arranca_uno_nuevo():
+    """Sesga el balance para que N1 gane la rotación (igual que 'Viernes de
+    Carla'), lo deja arrancar un bloque en la semana 1 sin ninguna
+    interrupción, y en la semana 2 le concede una vacación/petición a N1
+    justo a mitad de su bloque en curso (bloque_actual). Confirma:
+      1. El bloque de N1 se corta ahí — cubre al menos MIN_NOCHES_RACHA(2)
+         noches antes de la interrupción (regla general de racha mínima),
+         no más allá del día bloqueado.
+      2. Otra persona cubre Noche los días que N1 ya no puede."""
+    cfg = _cfg()
+    nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7"]
+    staff = [{"name": "Jefe", "role": "jefe"}] + [
+        {"name": n, "role": "normal"} for n in nombres
+    ]
+    estado_rotacion = _estado_rotacion_inicial(staff, cfg)
+    estado_rotacion["usar_orden_fijo"] = False
+    estado_rotacion["historico_balance"] = {
+        "N1": {"covers": 0, "pending": 0},
+        **{n: {"covers": 1000, "pending": 0} for n in nombres[1:]},
+    }
+
+    # Semana 1: sin vacaciones — con el balance sesgado hacia N1, alguien
+    # queda a mitad de bloque al terminar la semana (un bloque de 4-5 no
+    # cabe entero en 7 días salvo que arranque exactamente el Lunes con
+    # longitud 5 y nada más — en cuyo caso el bloque SIGUIENTE, de otra
+    # persona, es el que queda a mitad; se interrumpe a QUIEN sea, no se
+    # asume que tiene que ser N1 específicamente).
+    resultado1 = generar_semana_cpsat_con_cobertura_nocturna(
+        copy.deepcopy(staff), SEMANA_INICIAL, cfg, estado_rotacion, {},
+    )
+    bloque_tras_semana1 = resultado1["estado_rotacion"].get("bloque_actual") or {}
+    titular = bloque_tras_semana1.get("nombre")
+    assert titular is not None, (
+        f"precondición del escenario: alguien debía quedar a mitad de "
+        f"bloque al terminar la semana 1 — bloque_actual={bloque_tras_semana1}"
+    )
+    noches_cubiertas_semana1 = bloque_tras_semana1["noches_cubiertas"]
+
+    # Semana 2: el titular del bloque en curso recibe una vacación/petición
+    # concedida el PRIMER día de la semana — interrumpe su bloque en curso
+    # inmediatamente.
+    semana2 = SEMANA_INICIAL + timedelta(weeks=1)
+    staff_semana2 = copy.deepcopy(staff)
+    titular_p = next(p for p in staff_semana2 if p["name"] == titular)
+    titular_p["forced_days_off"] = ["Lunes"]
+    for p in staff_semana2:
+        extra = resultado1["forced_days_off_extra"].get(p["name"])
+        if extra:
+            existentes = p.get("forced_days_off", [])
+            p["forced_days_off"] = list(dict.fromkeys(existentes + extra))
+
+    resultado2 = generar_semana_cpsat_con_cobertura_nocturna(
+        staff_semana2, semana2, cfg, resultado1["estado_rotacion"],
+        resultado1["noches_ultimos_5_dias"],
+        prev_sunday_shifts={n: resultado1["schedule"][n][6] for n in nombres},
+    )
+
+    assert resultado2["schedule"][titular][0] == "Libre", (
+        f"{titular} tiene vacación/petición concedida el Lunes de la "
+        f"semana 2 — debía quedar Libre ese día pese a estar a mitad de "
+        f"bloque: {resultado2['schedule'][titular]}"
+    )
+    assert noches_cubiertas_semana1 >= MIN_NOCHES_RACHA, (
+        f"el bloque interrumpido de {titular} debía cubrir al menos "
+        f"MIN_NOCHES_RACHA({MIN_NOCHES_RACHA}) noches antes de cortarse — "
+        f"cubrió {noches_cubiertas_semana1}"
+    )
+
+    # Otra persona (no el titular interrumpido) debe cubrir Noche el
+    # Lunes de la semana 2.
+    cubridor_lunes = next(
+        (n for n in nombres if resultado2["schedule"][n][0] == "Noche"), None
+    )
+    assert cubridor_lunes is not None and cubridor_lunes != titular, (
+        f"otra persona debía cubrir Noche el Lunes de la semana 2 en vez "
+        f"de {titular} (bloqueado por su vacación/petición): schedule del "
+        f"día: { {n: resultado2['schedule'][n][0] for n in nombres} }"
+    )

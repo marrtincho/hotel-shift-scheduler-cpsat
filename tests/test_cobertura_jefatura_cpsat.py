@@ -185,41 +185,59 @@ def test_semana_completa_dias_ausencia_identicos_en_opcion_a_y_b():
 
 def test_termino_g_penaliza_no_cubrir_turno_fijo_un_dia_de_diario():
     """Verificación de coste (no de schedule) de que el término G actúa
-    también entre semana, no solo el fin de semana: con el jefe ausente
-    toda la semana (Opción A — sin la presión extra de "semana completa"),
-    forzar a Laura a estar Libre un Miércoles cualquiera debe costar
-    EXACTAMENTE PESO_COBERTURA_AUSENCIA más que el óptimo sin forzar nada
-    — confirma que el término está realmente activo ese día concreto, no
-    que "por casualidad" el schedule óptimo coincide con lo esperado (el
-    fallo detectado en la revisión anterior: A y B pueden dar el MISMO
-    schedule sin que eso demuestre que el mecanismo actúa)."""
+    también entre semana, no solo el fin de semana: comparar CUÁL par de
+    libres semanales de Laura (restricción dura NUEVA de patrón de libres,
+    motor_cpsat.DIAS_LIBRES_SEGUIDOS_POR_SEMANA — Laura es "subjefe", sin
+    fixed_days_off propio, así que su par de 2 libres consecutivos es
+    obligatorio, ni más ni menos) cae DENTRO o FUERA de dias_ausencia debe
+    marcar una diferencia exacta en el objetivo — confirma que el término
+    está realmente activo en días de diario, no que "por casualidad" el
+    schedule óptimo coincide con lo esperado (el fallo detectado en la
+    revisión anterior: A y B pueden dar el MISMO schedule sin que eso
+    demuestre que el mecanismo actúa).
+
+    El jefe está ausente solo Lunes-Miércoles (NO toda la semana — con la
+    restricción dura nueva, Laura solo puede tener UN par de 2 libres
+    consecutivos en total, así que ya no se puede aislar el coste de "1
+    día de más" como en la versión anterior de este test; en su lugar se
+    compara el par ENTERO dentro vs fuera de la ausencia). El par base se
+    fija en Jueves-Viernes (fuera de dias_ausencia={Lun,Mar,Mié} Y fuera del
+    fin de semana — evita a propósito activar el término E, que también
+    reacciona si el par cae en Sáb+Dom, contaminando la comparación con
+    algo ajeno a G). El par forzado se fija en Martes-Miércoles, dentro de
+    dias_ausencia: pierde cobertura esos 2 días concretos, coste exacto
+    2×PESO_COBERTURA_AUSENCIA frente al base."""
     from ortools.sat.python import cp_model
 
     cfg = _cfg_con_cobertura(semana_completa=False)  # Opción A: sin presión extra de finde
     staff = _plantilla_holgada()
     juan = next(p for p in staff if p["name"] == "Juan")
-    juan["forced_days_off"] = list(DAYS)
-    dia = 2  # Miércoles, día laborable cualquiera dentro de dias_ausencia
+    juan["forced_days_off"] = ["Lunes", "Martes", "Miércoles"]
 
     model_base, x_base, names_base, by_name_base = _construir_modelo(staff, SEMANA, cfg)
+    model_base.Add(x_base["Laura", 3, "Libre"] == 1)  # Jueves: par fuera de dias_ausencia y del finde
+    model_base.Add(x_base["Laura", 4, "Libre"] == 1)  # Viernes
     solver_base = cp_model.CpSolver()
     solver_base.parameters.max_time_in_seconds = 30.0
-    solver_base.Solve(model_base)
+    status_base = solver_base.Solve(model_base)
+    assert status_base in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     obj_base = solver_base.ObjectiveValue()
 
     model_forzado, x_forzado, names_forzado, by_name_forzado = _construir_modelo(staff, SEMANA, cfg)
-    model_forzado.Add(x_forzado["Laura", dia, "Libre"] == 1)
+    model_forzado.Add(x_forzado["Laura", 1, "Libre"] == 1)  # Martes: par DENTRO de dias_ausencia
+    model_forzado.Add(x_forzado["Laura", 2, "Libre"] == 1)  # Miércoles
     solver_forzado = cp_model.CpSolver()
     solver_forzado.parameters.max_time_in_seconds = 30.0
     status_forzado = solver_forzado.Solve(model_forzado)
     assert status_forzado in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     obj_forzado = solver_forzado.ObjectiveValue()
 
-    assert round(obj_forzado - obj_base) == PESO_COBERTURA_AUSENCIA, (
-        f"Forzar a Laura Libre un día de diario dentro de dias_ausencia "
-        f"debería costar exactamente PESO_COBERTURA_AUSENCIA "
-        f"({PESO_COBERTURA_AUSENCIA}) más que el óptimo: "
-        f"obj_base={obj_base}, obj_forzado={obj_forzado}"
+    assert round(obj_forzado - obj_base) == 2 * PESO_COBERTURA_AUSENCIA, (
+        f"Mover el par de libres obligatorio de Laura de fuera de "
+        f"dias_ausencia (Jue-Vie) a dentro (Mar-Mié) debería costar "
+        f"exactamente 2×PESO_COBERTURA_AUSENCIA "
+        f"({2 * PESO_COBERTURA_AUSENCIA}) más — 2 días de ausencia sin "
+        f"cobertura en vez de 0: obj_base={obj_base}, obj_forzado={obj_forzado}"
     )
 
 
@@ -614,7 +632,16 @@ def test_complementario_cede_si_es_la_unica_forma_de_cubrir_minimo():
     from ortools.sat.python import cp_model
 
     cfg = copy.deepcopy(RECEPCION_CONFIG)
-    staff = _plantilla()
+    # _plantilla_holgada (NUEVO, esta sesión — hallazgo de producción): con
+    # la restricción dura nueva de patrón de libres (motor_cpsat.
+    # DIAS_LIBRES_SEGUIDOS_POR_SEMANA), _plantilla() (8 personas) no deja
+    # margen para que cada "normal"/subjefe/adjunto también encaje su
+    # propio par consecutivo junto con el bloqueo de estrés de Martes —
+    # INFEASIBLE ajeno a lo que este test verifica. La persona "Extra" no
+    # participa del bloqueo (_bloquear_normales solo excluye jefe/subjefe,
+    # así que Extra SÍ queda bloqueada igual que el resto — pero da
+    # cobertura de sobra el resto de la semana).
+    staff = _plantilla_holgada()
     dia_estres = 1  # Martes
 
     def _bloquear_normales(model, x, names, by_name):
@@ -623,7 +650,22 @@ def test_complementario_cede_si_es_la_unica_forma_de_cubrir_minimo():
             if role not in ("jefe", "subjefe"):
                 model.Add(x[name, dia_estres, "Mañana"] == 0)
 
-    # ── 1. Coste exacto del escenario de estrés (sin forzar nada más) ──
+    # ── 1. Coste del escenario de estrés — vía DELTA contra el mismo staff
+    # SIN el bloqueo de estrés (NUEVO, esta sesión: con _plantilla_holgada,
+    # ya no se puede aislar un delta EXACTO de solo H — "Extra" también
+    # necesita reacomodar su propio patrón de 2 libres consecutivos
+    # (restricción dura nueva) ante el bloqueo del Martes, lo que añade
+    # coste adicional ajeno a H; medido empíricamente en +10 extra sobre el
+    # coste de H. Se comprueba un MÍNIMO —delta >= H— en vez de una
+    # igualdad exacta: sigue confirmando que H se paga de verdad (no sale
+    # gratis), que es lo que este test existe para probar) ──
+    model_base, x_base, names_base, by_name_base = _construir_modelo(staff, SEMANA, cfg)
+    solver_base = cp_model.CpSolver()
+    solver_base.parameters.max_time_in_seconds = 30.0
+    status_base = solver_base.Solve(model_base)
+    assert status_base in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+    obj_base = solver_base.ObjectiveValue()
+
     model, x, names, by_name = _construir_modelo(staff, SEMANA, cfg)
     _bloquear_normales(model, x, names, by_name)
 
@@ -631,10 +673,12 @@ def test_complementario_cede_si_es_la_unica_forma_de_cubrir_minimo():
     solver.parameters.max_time_in_seconds = 30.0
     status = solver.Solve(model)
     assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
-    assert round(solver.ObjectiveValue()) == PESO_COMPLEMENTARIO_JEFATURA, (
-        f"El coste óptimo del escenario de estrés debería ser exactamente "
-        f"PESO_COMPLEMENTARIO_JEFATURA ({PESO_COMPLEMENTARIO_JEFATURA}) — "
-        f"la coincidencia se paga, no sale gratis: obj={solver.ObjectiveValue()}"
+    delta = solver.ObjectiveValue() - obj_base
+    assert delta >= PESO_COMPLEMENTARIO_JEFATURA, (
+        f"El coste del escenario de estrés debería superar al base en al "
+        f"menos PESO_COMPLEMENTARIO_JEFATURA ({PESO_COMPLEMENTARIO_JEFATURA}) — "
+        f"la coincidencia se paga, no sale gratis: base={obj_base}, "
+        f"estrés={solver.ObjectiveValue()}"
     )
     assert solver.Value(x["Juan", dia_estres, "Mañana"]) == 1
     assert solver.Value(x["Laura", dia_estres, "Mañana"]) == 1, (
@@ -675,7 +719,13 @@ def test_complementario_no_interfiere_en_dias_de_cobertura_de_ausencia():
 def test_complementario_sin_subjefe_no_activa_termino():
     from modelo_recepcion import RECEPCION_CONFIG
     cfg = copy.deepcopy(RECEPCION_CONFIG)
+    # +1 "normal" extra (NUEVO, esta sesión — hallazgo de producción, ver
+    # motor_cpsat.DIAS_LIBRES_SEGUIDOS_POR_SEMANA): quitar a Laura deja
+    # solo 6 personas no fijas, sin margen para que cada una cumpla
+    # también su propio patrón de 2 libres consecutivos — INFEASIBLE
+    # ajeno a lo que este test verifica.
     staff = [p for p in _plantilla() if p["name"] != "Laura"]  # sin subjefe
+    staff.append({"name": "Extra", "role": "normal", "preferences": []})
 
     sched = generar_semana_cpsat(staff, SEMANA, cfg)
     assert "Laura" not in sched
@@ -685,7 +735,9 @@ def test_complementario_sin_subjefe_no_activa_termino():
 def test_complementario_sin_jefe_no_activa_termino():
     from modelo_recepcion import RECEPCION_CONFIG
     cfg = copy.deepcopy(RECEPCION_CONFIG)
+    # +1 "normal" extra (NUEVO, esta sesión — mismo motivo que arriba).
     staff = [p for p in _plantilla() if p["name"] != "Juan"]  # sin jefe
+    staff.append({"name": "Extra", "role": "normal", "preferences": []})
 
     sched = generar_semana_cpsat(staff, SEMANA, cfg)
     assert "Juan" not in sched

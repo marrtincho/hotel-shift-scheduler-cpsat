@@ -276,10 +276,15 @@ def test_editar_solo_el_nombre_no_genera_intervencion_de_rol(client, data_dir):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 5. Justificación obligatoria en edición de turno
+# 5. Edición de turno — justificación ahora opcional (se quitó el requisito)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_editar_turno_sin_justificacion_falla(client, data_dir):
+def test_editar_turno_sin_justificacion_funciona(client, data_dir):
+    """NOTA (esta sesión — pedido explícito del usuario): se quitó el
+    requisito de justificación obligatoria (mínimo 5 caracteres) al cambiar
+    un turno a mano. El campo sigue aceptándose y guardándose si se manda
+    (ver test_editar_turno_con_justificacion_valida_se_guarda), pero ya no
+    bloquea la edición si viene vacío."""
     _seed_plantilla(["Ana"])
     _seed_historial_semana(SEMANA_INICIO, {"Ana": ["Mañana"] * 7})
     _sesion(client, uid="1", username="admin", rol="admin", nombre="Admin")
@@ -288,18 +293,12 @@ def test_editar_turno_sin_justificacion_falla(client, data_dir):
         "dept": "recepcion", "semana": SEMANA_INICIO.isoformat(),
         "nombre": "Ana", "dia_idx": 0, "turno": "Libre",
     })
-    assert r.status_code == 400
-    assert "justificaci" in r.get_json()["error"].lower()
+    assert r.status_code == 200
 
-
-def test_editar_turno_con_justificacion_corta_falla(client, data_dir):
-    _seed_plantilla(["Ana"])
-    _seed_historial_semana(SEMANA_INICIO, {"Ana": ["Mañana"] * 7})
-    _sesion(client, uid="1", username="admin", rol="admin", nombre="Admin")
-
-    r = _editar_turno(client, nombre="Ana", dia_idx=0, turno="Libre", justificacion="ok")
-    assert r.status_code == 400
-    assert "justificaci" in r.get_json()["error"].lower()
+    from herramientas import cargar_intervenciones
+    intervenciones = cargar_intervenciones()
+    assert len(intervenciones) == 1
+    assert intervenciones[0]["justificacion"] == ""
 
 
 def test_editar_turno_con_justificacion_valida_se_guarda(client, data_dir):

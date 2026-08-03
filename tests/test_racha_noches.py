@@ -208,7 +208,7 @@ def test_estado_limpio_night_fixed_siempre_presente():
 # ─── Escenario 2: estado "sucio" — alguien entra a un paso del límite ──────
 
 def test_estado_sucio_fuerza_descanso_inmediato():
-    nombres = ["N1", "N2", "N3", "N4", "N5", "N6"]
+    nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7"]
     # N1 entra con 4 de sus últimos 5 días ya trabajados como Noche.
     estado_sucio = {"N1": [False, True, True, True, True]}
 
@@ -261,7 +261,7 @@ def _patron_bloques(n_semanas, bloque_presente=(2, 3), bloque_ausente=(2, 3)):
 
 
 def test_alternancia_moderada_night_fixed():
-    nombres = ["N1", "N2", "N3", "N4", "N5", "N6"]
+    nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7"]
     n_semanas = 18
     patron = _patron_bloques(n_semanas, bloque_presente=(2, 3), bloque_ausente=(2, 3))
     assert any(patron) and not all(patron), "el patrón debe alternar presencia/ausencia"
@@ -295,7 +295,7 @@ def test_alternancia_moderada_night_fixed():
 # ─── Escenario 4: alternancia agresiva (cada semana) ────────────────────────
 
 def test_alternancia_agresiva_night_fixed_cada_semana():
-    nombres = ["N1", "N2", "N3", "N4", "N5", "N6"]
+    nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7"]
     n_semanas = 16
     patron = [i % 2 == 1 for i in range(n_semanas)]  # ausente, presente, ausente, ...
 
@@ -334,14 +334,25 @@ def test_control_negativo_sin_restriccion_de_racha_6_noches_es_factible():
         para "estructuralmente imposible de romper" — si alguien comenta
         agregar_restriccion_racha_noches por error, este test lo detecta
         (el primer bloque dejaría de ser el único factible)."""
-    cfg = _cfg()
+    # N1 usa un rol propio ("n1_test_rol") con fixed_days_off=[Domingo]
+    # (NUEVO, esta sesión — hallazgo de producción): _forzar_racha_6 ya deja
+    # a N1 trabajando Lunes-Sábado (6/7 días) sin ninguna alternativa
+    # posible más que el Domingo — con la restricción dura nueva de mínimo
+    # de libres semanales (motor_cpsat.MIN_LIBRES_POR_SEMANA), un rol
+    # "normal" sin más ahí sería estructuralmente incapaz de llegar a 2
+    # libres (solo queda 1 día posible), contaminando el control negativo
+    # (infactible por el mínimo de libres, no por lo que este test existe
+    # para probar). fixed_days_off=[Domingo] excluye a N1 de esa
+    # restricción nueva (mismo mecanismo que "jefe" hoy) y de paso fija el
+    # único día que le quedaba libre de todos modos.
+    cfg = _cfg(fixed_days_off={"jefe": [5, 6], "n1_test_rol": [6]})
     # Sin night_fixed a propósito: night_fixed ya está forzado a Noche vía
     # Fase 1 en los días fuera de cfg.night_fixed_days_off, y chocaría con
     # max_coverage["Noche"]=1 al forzar también a N1 esos mismos días — eso
     # sería un conflicto de cobertura, no de racha, y contaminaría el
     # control negativo (infactible por el motivo equivocado).
-    staff = [{"name": "Jefe", "role": "jefe"}] + [
-        {"name": n, "role": "normal"} for n in ("N1", "N2", "N3", "N4", "N5", "N6")
+    staff = [{"name": "Jefe", "role": "jefe"}, {"name": "N1", "role": "n1_test_rol"}] + [
+        {"name": n, "role": "normal"} for n in ("N2", "N3", "N4", "N5", "N6")
     ]
 
     def _forzar_racha_6(model, x):
@@ -387,7 +398,7 @@ def test_respaldo_dentro_de_una_semana_no_produce_infeasible_espurio_por_racha()
     disponibles para cubrir Noche, evitar que UNA sola encadene más de 5
     seguidas es trivialmente posible, así que cualquier RuntimeError aquí
     sería espurio, no una imposibilidad real."""
-    nombres = ["N1", "N2", "N3", "N4", "N5", "N6"]
+    nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7"]
     cfg = _cfg()
     staff = [{"name": "Jefe", "role": "jefe"}] + [
         {"name": n, "role": "normal"} for n in nombres
@@ -421,3 +432,95 @@ def test_respaldo_dentro_de_una_semana_no_produce_infeasible_espurio_por_racha()
         f"verdad el choque que este test existe para probar. Cubrió "
         f"{noches_n1}: {resultado['schedule']['N1']}"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Restricción NUEVA (esta sesión) — tras Noche solo puede seguir Noche o
+# Libre (Tarde y Partido también quedan bloqueados, no solo Mañana)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_tras_noche_solo_noche_o_libre():
+    """Fuerza a N1 en Noche el lunes y confirma, uno a uno, que el martes:
+      - Tarde y Partido son INFEASIBLE si se fuerzan explícitamente
+        (restricción dura NUEVA de esta sesión — antes solo Mañana estaba
+        bloqueada tras Noche).
+      - Libre y Noche siguen siendo FEASIBLE (la restricción no bloquea
+        más de lo que debe)."""
+    from ortools.sat.python import cp_model
+
+    # N1-N8 (no solo N1-N6): forzar a N1 en Noche 2 días seguidos no deja
+    # margen, con solo 6 "normal", para que cada uno cumpla también su
+    # propio patrón de 2 libres consecutivos (restricción dura de la
+    # sesión anterior) — INFEASIBLE ajeno a lo que este test verifica (la
+    # transición tras Noche). 2 personas extra dan el margen que hacía falta.
+    nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7", "N8"]
+    cfg = _cfg()
+    staff = [{"name": "Jefe", "role": "jefe"}] + [
+        {"name": n, "role": "normal"} for n in nombres
+    ]
+
+    def _resolver_con_martes(turno_martes):
+        model, x, names, by_name = _construir_modelo(staff, SEMANA_INICIO, cfg)
+        model.Add(x["N1", 0, "Noche"] == 1)  # Lunes: N1 hace Noche
+        model.Add(x["N1", 1, turno_martes] == 1)  # Martes: turno forzado a probar
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = 20.0
+        solver.parameters.num_search_workers = 1
+        return solver.Solve(model)
+
+    for turno_prohibido in ("Tarde", "Partido"):
+        status = _resolver_con_martes(turno_prohibido)
+        assert status == cp_model.INFEASIBLE, (
+            f"Tras Noche el lunes, forzar {turno_prohibido!r} el martes "
+            f"debía ser INFEASIBLE (restricción dura nueva: tras Noche solo "
+            f"Noche o Libre) — fue {cp_model.CpSolver().StatusName(status)}"
+        )
+
+    for turno_permitido in ("Noche", "Libre"):
+        status = _resolver_con_martes(turno_permitido)
+        assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE), (
+            f"Tras Noche el lunes, {turno_permitido!r} el martes debía "
+            f"seguir siendo posible — fue {cp_model.CpSolver().StatusName(status)}"
+        )
+
+
+def test_tras_noche_solo_noche_o_libre_transicion_domingo_a_lunes():
+    """Misma restricción, pero anclada en prev_sunday_shifts (transición
+    entre semanas): si el domingo anterior fue Noche, el lunes de esta
+    semana solo puede ser Noche o Libre."""
+    from ortools.sat.python import cp_model
+
+    # N1-N8 (no solo N1-N6): forzar a N1 en Noche 2 días seguidos no deja
+    # margen, con solo 6 "normal", para que cada uno cumpla también su
+    # propio patrón de 2 libres consecutivos (restricción dura de la
+    # sesión anterior) — INFEASIBLE ajeno a lo que este test verifica (la
+    # transición tras Noche). 2 personas extra dan el margen que hacía falta.
+    nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7", "N8"]
+    cfg = _cfg()
+    staff = [{"name": "Jefe", "role": "jefe"}] + [
+        {"name": n, "role": "normal"} for n in nombres
+    ]
+
+    def _resolver_con_lunes(turno_lunes):
+        model, x, names, by_name = _construir_modelo(
+            staff, SEMANA_INICIO, cfg, prev_sunday_shifts={"N1": "Noche"}
+        )
+        model.Add(x["N1", 0, turno_lunes] == 1)
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = 20.0
+        solver.parameters.num_search_workers = 1
+        return solver.Solve(model)
+
+    for turno_prohibido in ("Mañana", "Tarde", "Partido"):
+        status = _resolver_con_lunes(turno_prohibido)
+        assert status == cp_model.INFEASIBLE, (
+            f"Domingo anterior Noche: forzar {turno_prohibido!r} el lunes "
+            f"debía ser INFEASIBLE — fue {cp_model.CpSolver().StatusName(status)}"
+        )
+
+    for turno_permitido in ("Noche", "Libre"):
+        status = _resolver_con_lunes(turno_permitido)
+        assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE), (
+            f"Domingo anterior Noche: {turno_permitido!r} el lunes debía "
+            f"seguir siendo posible — fue {cp_model.CpSolver().StatusName(status)}"
+        )

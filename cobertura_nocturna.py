@@ -35,6 +35,30 @@ de quien la invoque.
     # nocturna — ver la nota de diseño en esa función sobre por qué está
     # separado.
     "ausencias_night_fixed_consecutivas": int,
+
+    # Campo NUEVO (esta sesión — regla de rotación de cobertura nocturna en
+    # bloques): quién está a mitad de un bloque de noches seguidas en modo
+    # respaldo, y cuánto lleva cubierto. Un bloque de BLOQUE_RESPALDO_MIN(4)-
+    # BLOQUE_RESPALDO_MAX(5) noches casi nunca cabe entero en una semana de
+    # 7 días, así que cruza el límite de semana con frecuencia — este campo
+    # es lo que permite retomarlo la semana siguiente exactamente donde se
+    # quedó, en vez de volver a decidir "quién" cada lunes. Lo mantiene el
+    # bucle de modo respaldo en motor_cpsat.generar_semana_cpsat_con_
+    # cobertura_nocturna, no las funciones de este módulo directamente
+    # (mismo patrón de separación que ausencias_night_fixed_consecutivas).
+    # Vacío = {"nombre": None, "noches_totales": 0, "noches_cubiertas": 0}.
+    "bloque_actual": {"nombre": str | None, "noches_totales": int, "noches_cubiertas": int},
+
+    # Campo NUEVO (esta sesión, junto con bloque_actual): días de descanso
+    # obligatorio post-racha YA pendientes al arrancar la semana, según el
+    # propio modelo CP-SAT (postweek1/postweek2 de motor_cpsat.
+    # agregar_restriccion_racha_noches) — fuente autoritativa para
+    # motor_cpsat._RachaTracker, que NO siempre puede reconstruir esto
+    # fiablemente a partir del empalme de 5 días (noches_ultimos_5_dias) si
+    # la racha de 5 terminó a mitad de dicho empalme. Lo mantiene
+    # generar_semana_cpsat_con_cobertura_nocturna, no las funciones de este
+    # módulo. {} o ausente = nadie con descanso pendiente.
+    "descanso_pendiente_inicial": {"nombre": int},
 }
 
 ── Contrato de uso (importante para la sesión que conecte esto al CP-SAT) ──
@@ -63,6 +87,19 @@ de quien la invoque.
 """
 
 from modelo_base import DAYS
+
+# ─── Bloques de cobertura en modo respaldo (NUEVA, esta sesión) ────────────
+# Regla de negocio: en modo respaldo (sin rol night_fixed en la plantilla),
+# cada persona de la rotación cubre un BLOQUE de noches seguidas, no una
+# noche suelta a la vez (que es como funcionaba hasta ahora: una llamada a
+# seleccionar_candidato_cobertura_nocturna por día, sin ninguna garantía de
+# continuidad). BLOQUE_RESPALDO_MAX duplica a propósito el valor de
+# motor_cpsat.MAX_NOCHES_VENTANA (este módulo no importa motor_cpsat.py,
+# evitando un import circular — generar_semana_cpsat_con_cobertura_nocturna
+# vive en motor_cpsat.py e importa de aquí, no al revés) — deben mantenerse
+# sincronizadas si alguna cambia.
+BLOQUE_RESPALDO_MIN = 4
+BLOQUE_RESPALDO_MAX = 5
 
 
 def _persona_ausente_toda_la_semana(persona: dict) -> bool:
@@ -99,6 +136,17 @@ def _bloqueados_por_peticion_o_vacacion(staff_list: list, cfg, dias_cubrir: set 
         if forced & dias_gap:
             bloqueados.add(p["name"])
     return bloqueados
+
+
+def persona_bloqueada_dia(staff_list: list, cfg, nombre: str, dia_idx: int) -> bool:
+    """Wrapper delgado sobre _bloqueados_por_peticion_o_vacacion para UN
+    nombre y UN día concretos (NUEVO, esta sesión — bloques de cobertura en
+    modo respaldo): usado por el bucle de motor_cpsat.py para saber, día a
+    día, si el titular del bloque de Noche EN CURSO sigue siendo elegible
+    hoy (vacación/petición concedida a mitad de bloque) — si no lo es, el
+    bloque se corta ahí (regla de negocio confirmada) y arranca uno nuevo
+    con otra persona."""
+    return nombre in _bloqueados_por_peticion_o_vacacion(staff_list, cfg, {dia_idx})
 
 
 def _elegibles(staff_list: list, cfg, dias_cubrir: set = None,
@@ -188,6 +236,62 @@ def _elegir_balance_puro(elegibles: list, estado: dict) -> tuple:
     nuevo_estado = dict(estado)
     nuevo_estado["historico_balance"] = nuevo_balance
     return elegido, nuevo_estado
+
+
+def registrar_noche_bloque(estado_rotacion: dict, nombre: str) -> dict:
+    """Incrementa historico_balance[nombre]["covers"] SIN volver a elegir
+    (NUEVO, esta sesión — bloques de cobertura en modo respaldo): usado por
+    el bucle de motor_cpsat.py cuando el día de hoy es CONTINUACIÓN de un
+    bloque ya en curso (el "quién" ya se decidió al arrancar el bloque, ver
+    longitud_bloque_respaldo) — el balance histórico debe seguir reflejando
+    la carga real noche a noche, igual que si _elegir_balance_puro hubiera
+    vuelto a elegir a la misma persona, pero sin ejecutar de nuevo la
+    selección (ya no hay nada que decidir ese día)."""
+    balance = estado_rotacion.get("historico_balance", {})
+    nuevo_balance = {n: dict(v) for n, v in balance.items()}
+    info = dict(nuevo_balance.get(nombre, {"covers": 0, "pending": 0}))
+    info["covers"] = info.get("covers", 0) + 1
+    nuevo_balance[nombre] = info
+
+    nuevo_estado = dict(estado_rotacion)
+    nuevo_estado["historico_balance"] = nuevo_balance
+    return nuevo_estado
+
+
+def longitud_bloque_respaldo(staff_list: list, nombre: str, dia_inicio: int) -> int:
+    """Decide cuántas noches seguidas (BLOQUE_RESPALDO_MIN(4)-BLOQUE_
+    RESPALDO_MAX(5)) cubre `nombre` a partir de `dia_inicio` (NUEVO, esta
+    sesión — bloques de cobertura en modo respaldo).
+
+    Por defecto BLOQUE_RESPALDO_MAX(5) (confirmado con el usuario: "siempre
+    5 salvo que la rotación exija menos"). Se acorta a un valor menor SOLO
+    si `nombre` ya tiene una vacación/petición concedida (forced_days_off)
+    dentro de la semana visible que truncaría el bloque de 5 antes de
+    completarlo — en ese caso, se elige la longitud más larga que quepa
+    ANTES de ese día bloqueado, sin bajar de BLOQUE_RESPALDO_MIN(4). Si ni
+    siquiera 4 caben antes del bloqueo, se deja en BLOQUE_RESPALDO_MAX(5) de
+    todas formas: el bloque se interrumpirá (mecanismo ya previsto en el
+    bucle de motor_cpsat.py, ver persona_bloqueada_dia) en vez de intentar
+    evitarlo a toda costa — esta función solo evita la interrupción cuando
+    es sencillo hacerlo (acortando dentro del rango 4-5), no en todos los
+    casos posibles.
+
+    Solo mira DENTRO de la semana visible (los 7 días de `staff_list` tal
+    como llega a esta llamada) — no hay forma de ver vacaciones de semanas
+    futuras desde aquí, límite ya existente en el resto de la arquitectura
+    (cada semana se genera con su propio staff_list)."""
+    persona = next((p for p in staff_list if p["name"] == nombre), None)
+    forced = set(persona.get("forced_days_off", [])) if persona else set()
+    dias_bloqueados = sorted(
+        DAYS.index(d) for d in forced if d in DAYS and DAYS.index(d) > dia_inicio
+    )
+    if not dias_bloqueados:
+        return BLOQUE_RESPALDO_MAX
+    primer_bloqueo = dias_bloqueados[0]
+    cabe = primer_bloqueo - dia_inicio
+    if BLOQUE_RESPALDO_MIN <= cabe < BLOQUE_RESPALDO_MAX:
+        return cabe
+    return BLOQUE_RESPALDO_MAX
 
 
 def _elegir_orden_fijo(elegibles: list, estado: dict) -> tuple:

@@ -16,6 +16,11 @@ lectura de histórico reutilizadas tal cual (ver Fase 2 más abajo).
      días.
   6. Vacaciones / peticiones concedidas (forced_days_off / extra_days_off en
      cada persona de staff_list): Libre siempre en esos días.
+  7. Patrón de libres semanales (DIAS_LIBRES_SEGUIDOS_POR_SEMANA) para
+     roles sin garantía estructural de libres — AÑADIDA en sesión posterior
+     (hallazgo de producción), ver su propia sección más abajo para el
+     detalle completo (motivo, regla exacta, exclusiones, tratamiento en
+     el diagnóstico).
 
 El rol "night_fixed" usa un mecanismo propio (no cfg.fixed_roles/
 cfg.fixed_days_off) y se modela con el mismo patrón que #4/#5 pero anclado a
@@ -84,6 +89,31 @@ CUALQUIER persona con Noche=1 esa semana (night_fixed o quien lo cubra):
      noches_ultimos_5_dias, ver agregar_restriccion_racha_noches).
   2. 2 días de descanso obligatorio ("Libre", no cualquier turno) tras
      agotar una racha de 5 noches consecutivas.
+  3. (NUEVA, esta sesión — regla de rotación de cobertura nocturna en
+     bloques) Mínimo 2 noches seguidas: ninguna racha de Noche puede ser
+     de 1 sola noche aislada. Ver MIN_NOCHES_RACHA en agregar_restriccion_
+     racha_noches para la implementación (técnica de "ningún 1 aislado")
+     y el tratamiento del límite de Domingo (regla conservadora salvo
+     continuidad de bloque ya garantizada, parámetro
+     personas_bloque_continua).
+
+Además (misma sesión), restricción EXCLUSIVA de motor_cpsat.py (no toca
+NO_MORNING_AFTER de modelo_base.py): tras un turno de Noche, el día
+siguiente de esa persona solo puede ser Noche o Libre — Tarde y Partido
+también quedan bloqueados (antes solo se bloqueaba Mañana). Ver la
+restricción #3 de _construir_modelo (y su espejo en _construir_modelo_
+diagnostico).
+
+Cuando NO existe el rol night_fixed (modo respaldo), la cobertura ya no
+se decide noche a noche: cobertura_nocturna.py asigna BLOQUES de 4-5
+noches SEGUIDAS por persona (BLOQUE_RESPALDO_MIN/MAX), persistidos entre
+semanas en estado_rotacion["bloque_actual"] porque un bloque así casi
+nunca cabe entero en 7 días. Ver longitud_bloque_respaldo/
+registrar_noche_bloque/persona_bloqueada_dia en cobertura_nocturna.py y
+el bucle de modo respaldo en generar_semana_cpsat_con_cobertura_nocturna.
+Cuando SÍ existe night_fixed, el sustituto sigue cubriendo sus 2 días
+libres fijos (cfg.night_fixed_days_off) sin cambios — ya era un bloque de
+2 noches seguidas por diseño.
 
 Quién cubre cada noche NO lo decide el solver — es un dato de entrada ya
 resuelto por cobertura_nocturna.seleccionar_candidato_cobertura_nocturna
@@ -288,8 +318,93 @@ estuviera de vacaciones esos días concretos, _bloqueados_por_peticion_o_
 vacacion (cobertura_nocturna.py) ya lo excluye como candidato — pero el
 solapamiento SÍ puede darse si las vacaciones empiezan después de los días
 que cubre; no se ha excluido a propósito (ver test de compatibilidad).
+
+── Esta sesión — restricción dura NUEVA: patrón de libres semanales ─────────
+HALLAZGO EN PRODUCCIÓN (bloqueante): con la plantilla real de Recepción, el
+modelo generaba semanas donde alguien trabajaba los 7 días sin ningún libre
+mientras otra persona libraba los 7 sin trabajar ninguno — la cobertura
+mínima diaria se cumplía siempre (no es un bug de esa restricción), pero el
+reparto INDIVIDUAL de libres no estaba acotado por nada. Causa raíz: el
+motor heurístico (modelo_base.py) garantiza un reparto de libres de forma
+estructural (su algoritmo por fases siempre reparte libres antes de asignar
+turnos — ver assign_days_off), pero esa garantía nunca se tradujo a una
+restricción explícita del modelo CP-SAT en ninguna fase anterior: nada
+impedía que el solver, persiguiendo el objetivo (fase 2), concentrara todos
+los libres de la semana en unas pocas personas si eso resultaba más barato.
+
+Regla de negocio confirmada con el usuario (no un simple mínimo, ver
+histórico de la sesión — una primera versión de esta restricción solo
+imponía un PISO de 2 libres/semana; probada contra la plantilla real de
+Recepción, dejaba a "Igor" con 7 libres/0 días trabajados esa misma
+semana, el otro lado exacto del hallazgo original, porque un piso no
+acota por arriba): cada persona cuyo rol NO tenga ya una garantía
+estructural de días libres recibe EXACTAMENTE
+DIAS_LIBRES_SEGUIDOS_POR_SEMANA(2) días "Libre" — ni más ni menos — y esos
+2 días deben ser CONSECUTIVOS (un par de índices de día adyacentes, no
+necesariamente Sábado+Domingo), salvo la única excepción de negocio
+confirmada: cuando ningún par consecutivo es estructuralmente posible para
+esa persona esa semana (días ya forzados Libre por vacaciones/peticiones/
+LA intercalados de forma que no dejan ningún par hueco — el mismo caso que
+ya activa el término blando F, "Domingo suelto del sustituto de cobertura
+nocturna", ver _tiene_par_consecutivo_disponible), en cuyo caso se exige
+igualmente el conteo exacto de 2 pero SIN exigir que sean consecutivos (2
+días sueltos, p.ej. Domingo + otro día cualquiera de la semana).
+
+Los días YA forzados Libre por vacaciones/peticiones concedidas o LA
+("Libres Abonables" — el campo extra_days_off ya existente, ver
+herramientas.py) quedan FUERA del conteo de estos 2: se apilan aparte, sin
+sustituir ni alterar el patrón. Alguien con una petición suelta un
+miércoles sigue necesitando su propio par de 2 seguidos en el resto de la
+semana, además de ese miércoles — el total real de libres esa semana puede
+ser mayor que 2, pero el PATRÓN de 2 seguidos exigido por esta restricción
+sigue aplicando sobre los días no forzados. Si a alguien le quedan menos
+de 2 días no forzados en la semana (una vacación/baja larga que ya cubre
+6-7 días), la restricción se omite por completo para esa persona esa
+semana — no hay sitio para exigir nada más, y forzarlo sería una
+contradicción con la propia vacación/baja, no una protección real.
+
+Roles EXCLUIDOS de esta restricción nueva (ya tienen su propia garantía
+dura de libres, no se apila un segundo mecanismo para lo mismo):
+  - role in cfg.fixed_days_off: esos días concretos ya son Libre siempre
+    (restricción dura #5 de fase 1). Confirmado con la plantilla real: hoy
+    solo "jefe" (fixed_days_off=[5,6], 2 días consecutivos — ya cumple el
+    patrón por construcción).
+  - role == "night_fixed": Libre siempre en cfg.night_fixed_days_off
+    (mismo patrón que #5, ver fase 1). Confirmado: [3,4], 2 días
+    consecutivos — ya cumple el patrón por construcción.
+  - role in cfg.fixed_roles (turno fijo): un rol con turno fijo y SIN
+    fixed_days_off propio no tiene hoy ninguna instancia real en la
+    configuración de ningún departamento (jefe, el único con turno fijo,
+    también tiene fixed_days_off) — pero se excluye igualmente porque un
+    turno fijo (restricción dura #4: ese turno TODOS los días que
+    trabajan) es, por diseño, una política de "no tocar el patrón de esa
+    persona" que esta restricción nueva no debe alterar; si en el futuro
+    apareciera un rol así SIN fixed_days_off propio, quedaría sin la
+    garantía de libres — no es el caso hoy, y se documenta aquí para que
+    quien añada un rol así en roles.json lo tenga en cuenta.
+
+Roles afectados HOY con la plantilla real de Recepción: "normal",
+"subjefe", "adjunto_recepcion" — exactamente los que, antes de esta
+restricción, podían quedar con 0 o 7 libres en una semana sin que ninguna
+restricción dura lo impidiera (ver el hallazgo arriba).
+
+Se aplica en _construir_modelo (modelo real) Y en _construir_modelo_
+diagnostico (Tema 3): en el modelo de diagnóstico se modela como pieza
+CEDIBLE (gateada por asunción, un único booleano por persona que gatea el
+patrón COMPLETO — conteo exacto y, si aplica, consecutividad), igual que
+la cobertura mínima — un encargado enfrentado a un conflicto real de
+personal puede decidir romper el patrón de 2 seguidos para alguien
+concreto esa semana, igual que puede decidir bajar la cobertura mínima;
+no es una política estructural del departamento (a diferencia de
+cobertura máxima, turno fijo de rol o no-Mañana-tras-Tarde/Noche, que sí
+quedan siempre activas sin gating). Así, cuando esta restricción forma
+parte de un conflicto de infactibilidad, el diagnóstico automático la
+señala por nombre en vez de caer en el mensaje genérico de "conflicto
+estructural no cubierto".
 """
 
+import threading
+import time
 from datetime import date
 
 from ortools.sat.python import cp_model
@@ -374,6 +489,19 @@ PESO_LIBRE_DEBIDO_VACACIONES = 15   # término J (NUEVO, esta sesión — cierre
 # (A/E/G) ni de reparto histórico (C) — cede con la misma facilidad que
 # F/H frente a cobertura mínima (restricción dura #2) y frente a B
 # (continuidad) si hiciera falta.
+
+DIAS_LIBRES_SEGUIDOS_POR_SEMANA = 2  # restricción DURA NUEVA (esta sesión —
+# hallazgo de producción, ver docstring del módulo): exactamente este
+# número de días "Libre" por semana — CONSECUTIVOS salvo la excepción de
+# negocio confirmada (sin par consecutivo disponible, ver
+# _tiene_par_consecutivo_disponible) — para cualquier persona cuyo rol no
+# tenga ya una garantía estructural de días libres (cfg.fixed_days_off,
+# night_fixed o cfg.fixed_roles — ver la lista completa de exclusiones en
+# el docstring). Valor confirmado con el usuario (no asumido): 2, el mismo
+# estándar que ya aplican jefe (fixed_days_off=[5,6], consecutivos) y
+# night_fixed (night_fixed_days_off=[3,4], consecutivos) en la
+# configuración real de Recepción — máximo 5 días trabajados por semana
+# para cualquier persona, en un tramo continuo.
 
 
 def _tiene_par_consecutivo_disponible(cfg, dias_bloqueados: set) -> bool:
@@ -488,7 +616,8 @@ def _inicio_bloque_vacaciones(person: dict):
 
 def _construir_modelo(staff_list: list, week_start: date, cfg,
                        prev_sunday_shifts: dict = None,
-                       nombre_sustituto_cobertura: str = None):
+                       nombre_sustituto_cobertura: str = None,
+                       dias_bloqueados_externos: dict = None):
     """Construye el CpModel completo (restricciones fase 1 + objetivo fase 2)
     sin resolverlo. Separado de generar_semana_cpsat para que los tests
     puedan añadir restricciones extra (p.ej. fijar una celda) sin duplicar
@@ -501,9 +630,27 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     término F (preferencia de Domingo suelto). None por defecto: no cambia
     el comportamiento de fase 1/fase 2/racha para quien no lo use.
 
+    dias_bloqueados_externos: {nombre: {idx_dias}} — días en que `nombre`
+    YA está comprometido con un turno concreto por una restricción que el
+    LLAMADOR añade al modelo DESPUÉS de que esta función devuelva (hoy,
+    únicamente cobertura_externa en generar_semana_cpsat_con_cobertura_
+    nocturna: model.Add(x[nombre, d, "Noche"] == 1) tras esta llamada, ver
+    ese código). Necesario para la restricción #7 (patrón de libres, ver
+    docstring del módulo): esos días NO están forzados Libre (no van en
+    forced_libre) pero TAMPOCO están disponibles para colocar el patrón de
+    2 libres — sin esto, restricción #7 podía calcular "hay un par
+    consecutivo disponible" usando un día que en realidad ya iba a quedar
+    fijado a Noche por una restricción añadida más tarde, produciendo un
+    INFEASIBLE espurio (el mismo tipo de bug que dias_cubrir ya corrigió en
+    su momento para vacaciones/peticiones, ahora para el patrón de libres).
+    {} por defecto: no cambia el comportamiento de quien no lo use
+    (generar_semana_cpsat, y todos los tests existentes que llaman a
+    _construir_modelo directamente).
+
     Devuelve (model, x, names, by_name).
     """
     prev_sunday_shifts = prev_sunday_shifts or {}
+    dias_bloqueados_externos = dias_bloqueados_externos or {}
     model = cp_model.CpModel()
 
     names = [p["name"] for p in staff_list]
@@ -548,17 +695,28 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
             for d in range(7):
                 model.Add(x[name, d, "Noche"] == 0)
 
-    # 3. No-Mañana-tras-Tarde/Noche.
+    # 3. No-Mañana-tras-Tarde/Noche, MÁS (NUEVO, esta sesión — regla de
+    # rotación de cobertura nocturna) tras Noche solo puede seguir Noche o
+    # Libre: Tarde y Partido también quedan bloqueados el día siguiente a
+    # un Noche (no solo Mañana, como ya bloqueaba NO_MORNING_AFTER). Esta
+    # restricción es EXCLUSIVA de motor_cpsat.py — no se toca NO_MORNING_
+    # AFTER (modelo_base.py), compartida con el motor heurístico, para
+    # mantener el aislamiento que el módulo declara desde su docstring.
     for name in names:
         for d in range(7):
             if d == 0:
                 prev_shift = prev_sunday_shifts.get(name)
                 if prev_shift in NO_MORNING_AFTER:
                     model.Add(x[name, 0, "Mañana"] == 0)
+                if prev_shift == "Noche":
+                    model.Add(x[name, 0, "Tarde"] == 0)
+                    model.Add(x[name, 0, "Partido"] == 0)
             else:
                 model.Add(
                     x[name, d, "Mañana"] + x[name, d - 1, "Tarde"] + x[name, d - 1, "Noche"] <= 1
                 )
+                model.Add(x[name, d, "Tarde"] + x[name, d - 1, "Noche"] <= 1)
+                model.Add(x[name, d, "Partido"] + x[name, d - 1, "Noche"] <= 1)
 
     # 6. Vacaciones / peticiones concedidas → Libre forzado.
     forced_libre = {name: set() for name in names}
@@ -609,6 +767,143 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
             if d in forced_libre[name]:
                 continue
             model.Add(x[name, d, "Noche"] == 1)
+
+    # 7. Patrón de libres semanales (NUEVO, esta sesión — hallazgo de
+    # producción, ver docstring del módulo): cada persona cuyo rol no tenga
+    # ya una garantía estructural de días libres (fixed_days_off,
+    # night_fixed, turno fijo) recibe EXACTAMENTE DIAS_LIBRES_SEGUIDOS_
+    # POR_SEMANA días "Libre" — ni más ni menos — entre los días que no
+    # están YA forzados Libre por vacaciones/peticiones/LA (forced_libre,
+    # calculado arriba en #5/#6), y esos días deben ser CONSECUTIVOS
+    # (índices de día adyacentes) siempre que exista al menos un par
+    # consecutivo disponible entre los días no forzados. Cuando ningún par
+    # consecutivo es estructuralmente posible (p.ej. el sustituto de
+    # cobertura nocturna cuyos días fijos de cobertura no dejan ningún par
+    # libre — el mismo caso que ya activa el término blando F, ver
+    # _tiene_par_consecutivo_disponible), se exige igualmente el conteo
+    # exacto pero SIN exigir consecutividad (2 días sueltos).
+    #
+    # Los días ya forzados Libre (vacaciones/peticiones/LA) quedan FUERA de
+    # este conteo — se apilan aparte, sin alterar ni sustituir el patrón de
+    # 2 seguidos (confirmado con el usuario): alguien con una petición
+    # suelta un miércoles sigue necesitando su propio par de 2 seguidos en
+    # el resto de la semana, además de ese miércoles.
+    #
+    # Si a una persona le quedan menos de 2 días NO forzados en la semana
+    # (una vacación/baja larga que ya cubre 6-7 días), no hay sitio para
+    # exigir nada más — se omite la restricción entera para ella esa
+    # semana en vez de forzar una contradicción sobre los 0-1 días que le
+    # quedan.
+    for name in names:
+        role = by_name[name].get("role")
+        if role == "night_fixed" or cfg.fixed_days_off.get(role) or cfg.fixed_roles.get(role):
+            continue
+
+        dias_bloqueados_persona = dias_bloqueados_externos.get(name, set())
+
+        # Caso especial confirmado con el usuario (NUEVO, esta sesión —
+        # regla de rotación de cobertura nocturna): si el compromiso
+        # externo de Noche de esta persona termina exactamente el Sábado
+        # (día 5) sin cubrir también el Domingo, el Domingo queda
+        # estructuralmente forzado a Libre para ella — tras Noche el
+        # sábado, la restricción de transición exige Noche o Libre el
+        # domingo, y Noche ahí competiría con night_fixed (o cualquier
+        # otra cobertura ya fija ese día) por encima de max_coverage. El
+        # Domingo CUENTA como uno de sus DIAS_LIBRES_SEGUIDOS_POR_SEMANA(2)
+        # — no se apila aparte como una vacación — y el que queda
+        # pendiente (1) se coloca donde haga falta, SIN exigir que sea
+        # consecutivo con nada (el mozo que cubre noches puede tener sus 2
+        # libres semanales separados; el domingo ya forma, junto con el
+        # Lunes+Martes incondicional de la semana siguiente —
+        # cfg.prefer_next_week_for_cover—, un tramo de 3 libres seguidos
+        # aparte).
+        if 5 in dias_bloqueados_persona and 6 not in dias_bloqueados_persona:
+            model.Add(x[name, 6, "Libre"] == 1)
+            dias_no_forzados = [
+                d for d in range(7)
+                if d not in forced_libre[name] and d not in dias_bloqueados_persona and d != 6
+            ]
+            if len(dias_no_forzados) >= DIAS_LIBRES_SEGUIDOS_POR_SEMANA - 1:
+                model.Add(
+                    sum(x[name, d, "Libre"] for d in dias_no_forzados)
+                    == DIAS_LIBRES_SEGUIDOS_POR_SEMANA - 1
+                )
+            continue
+
+        # Petición concedida (CORRECCIÓN, esta sesión — reportado por el
+        # usuario): a diferencia de vacaciones/LA (que SÍ se apilan aparte,
+        # sin cambios), un día suelto de PETICIÓN no es un libre extra —
+        # cuenta como uno de los DIAS_LIBRES_SEGUIDOS_POR_SEMANA(2), la
+        # petición solo fija DÓNDE cae ese libre. Se distingue de vacación
+        # con person['dias_vacaciones'] (solo lo rellena herramientas.
+        # aplicar_vacaciones, nunca aplicar_peticiones — ver _inicio_bloque_
+        # vacaciones arriba, mismo dato ya usado con este propósito).
+        # Confirmado con el usuario: con UNA petición esta semana, se
+        # intenta formar el par de 2 seguidos incluyéndola (el otro día
+        # debe ser el adyacente, si hay alguno disponible); con DOS
+        # peticiones la misma semana ya no se exige que sean consecutivas
+        # entre sí — el conteo de 2 queda cubierto por ambas, sueltas.
+        person = by_name[name]
+        dias_vacaciones_idx = {
+            DAYS.index(d) for d in person.get("dias_vacaciones", []) if d in DAYS
+        }
+        dias_peticion = (forced_libre[name] - dias_vacaciones_idx) - dias_bloqueados_persona
+
+        if len(dias_peticion) > DIAS_LIBRES_SEGUIDOS_POR_SEMANA:
+            continue  # más peticiones concedidas que el propio patrón admite
+
+        no_disponibles = (forced_libre[name] - dias_peticion) | dias_bloqueados_persona
+        dias_no_forzados_totales = [d for d in range(7) if d not in no_disponibles]
+
+        if dias_peticion:
+            faltan = DIAS_LIBRES_SEGUIDOS_POR_SEMANA - len(dias_peticion)
+            dias_no_forzados = [d for d in dias_no_forzados_totales if d not in dias_peticion]
+            if faltan < 0:
+                continue
+            if faltan > 0 and len(dias_no_forzados) < faltan:
+                continue
+            # faltan == 0 (dos peticiones ya completan el patrón): el resto
+            # de días NO forzados deben quedar SIN Libre — sin este "== 0"
+            # explícito (en vez de omitir la restricción), esos días
+            # quedarían totalmente libres para el solver, sin ningún límite
+            # de cuántos más podría poner Libre esa semana.
+            if faltan == 1 and len(dias_peticion) == 1:
+                p = next(iter(dias_peticion))
+                candidatos_par = [d for d in (p - 1, p + 1) if 0 <= d <= 6 and d in dias_no_forzados]
+                if candidatos_par:
+                    indicadores_par = []
+                    for d in candidatos_par:
+                        ind = model.NewBoolVar(f"par_libre_peticion_{name}_{d}")
+                        model.Add(x[name, d, "Libre"] == 1).OnlyEnforceIf(ind)
+                        indicadores_par.append(ind)
+                    model.AddExactlyOne(indicadores_par)
+            model.Add(sum(x[name, d, "Libre"] for d in dias_no_forzados) == faltan)
+            continue
+
+        dias_no_forzados = dias_no_forzados_totales
+        if len(dias_no_forzados) < DIAS_LIBRES_SEGUIDOS_POR_SEMANA:
+            continue
+
+        no_forzados_set = set(dias_no_forzados)
+        pares_disponibles = [
+            (d, d + 1) for d in range(6)
+            if d in no_forzados_set and d + 1 in no_forzados_set
+        ]
+        if pares_disponibles:
+            indicadores_par = []
+            for d1, d2 in pares_disponibles:
+                ind = model.NewBoolVar(f"par_libre_{name}_{d1}_{d2}")
+                model.Add(x[name, d1, "Libre"] == 1).OnlyEnforceIf(ind)
+                model.Add(x[name, d2, "Libre"] == 1).OnlyEnforceIf(ind)
+                indicadores_par.append(ind)
+            model.AddExactlyOne(indicadores_par)
+        # Con o sin par disponible: el total de Libre entre los días no
+        # forzados debe ser exactamente el tamaño del patrón — cuando hay
+        # par, esto además impide que sobren libres fuera del par elegido;
+        # cuando no hay par, es la única exigencia posible (2 sueltos).
+        model.Add(
+            sum(x[name, d, "Libre"] for d in dias_no_forzados) == DIAS_LIBRES_SEGUIDOS_POR_SEMANA
+        )
 
     # ─── Fase 2: términos de objetivo ────────────────────────────────────
     objetivo_terms = []
@@ -933,14 +1228,18 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
             for d in range(7):
                 model.Add(x[name, d, "Noche"] == 0)
 
-    # No-Mañana-tras-Tarde/Noche: siempre activa (empalme con la semana
-    # anterior no se conoce aquí — el diagnóstico no lo necesita para el
-    # tipo de conflicto que existe para detectar, ver docstring del módulo).
+    # No-Mañana-tras-Tarde/Noche, MÁS tras Noche solo Noche o Libre (NUEVO,
+    # esta sesión — ver la restricción #3 de _construir_modelo): siempre
+    # activa (empalme con la semana anterior no se conoce aquí — el
+    # diagnóstico no lo necesita para el tipo de conflicto que existe para
+    # detectar, ver docstring del módulo).
     for name in names:
         for d in range(1, 7):
             model.Add(
                 x[name, d, "Mañana"] + x[name, d - 1, "Tarde"] + x[name, d - 1, "Noche"] <= 1
             )
+            model.Add(x[name, d, "Tarde"] + x[name, d - 1, "Noche"] <= 1)
+            model.Add(x[name, d, "Partido"] + x[name, d - 1, "Noche"] <= 1)
 
     # Vacaciones/peticiones — agrupadas por persona en tramos contiguos,
     # gateadas por asunción (un bloque multi-día = un solo motivo).
@@ -991,6 +1290,43 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
             if d in forced_libre[name]:
                 continue
             model.Add(x[name, d, "Noche"] == 1)
+
+    # Patrón de libres semanales (restricción #7 de _construir_modelo, ver
+    # docstring del módulo): gateado por asunción, igual que la cobertura
+    # mínima — es una pieza CEDIBLE (un encargado puede aceptar romper el
+    # patrón de 2 seguidos para alguien concreto ante un conflicto real),
+    # no una política estructural del departamento. Un único booleano por
+    # persona gatea el patrón COMPLETO (par consecutivo si lo hay, conteo
+    # exacto siempre) — el diagnóstico solo necesita saber SI el patrón de
+    # esa persona formó parte del conflicto, no fragmentar además en "el
+    # conteo" vs "la consecutividad".
+    for name in names:
+        role = by_name[name].get("role")
+        if role == "night_fixed" or cfg.fixed_days_off.get(role) or cfg.fixed_roles.get(role):
+            continue
+
+        dias_no_forzados = [d for d in range(7) if d not in forced_libre[name]]
+        if len(dias_no_forzados) < DIAS_LIBRES_SEGUIDOS_POR_SEMANA:
+            continue
+
+        a = model.NewBoolVar(f"asum_patronlibres_{name}")
+        no_forzados_set = set(dias_no_forzados)
+        pares_disponibles = [
+            (d, d + 1) for d in range(6)
+            if d in no_forzados_set and d + 1 in no_forzados_set
+        ]
+        if pares_disponibles:
+            indicadores_par = []
+            for d1, d2 in pares_disponibles:
+                ind = model.NewBoolVar(f"dasum_par_libre_{name}_{d1}_{d2}")
+                model.Add(x[name, d1, "Libre"] == 1).OnlyEnforceIf(ind)
+                model.Add(x[name, d2, "Libre"] == 1).OnlyEnforceIf(ind)
+                indicadores_par.append(ind)
+            model.Add(sum(indicadores_par) == 1).OnlyEnforceIf(a)
+        model.Add(
+            sum(x[name, d, "Libre"] for d in dias_no_forzados) == DIAS_LIBRES_SEGUIDOS_POR_SEMANA
+        ).OnlyEnforceIf(a)
+        asunciones[a] = f"Patrón de {DIAS_LIBRES_SEGUIDOS_POR_SEMANA} días libres semanales de {name}"
 
     return model, x, names, asunciones
 
@@ -1098,10 +1434,85 @@ def _mensaje_infactible(solver: cp_model.CpSolver, status, staff_list: list = No
     return mensaje
 
 
+MAX_TIME_SOLVER = 20.0  # red de seguridad (ver razonamiento completo más abajo)
+GRACIA_SIN_MEJORA = 3.0  # NUEVO (esta sesión — investigación de rendimiento):
+# tras encontrar al menos una solución, si pasan GRACIA_SIN_MEJORA(3)
+# segundos sin que aparezca una mejor, se detiene la búsqueda ahí en vez de
+# agotar MAX_TIME_SOLVER. Verificado (esta sesión) en 3 escenarios reales
+# (plantilla_holgada de cobertura, Recepción real 2026-08-10, mozos en modo
+# respaldo permanente): en los 3, la solución encontrada dentro de los
+# primeros 3-7s ya era EXACTAMENTE la misma (mismo ObjectiveValue()) que la
+# resolución completa de 20s — los ~13-17s restantes se gastaban sin éxito
+# tratando de PROBAR optimalidad (mejorando el bound, nunca el objetivo),
+# no en encontrar nada mejor. Esto no es una relajación de la garantía ya
+# documentada (216 comparaciones, ver docstring de _resolver_y_extraer): esa
+# garantía es sobre el resultado (10-20s trunca igual que 90s), no sobre
+# CUÁNDO dentro de la ventana aparece ese resultado — aquí solo se deja de
+# esperar en vano una vez que la mejora se estancó.
+
+
+class _RastreadorDeMejora(cp_model.CpSolverSolutionCallback):
+    """Registra, con marca de tiempo, cada solución mejorada que CP-SAT
+    encuentra — usado por _resolver_con_parada_por_meseta para saber, desde
+    OTRO hilo (ver esa función), cuánto tiempo lleva sin mejorar el
+    objetivo. CP-SAT solo invoca on_solution_callback cuando aparece una
+    NUEVA solución (nunca periódicamente), así que un simple contador de
+    "tiempo transcurrido" no puede vivir dentro del callback — de ahí que
+    la detección de meseta viva en el hilo que llama a Solve, sondeando
+    este estado compartido (protegido por lock, escrito desde el hilo de
+    resolución y leído desde el principal)."""
+
+    def __init__(self):
+        super().__init__()
+        self._lock = threading.Lock()
+        self.ultima_mejora = time.time()
+        self.mejor_valor = None
+
+    def on_solution_callback(self):
+        valor = self.ObjectiveValue()
+        ahora = time.time()
+        with self._lock:
+            if self.mejor_valor is None or valor < self.mejor_valor - 1e-9:
+                self.mejor_valor = valor
+                self.ultima_mejora = ahora
+
+    def segundos_sin_mejora(self) -> float:
+        with self._lock:
+            tiene_solucion = self.mejor_valor is not None
+            transcurrido = time.time() - self.ultima_mejora
+        return transcurrido if tiene_solucion else -1.0
+
+
+def _resolver_con_parada_por_meseta(solver: cp_model.CpSolver, model: cp_model.CpModel,
+                                     gracia: float = GRACIA_SIN_MEJORA):
+    """Ejecuta solver.Solve(model) en un hilo aparte y lo detiene (StopSearch,
+    documentada como segura de llamar desde otro hilo) en cuanto pasan
+    `gracia` segundos sin que aparezca una solución mejor — sin tocar
+    solver.parameters.max_time_in_seconds, que sigue actuando como red de
+    seguridad si la meseta nunca llega (p.ej. un escenario genuinamente sin
+    ninguna solución factible durante mucho tiempo). Devuelve el mismo
+    status que solver.Solve(model) habría devuelto."""
+    callback = _RastreadorDeMejora()
+    resultado = {}
+
+    def _resolver():
+        resultado["status"] = solver.Solve(model, callback)
+
+    hilo = threading.Thread(target=_resolver)
+    hilo.start()
+    while hilo.is_alive():
+        time.sleep(0.05)
+        if callback.segundos_sin_mejora() > gracia:
+            solver.StopSearch()
+            break
+    hilo.join()
+    return resultado["status"]
+
+
 def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list,
                          staff_list: list = None, cfg=None) -> dict:
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 20.0  # 90.0 -> 20.0 (Fase 5,
+    solver.parameters.max_time_in_seconds = MAX_TIME_SOLVER  # 90.0 -> 20.0 (Fase 5,
     # decisión final tras el rediseño B>I>D): con PESO_ROTURAS_CONTINUIDAD=50
     # y el término I, la búsqueda mono-hilo (num_search_workers=1, fijado por
     # determinismo) puede tardar hasta 90s en PROBAR optimalidad a escala
@@ -1132,7 +1543,7 @@ def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list,
     # se vuelve notable (varios segundos) a partir de ~20-25 personas —
     # ver INFORME_FASE_5.md para las mediciones completas.
     solver.parameters.num_search_workers = 1
-    status = solver.Solve(model)
+    status = _resolver_con_parada_por_meseta(solver, model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError(_mensaje_infactible(solver, status, staff_list, cfg))
@@ -1161,6 +1572,12 @@ def generar_semana_cpsat(staff_list: list, week_start: date, cfg,
 MAX_NOCHES_VENTANA = 5   # máximo de noches en cualquier ventana de...
 VENTANA_NOCHES = 6       # ...esta cantidad de días consecutivos.
 DIAS_DESCANSO_TRAS_RACHA = 2
+MIN_NOCHES_RACHA = 2  # NUEVO (esta sesión — regla de rotación de cobertura
+# nocturna): ninguna racha de Noche puede ser más corta que esto — nadie
+# cubre una noche suelta aislada. Se combina con MAX_NOCHES_VENTANA(5) para
+# que toda racha de Noche caiga en [MIN_NOCHES_RACHA, MAX_NOCHES_VENTANA].
+# Aplica genéricamente a CUALQUIER persona con Noche=1 (igual que el resto
+# de esta restricción), no solo a quien rota cobertura nocturna.
 
 
 def _racha_inicial_por_nombre(names: list, noches_ultimos_5_dias: dict) -> dict:
@@ -1216,10 +1633,33 @@ class _RachaTracker:
     variables del solver.
     """
 
-    def __init__(self, names: list, noches_ultimos_5_dias: dict):
+    def __init__(self, names: list, noches_ultimos_5_dias: dict,
+                 descanso_pendiente_inicial: dict = None):
         self.names = list(names)
         self.racha_actual = _racha_inicial_por_nombre(self.names, noches_ultimos_5_dias)
         self.descanso_pendiente = {n: 0 for n in self.names}
+
+        # descanso_pendiente_inicial (CORRECCIÓN, esta sesión — expuesta por
+        # los bloques de 4-5 noches, mucho más propensos que la selección
+        # día a día anterior a que una racha de 5 termine cerca del límite
+        # de semana): días de descanso YA pendientes al arrancar esta
+        # semana, según el propio modelo CP-SAT (postweek1/postweek2 de
+        # agregar_restriccion_racha_noches — ver generar_semana_cpsat_con_
+        # cobertura_nocturna, que los persiste en estado_rotacion tras cada
+        # semana). Es la fuente AUTORITATIVA — el empalme de 5 días por sí
+        # solo NO basta para reconstruir esto en todos los casos: si la
+        # racha de 5 terminó a mitad del empalme (p.ej. Mar-Sáb de la
+        # semana pasada, con 1 día de descanso —Domingo— ya tomado DENTRO
+        # de esa semana y 1 más pendiente hoy Lunes), el empalme (Mié-Dom)
+        # nunca ve el Martes en que empezó la racha, así que la
+        # reconstrucción por conteo de _racha_inicial_por_nombre no puede
+        # distinguir ese caso de "sin racha en absoluto" — ambos dan
+        # streak=0 al llegar a un Domingo en False. Con descanso_pendiente_
+        # inicial no hace falta reconstruir nada: el dato ya viene resuelto.
+        for n, restantes in (descanso_pendiente_inicial or {}).items():
+            if restantes > 0:
+                self.descanso_pendiente[n] = restantes
+                self.racha_actual[n] = 0
 
     def bloqueados(self) -> set:
         """Nombres que, a fecha de HOY (antes de decidir quién cubre hoy),
@@ -1290,7 +1730,7 @@ def _resolver_y_extraer_con_extra(model: cp_model.CpModel, x: dict, names: list,
     # se vuelve notable (varios segundos) a partir de ~20-25 personas —
     # ver INFORME_FASE_5.md para las mediciones completas.
     solver.parameters.num_search_workers = 1
-    status = solver.Solve(model)
+    status = _resolver_con_parada_por_meseta(solver, model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError(_mensaje_infactible(solver, status, staff_list, cfg))
@@ -1308,18 +1748,37 @@ def _resolver_y_extraer_con_extra(model: cp_model.CpModel, x: dict, names: list,
 
 
 def agregar_restriccion_racha_noches(model: cp_model.CpModel, x: dict, names: list,
-                                      noches_ultimos_5_dias: dict) -> dict:
+                                      noches_ultimos_5_dias: dict,
+                                      personas_bloque_continua: set = None) -> dict:
     """Añade, sobre un modelo ya construido por _construir_modelo (llamar
     ANTES de resolver — CP-SAT permite seguir añadiendo restricciones tras
-    fijar el objetivo con model.Minimize), las dos restricciones duras de
-    racha de Noche, para TODAS las personas en `names` genéricamente (no
-    hace falta distinguir night_fixed de su sustituto: la restricción
-    opera sobre x[name, d, "Noche"] sea quien sea):
+    fijar el objetivo con model.Minimize), las restricciones duras de racha
+    de Noche, para TODAS las personas en `names` genéricamente (no hace
+    falta distinguir night_fixed de su sustituto: la restricción opera
+    sobre x[name, d, "Noche"] sea quien sea):
 
       1. Máximo MAX_NOCHES_VENTANA(5) noches en cualquier ventana de
          VENTANA_NOCHES(6) días consecutivos.
       2. DIAS_DESCANSO_TRAS_RACHA(2) días de Libre obligatorio inmediatamente
          tras una racha de exactamente 5 noches consecutivas.
+      3. MIN_NOCHES_RACHA(2) — NUEVO, esta sesión, regla de rotación de
+         cobertura nocturna: ninguna racha de Noche puede ser más corta que
+         esto (nadie cubre una noche suelta aislada). Se implementa
+         prohibiendo que cualquier día de Noche quede sin NINGÚN vecino
+         (anterior o siguiente) también en Noche — técnica estándar para
+         forbid un "1 aislado" en una secuencia binaria, sin necesitar
+         variables de racha adicionales. Para el día 0 el "vecino anterior"
+         usa el empalme (índice 4, constante); para el día 6 (Domingo) NO
+         hay forma de mirar "el lunes que viene" (no está modelado en esta
+         llamada) — se aplica la regla conservadora de prohibir que
+         Domingo sea un arranque nuevo aislado (Sábado=0 y Domingo=1),
+         salvo para quien el llamador YA SABE que continúa su bloque la
+         semana que viene (`personas_bloque_continua` — ver
+         cobertura_nocturna.py / generar_semana_cpsat_con_cobertura_
+         nocturna, mecanismo de bloques de modo respaldo). Si en el futuro
+         un escenario sin ese conocimiento previo necesitara genuinamente
+         un arranque aislado el domingo, esto lo reportaría como
+         INFEASIBLE — correcto (refleja el conflicto real), no un bug.
 
     noches_ultimos_5_dias: {nombre: [bool, bool, bool, bool, bool]} — empalme
     con la semana anterior. índice 0 = 5 días antes del lunes de esta semana
@@ -1327,6 +1786,10 @@ def agregar_restriccion_racha_noches(model: cp_model.CpModel, x: dict, names: li
     (el día inmediatamente anterior al lunes nuevo). Quien no aparezca en el
     dict se asume sin noches en los últimos 5 días ([False]*5) — cubre el
     caso de un empleado nuevo sin histórico de racha.
+
+    personas_bloque_continua: nombres exentos de la regla conservadora de
+    Domingo (punto 3 arriba) porque el llamador ya garantiza externamente
+    que su bloque continúa el Lunes de la semana siguiente. {} por defecto.
 
     Modelo de índices interno (por persona), secuencia de 14 posiciones:
       0..4   → empalme (constante 0/1, ya conocido, no es variable)
@@ -1347,6 +1810,7 @@ def agregar_restriccion_racha_noches(model: cp_model.CpModel, x: dict, names: li
     porque parte de ellos cae fuera de los 7 días que este modelo conoce.
     """
     postweek_vars = {}
+    personas_bloque_continua = personas_bloque_continua or set()
 
     for name in names:
         empalme = list(noches_ultimos_5_dias.get(name, [False] * 5))
@@ -1419,6 +1883,21 @@ def agregar_restriccion_racha_noches(model: cp_model.CpModel, x: dict, names: li
         else:
             model.Add(post2 == 0)
 
+        # 3. Mínimo de MIN_NOCHES_RACHA(2) noches seguidas (NUEVO, esta
+        # sesión — ver docstring arriba para el razonamiento completo).
+        # Días interiores (0..5 → índices 5..10): ningún "1 aislado", el
+        # empalme (índice 4) cubre el vecino anterior del día 0 sin caso
+        # especial.
+        for d in range(0, 6):
+            idx = d + 5
+            model.Add(secuencia[idx - 1] + secuencia[idx + 1] >= 1).OnlyEnforceIf(x[name, d, "Noche"])
+
+        # Día 6 (Domingo, índice 11): regla conservadora — no arrancar un
+        # bloque nuevo aislado ese día, salvo continuidad ya garantizada
+        # externamente.
+        if name not in personas_bloque_continua:
+            model.Add(x[name, 6, "Noche"] <= x[name, 5, "Noche"])
+
     return postweek_vars
 
 
@@ -1438,11 +1917,17 @@ def generar_semana_cpsat_con_cobertura_nocturna(
     select_night_covers hoy en producción).
 
     Modo respaldo (>=2 semanas consecutivas ausente, o rol night_fixed
-    inexistente en staff_list): llama a seleccionar_candidato_cobertura_
-    nocturna UNA vez POR CADA uno de los 7 días de la semana (encadenando
-    el estado_rotacion entre llamadas), porque night_fixed normalmente
-    cubriría los 7 y ahora ninguno tiene automáticamente asignado quién lo
-    hace.
+    inexistente en staff_list): cubre por BLOQUES de 4-5 noches SEGUIDAS
+    por persona (NUEVO, esta sesión — regla de rotación de cobertura
+    nocturna; antes se llamaba a seleccionar_candidato_cobertura_nocturna
+    una vez por cada uno de los 7 días sin ninguna garantía de bloque). El
+    bloque en curso se retoma de la semana anterior (estado_rotacion
+    ["bloque_actual"]) si lo había — casi nunca cabe entero en 7 días, así
+    que cruza el límite de semana con normalidad — y solo se llama a
+    seleccionar_candidato_cobertura_nocturna para arrancar un bloque NUEVO
+    (al terminar el anterior, o si se interrumpe porque su titular pasa a
+    estar bloqueado por una vacación/petición a mitad de bloque — se corta
+    ahí, con lo ya cubierto, y arranca uno nuevo con otra persona).
 
     Devuelve un dict:
       "schedule": {nombre: [turno]*7}
@@ -1467,6 +1952,9 @@ def generar_semana_cpsat_con_cobertura_nocturna(
         avanzar_semana_ausencia_night_fixed,
         seleccionar_candidato_cobertura_nocturna,
         modo_respaldo_activo,
+        persona_bloqueada_dia,
+        longitud_bloque_respaldo,
+        registrar_noche_bloque,
     )
 
     estado_rotacion = avanzar_semana_ausencia_night_fixed(staff_list, estado_rotacion)
@@ -1479,6 +1967,14 @@ def generar_semana_cpsat_con_cobertura_nocturna(
     # (pueden ser hasta 7 personas distintas, una por noche), así que el
     # término F simplemente no se activa ahí.
     nombre_sustituto_unico = None
+    # personas_bloque_continua (NUEVO, esta sesión — regla de rotación de
+    # cobertura nocturna en bloques): quien sigue a mitad de un bloque de
+    # modo respaldo al terminar esta semana queda exento, en la restricción
+    # de racha (más abajo), de la regla conservadora de Domingo — su
+    # continuidad hacia el Lunes que viene ya está garantizada por
+    # construcción (cobertura_externa de la semana siguiente arrancará
+    # retomando el mismo bloque, ver bloque_actual).
+    personas_bloque_continua = set()
     if modo_respaldo_activo(staff_list, estado_rotacion):
         # Seguimiento de racha en modo respaldo (Fase 5, verificación del
         # mismo tipo de bug ya corregido para dias_cubrir, esta vez para el
@@ -1498,29 +1994,89 @@ def generar_semana_cpsat_con_cobertura_nocturna(
         # modelo — determinista, sin variables del solver, igual que
         # _tiene_par_consecutivo_disponible hace para el término F.
         names_racha = [p["name"] for p in staff_list]
-        tracker = _RachaTracker(names_racha, noches_ultimos_5_dias)
+        tracker = _RachaTracker(
+            names_racha, noches_ultimos_5_dias,
+            descanso_pendiente_inicial=estado_rotacion.get("descanso_pendiente_inicial", {}),
+        )
+
+        # bloque (NUEVO, esta sesión — regla de rotación de cobertura
+        # nocturna en bloques): retoma el bloque en curso de la semana
+        # anterior (si lo había) en vez de decidir "quién" cada día desde
+        # cero — un bloque de 4-5 noches casi nunca cabe entero en 7 días,
+        # así que cruza el límite de semana con normalidad (ver
+        # cobertura_nocturna.py, formato de estado_rotacion).
+        bloque = dict(estado_rotacion.get("bloque_actual") or {
+            "nombre": None, "noches_totales": 0, "noches_cubiertas": 0,
+        })
 
         for d in range(7):
-            # dias_cubrir={d} (Fase 5, corrección de INFEASIBLE espurio):
-            # cada llamada de modo respaldo decide un día CONCRETO, no los
-            # dos días fijos de cfg.night_fixed_days_off (que en modo
-            # respaldo pueden ser irrelevantes, p.ej. si no hay night_fixed
-            # en la plantilla) — sin este parámetro, la elegibilidad podía
-            # devolver a alguien con el día `d` real ya forzado Libre por
-            # vacación/petición, y la línea de abajo fijaba Noche=1 sobre
-            # esa misma celda: dos restricciones duras contradictorias,
-            # INFEASIBLE que no reflejaba una imposibilidad real.
-            #
-            # bloqueados_por_racha (NUEVO, esta verificación): nombres que
-            # a fecha de HOY (antes de decidir el día d) todavía tienen
-            # descanso obligatorio post-racha pendiente de días anteriores
-            # de esta misma semana — ver _RachaTracker.
-            nombre, estado_rotacion = seleccionar_candidato_cobertura_nocturna(
-                staff_list, cfg, estado_rotacion, dias_cubrir={d},
-                bloqueados_por_racha=tracker.bloqueados(),
-            )
-            cobertura_externa[d] = nombre
-            tracker.registrar(nombre)
+            # ¿el titular del bloque en curso sigue siendo elegible hoy?
+            # (regla de interrupción confirmada: una vacación/petición a
+            # mitad de bloque lo corta ahí, con lo ya cubierto — siempre
+            # ≥2 gracias al mínimo general de racha — y arranca uno nuevo
+            # con otra persona.)
+            if bloque["nombre"] is not None and (
+                persona_bloqueada_dia(staff_list, cfg, bloque["nombre"], d)
+                or bloque["nombre"] in tracker.bloqueados()
+            ):
+                bloque = {"nombre": None, "noches_totales": 0, "noches_cubiertas": 0}
+
+            if bloque["nombre"] is None:
+                # dias_cubrir={d} (Fase 5, corrección de INFEASIBLE
+                # espurio): cada arranque de bloque decide un día CONCRETO,
+                # no los dos días fijos de cfg.night_fixed_days_off (que en
+                # modo respaldo pueden ser irrelevantes, p.ej. si no hay
+                # night_fixed en la plantilla) — sin este parámetro, la
+                # elegibilidad podía devolver a alguien con el día `d` real
+                # ya forzado Libre por vacación/petición, y la línea de
+                # abajo fijaba Noche=1 sobre esa misma celda: dos
+                # restricciones duras contradictorias, INFEASIBLE que no
+                # reflejaba una imposibilidad real.
+                #
+                # Se incluye TAMBIÉN d+1 en dias_cubrir cuando cae dentro de
+                # esta semana (NUEVO, esta sesión — verificado empíricamente
+                # necesario en "Viernes de Carla" 12 semanas): sin esto, se
+                # podía elegir como titular de un bloque NUEVO a alguien con
+                # una vacación/petición propia justo al día siguiente,
+                # interrumpiendo el bloque tras 1 sola noche — violando el
+                # mínimo general de racha (MIN_NOCHES_RACHA=2,
+                # agregar_restriccion_racha_noches) de forma que ni siquiera
+                # el mecanismo de interrupción confirmado (que asume ≥2
+                # noches ya cubiertas) contempla. Exigir elegibilidad para
+                # {d, d+1} garantiza que quien arranca un bloque nuevo puede
+                # cubrir, como mínimo, las 2 noches que el mínimo general
+                # exige antes de cualquier interrupción posible.
+                #
+                # bloqueados_por_racha: nombres que a fecha de HOY (antes
+                # de decidir el día d) todavía tienen descanso obligatorio
+                # post-racha pendiente de días anteriores de esta misma
+                # semana — ver _RachaTracker.
+                dias_arranque = {d, d + 1} if d < 6 else {d}
+                nombre, estado_rotacion = seleccionar_candidato_cobertura_nocturna(
+                    staff_list, cfg, estado_rotacion, dias_cubrir=dias_arranque,
+                    bloqueados_por_racha=tracker.bloqueados(),
+                )
+                bloque = {
+                    "nombre": nombre,
+                    "noches_totales": longitud_bloque_respaldo(staff_list, nombre, d),
+                    "noches_cubiertas": 0,
+                }
+            else:
+                # Continuación de bloque: el "quién" ya se decidió al
+                # arrancarlo — no se vuelve a llamar a seleccionar_
+                # candidato_cobertura_nocturna (nada que decidir hoy), solo
+                # se refleja la carga en historico_balance.
+                estado_rotacion = registrar_noche_bloque(estado_rotacion, bloque["nombre"])
+
+            cobertura_externa[d] = bloque["nombre"]
+            tracker.registrar(bloque["nombre"])
+            bloque["noches_cubiertas"] += 1
+            if bloque["noches_cubiertas"] >= bloque["noches_totales"]:
+                bloque = {"nombre": None, "noches_totales": 0, "noches_cubiertas": 0}
+
+        estado_rotacion["bloque_actual"] = bloque
+        if bloque["nombre"] is not None:
+            personas_bloque_continua.add(bloque["nombre"])
     else:
         nombre, estado_rotacion = seleccionar_candidato_cobertura_nocturna(
             staff_list, cfg, estado_rotacion
@@ -1529,15 +2085,47 @@ def generar_semana_cpsat_con_cobertura_nocturna(
         for d in cfg.night_fixed_days_off:
             cobertura_externa[d] = nombre
 
+    # dias_bloqueados_externos (restricción #7, ver docstring de
+    # _construir_modelo): invierte cobertura_externa ({día: nombre}) a
+    # {nombre: {días}} — los días en que cada persona YA está comprometida
+    # con Noche por cobertura_externa (fijado más abajo, DESPUÉS de esta
+    # llamada) no pueden contarse como "disponibles" para el patrón de 2
+    # libres de esa persona, sea el modo normal (un único sustituto, ambos
+    # días de cfg.night_fixed_days_off) o el modo respaldo (hasta 7
+    # personas distintas, un día cada una).
+    dias_bloqueados_externos = {}
+    for d, nombre in cobertura_externa.items():
+        dias_bloqueados_externos.setdefault(nombre, set()).add(d)
+
     model, x, names, by_name = _construir_modelo(
         staff_list, week_start, cfg, prev_sunday_shifts,
         nombre_sustituto_cobertura=nombre_sustituto_unico,
+        dias_bloqueados_externos=dias_bloqueados_externos,
     )
 
     for d, nombre in cobertura_externa.items():
         model.Add(x[nombre, d, "Noche"] == 1)
 
-    postweek_vars = agregar_restriccion_racha_noches(model, x, names, noches_ultimos_5_dias)
+    # night_fixed queda siempre exento de la regla conservadora de Domingo
+    # (agregar_restriccion_racha_noches, punto 3): su patrón de Noche es
+    # enteramente estructural (cfg.night_fixed_days_off, restricción #4/#5),
+    # no una elección libre del solver, y su racha real es continua entre
+    # semanas por diseño (dos noches sueltas de descanso). La regla
+    # "Domingo Noche <= Sábado Noche" asume que un Domingo trabajado es un
+    # arranque nuevo que necesita verificarse — para night_fixed eso es
+    # falso siempre que cfg.night_fixed_days_off termine en Sábado (ej.
+    # mozos, [4,5]): night_fixed libra Sábado por turno fijo pero SÍ trabaja
+    # Noche el Domingo por el mismo turno fijo, lo que sin esta excepción
+    # queda contradicho por la regla conservadora → INFEASIBLE espurio.
+    personas_bloque_continua_racha = set(personas_bloque_continua)
+    for name, person in by_name.items():
+        if person.get("role") == "night_fixed":
+            personas_bloque_continua_racha.add(name)
+
+    postweek_vars = agregar_restriccion_racha_noches(
+        model, x, names, noches_ultimos_5_dias,
+        personas_bloque_continua=personas_bloque_continua_racha,
+    )
     extra_vars_planas = {}
     for name, (post1, post2) in postweek_vars.items():
         extra_vars_planas[f"{name}__lunes"] = post1
@@ -1548,6 +2136,16 @@ def generar_semana_cpsat_con_cobertura_nocturna(
     )
 
     forced_days_off_extra = {}
+    # descanso_pendiente_inicial (NUEVO, esta sesión — ver _RachaTracker):
+    # misma fuente (post1/post2) que forced_days_off_extra, pero como
+    # CONTEO de días de descanso aún pendientes al arrancar la semana
+    # siguiente (0, 1 o 2) — post2=1 implica post1=1 por construcción
+    # (nunca hay "solo martes" sin lunes), así que 2 si post2, si no 1 si
+    # post1, si no 0. Es la entrada que _RachaTracker necesita para saber,
+    # sin tener que reconstruirlo del empalme de 5 días (que no siempre
+    # alcanza a ver el inicio completo de la racha), a quién sigue
+    # bloqueado por descanso al principio de la semana siguiente.
+    descanso_pendiente_inicial = {}
     for name in names:
         dias = []
         if valores_extra[f"{name}__lunes"]:
@@ -1556,6 +2154,10 @@ def generar_semana_cpsat_con_cobertura_nocturna(
             dias.append(DAYS[1])
         if dias:
             forced_days_off_extra[name] = dias
+        if valores_extra[f"{name}__martes"]:
+            descanso_pendiente_inicial[name] = 2
+        elif valores_extra[f"{name}__lunes"]:
+            descanso_pendiente_inicial[name] = 1
 
     # Compensación Lun+Mar de la semana siguiente para el sustituto de
     # cobertura nocturna en modo normal (mecanismo de mozos —
@@ -1574,6 +2176,9 @@ def generar_semana_cpsat_con_cobertura_nocturna(
         name: [schedule[name][d] == "Noche" for d in range(2, 7)]
         for name in names
     }
+
+    estado_rotacion = dict(estado_rotacion)
+    estado_rotacion["descanso_pendiente_inicial"] = descanso_pendiente_inicial
 
     return {
         "schedule": schedule,

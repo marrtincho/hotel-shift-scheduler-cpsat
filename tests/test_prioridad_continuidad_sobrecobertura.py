@@ -71,24 +71,45 @@ def test_sobrante_va_a_partido_no_a_sobrecubrir_manana_o_tarde():
     sin presión de continuidad (P6 solo trabaja ese día, Libre el resto).
     Resultado de negocio esperado: 2 Mañana + 2 Tarde + 1 Noche + 1 Partido
     — NO 3 Mañana + 2 Tarde + 1 Noche."""
+    # M1/M2/T1/T2/N1 usan roles con TURNO FIJO (cfg.fixed_roles) en vez de
+    # un model.Add(...) manual por día (NUEVO, esta sesión — hallazgo de
+    # producción): con la restricción dura nueva de mínimo de libres
+    # semanales (motor_cpsat.MIN_LIBRES_POR_SEMANA), forzarlos a trabajar
+    # su turno los 7 días de la semana (como hacía la versión anterior de
+    # este test) contradice directamente esa restricción — INFEASIBLE.
+    # cfg.fixed_roles ya está EXCLUIDO de la restricción nueva (mismo
+    # criterio que jefe hoy: un rol con turno fijo es una política
+    # estructural, no algo que este mínimo deba tocar), así que la
+    # restricción dura #4 de fase 1 (turno fijo todos los días que
+    # trabajan) reproduce exactamente el mismo comportamiento que antes
+    # sin necesitar ningún model.Add manual ni entrar en conflicto.
+    # P6 usa un rol con fixed_days_off cubriendo Martes-Domingo (NUEVO, esta
+    # sesión — mismo motivo que M1/M2/T1/T2/N1 arriba): forzarlo Libre 6/7
+    # días vía model.Add contradice la restricción dura nueva de patrón de
+    # libres (exige EXACTAMENTE 2, no 6) si P6 quedara como rol "normal" sin
+    # más. cfg.fixed_days_off también está excluido de la restricción nueva.
     cfg = _cfg(
         min_coverage={"Mañana": 2, "Tarde": 2, "Noche": 1, "Partido": 0},
         max_coverage={"Mañana": 3, "Tarde": 3, "Noche": 1, "Partido": 1},
+        fixed_roles={"m_fijo": "Mañana", "t_fijo": "Tarde", "n_fijo": "Noche"},
+        fixed_days_off={"p6_rol": [1, 2, 3, 4, 5, 6]},
     )
-    staff = [{"name": n, "role": "normal"} for n in
-             ("M1", "M2", "T1", "T2", "N1", "P6")]
+    staff = [
+        {"name": "M1", "role": "m_fijo"}, {"name": "M2", "role": "m_fijo"},
+        {"name": "T1", "role": "t_fijo"}, {"name": "T2", "role": "t_fijo"},
+        {"name": "N1", "role": "n_fijo"},
+        {"name": "P6", "role": "p6_rol"},
+    ]
 
     def _modelo_base():
         model, x, names, _ = _construir_modelo(staff, SEMANA, cfg)
-        # M1/M2/T1/T2/N1 fijos en su turno TODOS los días (satisfacen el
-        # mínimo por sí solos toda la semana, con o sin P6) — solo P6
-        # trabaja el Lunes (día a comparar) y libra el resto, aislando el
-        # día 0 de cualquier interacción de continuidad/equidad con otros
-        # días para P6, sin dejar sin cobertura los demás días.
-        for name, turno in (("M1", "Mañana"), ("M2", "Mañana"),
-                             ("T1", "Tarde"), ("T2", "Tarde"), ("N1", "Noche")):
-            for d in range(7):
-                model.Add(x[name, d, turno] == 1)
+        # Solo P6 trabaja el Lunes (día a comparar) y libra el resto,
+        # aislando el día 0 de cualquier interacción de continuidad/equidad
+        # con otros días para P6, sin dejar sin cobertura los demás días
+        # (M1/M2/T1/T2/N1 ya cubren el mínimo por sí solos toda la semana,
+        # vía turno fijo, con o sin P6). Martes-Domingo ya quedan Libre
+        # automáticamente vía cfg.fixed_days_off (restricción dura #5); solo
+        # falta fijar que Lunes SÍ trabaja.
         model.Add(x["P6", 0, "Libre"] == 0)  # P6 debe trabajar el Lunes
         for d in range(1, 7):
             model.Add(x["P6", d, "Libre"] == 1)
@@ -144,40 +165,49 @@ def test_continuidad_gana_sobre_evitar_sobrecobertura():
     término B (confirmado al depurar este test); Mañana->Tarde no tiene
     ninguna restricción dura equivalente, así que aísla de verdad el
     término B sin chocar con fase 1."""
+    # Z_manana/T_fijo con roles de TURNO FIJO propios (NUEVO, esta sesión —
+    # mismo motivo que en los escenarios 1/3 de arriba): forzarlos a
+    # trabajar 7/7 vía model.Add contradice la restricción dura nueva de
+    # mínimo de libres semanales; cfg.fixed_roles está excluido de ella.
+    # T_fijo necesita además Libre el martes (día 1) — se modela como
+    # forced_days_off de la propia persona (restricción dura #6, ya
+    # excluida igualmente por tener también turno fijo), en vez de con
+    # model.Add, reproduciendo el mismo comportamiento que antes.
+    # P_manana/V_reserva TAMBIÉN con fixed_days_off propio cubriendo
+    # Miércoles-Domingo (NUEVO, esta sesión — mismo motivo que Z_manana/
+    # T_fijo arriba): forzarlos Libre 5/7 días vía model.Add contradice la
+    # restricción dura nueva de patrón de libres (exige EXACTAMENTE 2).
+    # cfg.fixed_days_off excluye el rol POR COMPLETO de esa restricción
+    # (sin importar cuántos días concretos tenga la lista), así que Lunes/
+    # Martes —el objeto real de este test— quedan libres para que el
+    # solver decida sin ninguna interferencia de la restricción nueva.
     cfg = _cfg(
         min_coverage={"Mañana": 1, "Tarde": 1, "Noche": 0, "Partido": 0},
         max_coverage={"Mañana": 3, "Tarde": 3, "Noche": 0, "Partido": 0},  # Partido bloqueado
-        no_night_roles={"normal"},  # bloquea Noche para todos (Noche también en 0)
+        no_night_roles={"normal", "z_fijo", "t_fijo", "p_manana_rol", "v_reserva_rol"},
+        fixed_roles={"z_fijo": "Mañana", "t_fijo": "Tarde"},
+        fixed_days_off={
+            "p_manana_rol": [2, 3, 4, 5, 6],
+            "v_reserva_rol": [2, 3, 4, 5, 6],
+        },
     )
-    staff = [{"name": n, "role": "normal"} for n in
-             ("P_manana", "Z_manana", "T_fijo", "V_reserva")]
+    staff = [
+        {"name": "P_manana", "role": "p_manana_rol"},
+        {"name": "Z_manana", "role": "z_fijo"},
+        {"name": "T_fijo", "role": "t_fijo", "forced_days_off": ["Martes"]},
+        {"name": "V_reserva", "role": "v_reserva_rol"},
+    ]
 
     def _modelo_base():
         model, x, names, _ = _construir_modelo(staff, SEMANA, cfg)
-        # Z_manana cubre Mañana TODOS los días (satisface el mínimo de
-        # Mañana pase lo que pase). T_fijo cubre Tarde todos los días
-        # EXCEPTO el martes (día 1) — ese día, y solo ese día, el mínimo
-        # de Tarde depende de que alguien más lo cubra (V_reserva, o
-        # P_manana si se mueve allí), para que la alternativa de P_manana
-        # sea una elección real y no una necesidad estructural en ningún
-        # otro día.
-        for d in range(7):
-            model.Add(x["Z_manana", d, "Mañana"] == 1)
-            if d != 1:
-                model.Add(x["T_fijo", d, "Tarde"] == 1)
-        model.Add(x["T_fijo", 1, "Libre"] == 1)
         # Lunes: P_manana cubre Mañana (fija la premisa de continuidad).
         model.Add(x["P_manana", 0, "Mañana"] == 1)
         model.Add(x["V_reserva", 0, "Libre"] == 1)
         # Martes: P_manana debe trabajar (Libre y Partido bloqueados por
         # cfg). V_reserva queda LIBRE de decidir: Tarde (si hace falta) o
-        # Libre (si no hace falta).
+        # Libre (si no hace falta). Miércoles-Domingo ya quedan Libre
+        # automáticamente vía cfg.fixed_days_off (restricción dura #5).
         model.Add(x["P_manana", 1, "Libre"] == 0)
-        # Resto de la semana: P_manana y V_reserva Libre (aísla el día 1
-        # de cualquier interacción de continuidad con días posteriores).
-        for name in ("P_manana", "V_reserva"):
-            for d in range(2, 7):
-                model.Add(x[name, d, "Libre"] == 1)
         return model, x, names
 
     # Opción real: el solver decide martes para P_manana y V_reserva.
@@ -225,18 +255,25 @@ def test_max_coverage_al_limite_no_necesita_logica_especial():
     alguna), la restricción dura de fase 1 ya impide sobre-cubrir — el
     término I no encuentra nada que penalizar, sin necesitar ningún caso
     especial en el código."""
+    # M1/M2/T1/T2/N1 con turno fijo (cfg.fixed_roles), no model.Add manual
+    # por día — mismo motivo que en el escenario 1 de arriba (NUEVO, esta
+    # sesión: forzar 7/7 días trabajados via model.Add contradice la
+    # restricción dura nueva de mínimo de libres semanales; fixed_roles
+    # está excluido de ella y reproduce el mismo comportamiento).
     cfg = _cfg(
         min_coverage={"Mañana": 2, "Tarde": 2, "Noche": 1, "Partido": 0},
         max_coverage={"Mañana": 2, "Tarde": 2, "Noche": 1, "Partido": 1},  # sin holgura en Mañana/Tarde
+        fixed_roles={"m_fijo": "Mañana", "t_fijo": "Tarde", "n_fijo": "Noche"},
+        fixed_days_off={"p6_rol": [1, 2, 3, 4, 5, 6]},  # ver escenario 1: P6 Libre 6/7 días
     )
-    staff = [{"name": n, "role": "normal"} for n in
-             ("M1", "M2", "T1", "T2", "N1", "P6")]
+    staff = [
+        {"name": "M1", "role": "m_fijo"}, {"name": "M2", "role": "m_fijo"},
+        {"name": "T1", "role": "t_fijo"}, {"name": "T2", "role": "t_fijo"},
+        {"name": "N1", "role": "n_fijo"},
+        {"name": "P6", "role": "p6_rol"},
+    ]
 
     model, x, names, _ = _construir_modelo(staff, SEMANA, cfg)
-    for name, turno in (("M1", "Mañana"), ("M2", "Mañana"),
-                         ("T1", "Tarde"), ("T2", "Tarde"), ("N1", "Noche")):
-        for d in range(7):
-            model.Add(x[name, d, turno] == 1)
     model.Add(x["P6", 0, "Libre"] == 0)
     for d in range(1, 7):
         model.Add(x["P6", d, "Libre"] == 1)

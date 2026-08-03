@@ -72,6 +72,15 @@ def _cfg(**overrides) -> DeptConfig:
 
 
 def _staff_basico():
+    # Gus/Hugo (NUEVO, esta sesión — hallazgo de producción): con la
+    # restricción dura nueva de patrón de libres (motor_cpsat.
+    # DIAS_LIBRES_SEGUIDOS_POR_SEMANA — exactamente 2 libres CONSECUTIVOS
+    # por semana, no solo "al menos 2"), los 6 "normal" originales no
+    # dejaban margen real para que cada uno formara su propio par
+    # consecutivo en una rotación válida junto con la cobertura mínima —
+    # INFEASIBLE incluso en el escenario "básico" sin ninguna otra
+    # complicación. 2 personas extra dan el margen que hacía falta para
+    # TODOS los tests de este archivo que reutilizan este fixture.
     return [
         {"name": "Jefe",   "role": "jefe"},
         {"name": "Ana",    "role": "normal"},
@@ -80,6 +89,8 @@ def _staff_basico():
         {"name": "Diego",  "role": "normal"},
         {"name": "Eva",    "role": "normal"},
         {"name": "Fer",    "role": "normal"},
+        {"name": "Gus",    "role": "normal"},
+        {"name": "Hugo",   "role": "normal"},
     ]
 
 
@@ -170,7 +181,7 @@ def test_vacaciones_forced_days_off_respetadas():
 
 
 def test_vacaciones_semana_completa():
-    staff = _staff_basico()
+    staff = _staff_basico()  # ya incluye Gus/Hugo — margen suficiente incluso con Diego fuera toda la semana
     diego = next(p for p in staff if p["name"] == "Diego")
     diego["forced_days_off"] = DAYS[:]  # vacaciones toda la semana
     cfg = _cfg()
@@ -402,7 +413,13 @@ def test_equidad_prioriza_a_quien_tiene_menos_findes_libres_historicos():
     término de equidad debe priorizar a la rezagada para ese único slot."""
     from herramientas import registrar_semana
 
-    cfg = _cfg()  # dept_id="test": Mañana2+Tarde2+Noche1=5 mínimo, 6 normales -> 1 slot libre
+    cfg = _cfg()  # dept_id="test": Mañana2+Tarde2+Noche1=5 mínimo
+    # Sobrado6/Sobrado7 (NUEVO, esta sesión — hallazgo de producción, ver
+    # motor_cpsat.MIN_LIBRES_POR_SEMANA): con solo 6 personas y 5 mínimo
+    # diario, no queda margen para que cada una tenga también sus 2 libres
+    # obligatorios (restricción dura nueva) — 2 personas extra dan el
+    # margen que hacía falta sin afectar la propiedad verificada (Rezagado
+    # sigue siendo, con diferencia, quien menos finde libre ha tenido).
     staff = [
         {"name": "Rezagado", "role": "normal"},
         {"name": "Sobrado1", "role": "normal"},
@@ -410,6 +427,8 @@ def test_equidad_prioriza_a_quien_tiene_menos_findes_libres_historicos():
         {"name": "Sobrado3", "role": "normal"},
         {"name": "Sobrado4", "role": "normal"},
         {"name": "Sobrado5", "role": "normal"},
+        {"name": "Sobrado6", "role": "normal"},
+        {"name": "Sobrado7", "role": "normal"},
     ]
 
     for i in range(1, 5):
@@ -469,6 +488,12 @@ def test_rol_excluido_sin_fixed_days_off_casi_nunca_libra_finde_completo():
     0 (o casi 0) de esas semanas — no por restricción dura, sino por el peso
     alto del término E. El nombre del rol ("cubridor") es arbitrario y no
     aparece en ningún sitio de motor_cpsat.py."""
+    # N6/N7 (NUEVO, esta sesión — hallazgo de producción, ver motor_cpsat.
+    # MIN_LIBRES_POR_SEMANA): con solo 6 personas (mínimo diario 5) no
+    # queda margen para que cada una tenga también sus 2 libres
+    # obligatorios (restricción dura nueva) — 2 personas extra dan el
+    # margen que hacía falta, sin afectar la propiedad verificada (peso
+    # alto del término E sobre Cubridor).
     cfg = _cfg(roles_excluidos_equidad={"cubridor"})
     staff = [
         {"name": "Cubridor", "role": "cubridor"},
@@ -477,6 +502,8 @@ def test_rol_excluido_sin_fixed_days_off_casi_nunca_libra_finde_completo():
         {"name": "N3", "role": "normal"},
         {"name": "N4", "role": "normal"},
         {"name": "N5", "role": "normal"},
+        {"name": "N6", "role": "normal"},
+        {"name": "N7", "role": "normal"},
     ]
 
     prev_sunday = {}
@@ -501,6 +528,8 @@ def test_rol_excluido_sin_fixed_days_off_si_libra_con_peticion_concedida():
     para Cubridor justo ese finde: la restricción dura #6 (fase 1) debe
     ganarle a la penalización blanda del término E — el finde libre se
     fuerza igual, sin conflicto."""
+    # N6/N7 (NUEVO, esta sesión, mismo motivo que en el test anterior — ver
+    # motor_cpsat.MIN_LIBRES_POR_SEMANA).
     cfg = _cfg(roles_excluidos_equidad={"cubridor"})
     staff = [
         {"name": "Cubridor", "role": "cubridor", "forced_days_off": ["Sábado", "Domingo"]},
@@ -509,6 +538,8 @@ def test_rol_excluido_sin_fixed_days_off_si_libra_con_peticion_concedida():
         {"name": "N3", "role": "normal"},
         {"name": "N4", "role": "normal"},
         {"name": "N5", "role": "normal"},
+        {"name": "N6", "role": "normal"},
+        {"name": "N7", "role": "normal"},
     ]
 
     sched = generar_semana_cpsat(staff, SEMANA, cfg)
@@ -559,15 +590,21 @@ def test_termino_e_cede_cuando_la_alternativa_cuesta_mas_de_200():
     sino el término de equidad A, que también es una "otra penalización"
     legítima entre los 4 términos de fase 2.
 
-    Cobertura sin holgura (max_coverage == min_coverage, suma=5 con 6
-    personas): exactamente 1 persona libra cada día, sin excepción — nadie
-    puede "elegir" no participar del reparto. N2-N5 están comprometidos
-    (bloqueados) el finde por un motivo ajeno al modelo (simula, p.ej., que
-    ya tienen otra cobertura asignada esa semana). Eso deja solo dos
-    candidatos posibles para el finde: Cubridor o N1 — y con historial
-    fabricado (N1 ratio=1.0, N2-N5 ratio=0.0 → media≈0.167), darle el finde
-    a N1 en vez de a Cubridor cuesta ~8330 solo por el término A, muy por
-    encima de los 200 de E.
+    La presión real sobre el finde no viene de que la cobertura esté "sin
+    holgura" (max_coverage == min_coverage) — con la restricción dura nueva
+    de patrón de libres (motor_cpsat.DIAS_LIBRES_SEGUIDOS_POR_SEMANA,
+    exactamente 2 CONSECUTIVOS por persona) esa rigidez ya no es compatible
+    con que cada persona pueda además encajar su propio par en una
+    rotación válida — viene de bloquear EXPLÍCITAMENTE a N2-N5 (y, en el
+    contrafactual, también a Cubridor) fuera del finde, dejando la
+    cobertura mínima (con margen normal, max_coverage generoso) como la
+    única vía real de presión. N2-N5 están comprometidos (bloqueados) el
+    finde por un motivo ajeno al modelo (simula, p.ej., que ya tienen otra
+    cobertura asignada esa semana). Eso deja solo dos candidatos posibles
+    para el finde: Cubridor o N1 — y con historial fabricado (N1 ratio=1.0,
+    N2-N5 ratio=0.0 → media≈0.167), darle el finde a N1 en vez de a
+    Cubridor cuesta ~8330 solo por el término A, muy por encima de los 200
+    de E.
 
     NOTA de diseño — por qué no roturas+Partido como sugería el planteo
     original: en este modelo, "Libre" es una vía de escape sin coste
@@ -598,10 +635,25 @@ def test_termino_e_cede_cuando_la_alternativa_cuesta_mas_de_200():
     """
     from herramientas import registrar_semana
 
+    # max_coverage == min_coverage (sin holgura) preservado — es lo que
+    # convierte "Cubridor libra el finde" en algo estructuralmente forzado
+    # por el máximo (N1+N2-N5 ya agotan el máximo de 5 el finde en el
+    # escenario real, así que a Cubridor no le queda sitio), no una mera
+    # preferencia blanda; ver docstring. N6/N7/N8 (NUEVO, esta sesión —
+    # hallazgo de producción): dan el margen de libres que Cubridor/N1/
+    # N2-N5 necesitan para su propio patrón CONSECUTIVO de 2 (restricción
+    # dura nueva) SIN competir por el finde. Usan un rol con
+    # cfg.fixed_days_off=[Sáb,Dom] (no forced_days_off personal): eso los
+    # EXCLUYE por completo de la restricción nueva (a diferencia de un
+    # forced_days_off personal, que solo resta esos días del conteo y
+    # seguiría exigiéndoles un par aparte entre semana) — trabajan los 5
+    # días de diario con normalidad, aportando cobertura ahí sin nunca ser
+    # candidatos al finde.
     cfg = _cfg(
         roles_excluidos_equidad={"cubridor"},
         min_coverage={"Mañana": 2, "Tarde": 2, "Noche": 1, "Partido": 0},
         max_coverage={"Mañana": 2, "Tarde": 2, "Noche": 1, "Partido": 0},  # sin holgura
+        fixed_days_off={"jefe": [5, 6], "buffer_rol": [5, 6]},
     )
     staff = [
         {"name": "Cubridor", "role": "cubridor"},
@@ -610,6 +662,9 @@ def test_termino_e_cede_cuando_la_alternativa_cuesta_mas_de_200():
         {"name": "N3", "role": "normal"},
         {"name": "N4", "role": "normal"},
         {"name": "N5", "role": "normal"},
+        {"name": "N6", "role": "buffer_rol"},
+        {"name": "N7", "role": "buffer_rol"},
+        {"name": "N8", "role": "buffer_rol"},
     ]
 
     for i in range(1, 5):

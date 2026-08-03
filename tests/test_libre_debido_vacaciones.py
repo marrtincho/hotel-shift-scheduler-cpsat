@@ -93,12 +93,29 @@ def _cfg(dias_libres_aux, **overrides) -> DeptConfig:
 
 
 def _staff(dias_vac: list) -> list:
+    """Buffer1/Buffer2 (NUEVO, esta sesión — hallazgo de producción, ver
+    motor_cpsat.MIN_LIBRES_POR_SEMANA): con la restricción dura nueva de
+    mínimo de libres semanales, N1/N2 (role="normal") también deben
+    conseguir sus propios 2 libres — algo que el diseño original de 4
+    personas (Vero+N1+N2+Aux, cobertura SIN holgura salvo 1 hueco/día) no
+    dejaba sitio para hacer sin invalidar el escenario que estos tests
+    existen para probar (0 holgura en días concretos, para que la posición
+    del/de los libre(s) debido(s) de Vero quede determinada sin ambigüedad).
+    Buffer1/Buffer2 comparten el rol "aux_rol" con Aux (mismos
+    fixed_days_off) — dan holgura real los días en que Aux NO libra (más
+    candidatos disponibles que el mínimo exige), sin tocar los días en que
+    Aux SÍ libra (ahí Vero/N1/N2 siguen siendo, entre los tres, exactamente
+    la cantidad exigida — 0 holgura, igual que antes). No están sujetos al
+    mínimo de libres nuevo (mismo rol que Aux, con fixed_days_off), así que
+    no compiten por los huecos que el término J reserva para Vero."""
     return [
         {"name": "Vero", "role": "normal", "forced_days_off": list(dias_vac),
          "dias_vacaciones": list(dias_vac)},
         {"name": "N1", "role": "normal"},
         {"name": "N2", "role": "normal"},
         {"name": "Aux", "role": "aux_rol"},
+        {"name": "Buffer1", "role": "aux_rol"},
+        {"name": "Buffer2", "role": "aux_rol"},
     ]
 
 
@@ -139,14 +156,25 @@ def test_vacaciones_empiezan_domingo_activa_2_libres_debidos():
 def test_vacaciones_empiezan_miercoles_activa_1_libre_debido():
     """Aux libra solo el Lunes (0 holgura ahí). Martes, con Aux de vuelta,
     tiene exactamente 1 hueco de holgura — el único óptimo de coste 0 es
-    que Vero se quede con él (resto trabajado el Lunes, forzado)."""
+    que Vero se quede con él (resto trabajado el Lunes, forzado).
+
+    dias_bloqueados_externos={"Vero": {0}} (NUEVO, esta sesión — hallazgo
+    de producción): sin esto, la restricción dura nueva de patrón de
+    libres (motor_cpsat.DIAS_LIBRES_SEGUIDOS_POR_SEMANA) no tiene forma de
+    saber que el Lunes está estructuralmente bloqueado para Vero (0
+    holgura por Aux librando ese día, no por una vacación/petición propia
+    de Vero) — sin esa información intentaría formar un par consecutivo
+    que incluyera el Lunes, chocando con la cobertura mínima real. Con
+    solo el Martes como día no bloqueado (1 día, por debajo del mínimo del
+    patrón), la restricción nueva se omite para Vero esta semana y el
+    término J (blando) es quien decide el Martes, tal como pide el test."""
     cfg = _cfg(dias_libres_aux=[0])
     staff = _staff(["Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"])
     vero = staff[0]
 
     assert _inicio_bloque_vacaciones(vero) == 2, "precondición: bloque empieza el Miércoles (día 2)"
 
-    schedule = _resolver(staff, cfg)
+    schedule = _resolver(staff, cfg, dias_bloqueados_externos={"Vero": {0}})
     turnos_vero = schedule["Vero"]
 
     assert turnos_vero[0] != "Libre", f"Lunes debía quedar trabajado (sin holgura ahí): {turnos_vero}"
@@ -204,11 +232,20 @@ def test_termino_cede_cuando_el_libre_debido_rompe_cobertura_minima():
         cover_consecutive=True, night_rotation_key="test",
         allow_non_consecutive_cover=False, prefer_next_week_for_cover=False,
     )
+    # N4 (NUEVO, esta sesión — hallazgo de producción): con solo Vero/N1/N2
+    # como "normal" y cobertura sin holgura (min=3=headcount-1), los 3 no
+    # tenían margen para cumplir también su propio patrón de 2 libres
+    # seguidos (restricción dura nueva) — INFEASIBLE ajeno a lo que este
+    # test verifica. N4 comparte el rol de N3 ("n3_rol", también libre fijo
+    # el Sábado) para no tocar la propiedad central del escenario (0
+    # holgura de cobertura específicamente el Sábado, con Vero/N1/N2 como
+    # únicos disponibles ese día) — solo da margen el resto de la semana.
     staff = [
         {"name": "Vero", "role": "normal", "forced_days_off": ["Domingo"], "dias_vacaciones": ["Domingo"]},
         {"name": "N1", "role": "normal"},
         {"name": "N2", "role": "normal"},
         {"name": "N3", "role": "n3_rol"},
+        {"name": "N4", "role": "n3_rol"},
     ]
 
     schedule = _resolver(staff, cfg)  # no debe lanzar RuntimeError
@@ -303,7 +340,17 @@ def test_compatible_con_termino_f_domingo_suelto_sustituto():
         "coexistencia real de ambos términos"
     )
 
-    schedule = _resolver(staff, cfg, nombre_sustituto_cobertura="Vero")  # no debe lanzar RuntimeError
+    # dias_bloqueados_externos={"Vero": {0,1,2}} (NUEVO, esta sesión —
+    # hallazgo de producción, mismo motivo que en el escenario 2 de
+    # arriba): Lunes-Miércoles están estructuralmente bloqueados para Vero
+    # (0 holgura por Aux librando esos días), no por una vacación/petición
+    # propia — sin decírselo a la restricción dura nueva de patrón de
+    # libres, esta intentaría formar un par consecutivo ahí, chocando con
+    # la cobertura mínima real.
+    schedule = _resolver(
+        staff, cfg, nombre_sustituto_cobertura="Vero",
+        dias_bloqueados_externos={"Vero": {0, 1, 2}},
+    )  # no debe lanzar RuntimeError
 
     assert schedule["Vero"][0:3] != ["Libre"] * 3 and all(
         t != "Libre" for t in schedule["Vero"][0:3]
