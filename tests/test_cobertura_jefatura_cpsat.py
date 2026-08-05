@@ -71,6 +71,7 @@ from modelo_base import DAYS
 from motor_cpsat import (
     _construir_modelo, _resolver_y_extraer, _dias_cobertura_ausencia,
     PESO_COBERTURA_AUSENCIA, PESO_COMPLEMENTARIO_JEFATURA, generar_semana_cpsat,
+    PESO_COBERTURA_DIAS_LIBRES_FIJOS,
 )
 
 SEMANA = date(2099, 6, 1)  # Lunes en futuro lejano
@@ -124,7 +125,7 @@ def test_dia_suelto_de_ausencia_subjefe_cubre_solo_ese_dia():
     juan = next(p for p in staff if p["name"] == "Juan")
     juan["forced_days_off"] = ["Martes"]
 
-    dias_ausencia, semana_completa = _dias_cobertura_ausencia(
+    dias_ausencia, _dias_fijos, semana_completa = _dias_cobertura_ausencia(
         staff, cfg, "jefe", cfg.cobertura_roles["subjefe"]
     )
     assert dias_ausencia == {1}  # Martes
@@ -146,7 +147,7 @@ def test_dias_libres_fijos_del_jefe_no_cuentan_como_ausencia():
     cfg = _cfg_con_cobertura(semana_completa=False)
     staff = _plantilla()  # Juan (jefe) sin peticiones ni vacaciones
 
-    dias_ausencia, semana_completa = _dias_cobertura_ausencia(
+    dias_ausencia, _dias_fijos, semana_completa = _dias_cobertura_ausencia(
         staff, cfg, "jefe", cfg.cobertura_roles["subjefe"]
     )
     assert dias_ausencia == set()
@@ -176,8 +177,8 @@ def test_semana_completa_dias_ausencia_identicos_en_opcion_a_y_b():
     cfg_a = _cfg_con_cobertura(semana_completa=False)
     cfg_b = _cfg_con_cobertura(semana_completa=True)
 
-    dias_a, completa_a = _dias_cobertura_ausencia(staff, cfg_a, "jefe", cfg_a.cobertura_roles["subjefe"])
-    dias_b, completa_b = _dias_cobertura_ausencia(staff, cfg_b, "jefe", cfg_b.cobertura_roles["subjefe"])
+    dias_a, _fijos_a, completa_a = _dias_cobertura_ausencia(staff, cfg_a, "jefe", cfg_a.cobertura_roles["subjefe"])
+    dias_b, _fijos_b, completa_b = _dias_cobertura_ausencia(staff, cfg_b, "jefe", cfg_b.cobertura_roles["subjefe"])
 
     assert dias_a == dias_b == set(range(7))
     assert completa_a and completa_b  # la condición RAW es la misma; el flag de cfg decide si se usa
@@ -313,7 +314,7 @@ def test_jefe_inexistente_dias_ausencia_es_semana_completa():
     cfg = _cfg_con_cobertura(semana_completa=False)
     staff = [p for p in _plantilla_holgada() if p["name"] != "Juan"]  # sin jefe
 
-    dias_ausencia, semana_completa = _dias_cobertura_ausencia(
+    dias_ausencia, _dias_fijos, semana_completa = _dias_cobertura_ausencia(
         staff, cfg, "jefe", cfg.cobertura_roles["subjefe"]
     )
     assert dias_ausencia == set(range(7))
@@ -379,14 +380,21 @@ def test_jefe_inexistente_opcion_b_penaliza_exactamente_2x_peso_extra_en_finde()
 # 5b. cubrir_dias_libres_fijos: el cubridor también cubre el finde fijo
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_cubrir_dias_libres_fijos_activo_incluye_finde_del_jefe_en_dias_ausencia():
+def test_cubrir_dias_libres_fijos_activo_devuelve_el_finde_del_jefe_aparte():
+    """(actualizado esta sesión) Los días libres FIJOS del jefe ya no se
+    mezclan con las ausencias reales: _dias_cobertura_ausencia los devuelve
+    en un conjunto APARTE, para que el término G pueda cobrarlos al peso
+    menor PESO_COBERTURA_DIAS_LIBRES_FIJOS en vez de al de una ausencia
+    real. Sin ninguna ausencia real, dias_ausencia queda vacío y el finde
+    fijo aparece en el segundo conjunto."""
     cfg = _cfg_con_cobertura(semana_completa=False, cubrir_dias_libres_fijos=True)
     staff = _plantilla()  # Juan presente, sin ausencias reales
 
-    dias_ausencia, semana_completa = _dias_cobertura_ausencia(
+    dias_ausencia, dias_fijos, semana_completa = _dias_cobertura_ausencia(
         staff, cfg, "jefe", cfg.cobertura_roles["subjefe"]
     )
-    assert dias_ausencia == {5, 6}
+    assert dias_ausencia == set()
+    assert dias_fijos == {5, 6}
     assert not semana_completa
 
 
@@ -409,10 +417,15 @@ def test_cubrir_dias_libres_fijos_activo_penaliza_exactamente_al_forzar_libre():
     solver para este caso concreto: jefe PRESENTE, sin ninguna ausencia
     real, solo con la casilla cubrir_dias_libres_fijos activa. Forzar a
     Laura a estar Libre el sábado (uno de los días libres FIJOS del jefe,
-    no una ausencia real) debe costar EXACTAMENTE PESO_COBERTURA_AUSENCIA
-    más que el óptimo sin forzar nada — confirma que el mecanismo se activa
-    de verdad para este caso, no solo que el cálculo de entrada
-    (dias_ausencia == {5, 6}, ver test anterior) es correcto."""
+    no una ausencia real) debe costar EXACTAMENTE
+    PESO_COBERTURA_DIAS_LIBRES_FIJOS más que el óptimo sin forzar nada —
+    confirma que el mecanismo se activa de verdad para este caso, no solo
+    que el cálculo de entrada (dias_fijos == {5, 6}, ver test anterior) es
+    correcto.
+
+    (actualizado esta sesión) Antes esperaba PESO_COBERTURA_AUSENCIA: los
+    días libres fijos del cubierto pasaron a cobrarse al peso menor, para
+    que el subjefe pueda seguir librando algún fin de semana."""
     from ortools.sat.python import cp_model
 
     cfg = _cfg_con_cobertura(semana_completa=False, cubrir_dias_libres_fijos=True)
@@ -432,10 +445,11 @@ def test_cubrir_dias_libres_fijos_activo_penaliza_exactamente_al_forzar_libre():
     assert status_forzado in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     obj_forzado = solver_forzado.ObjectiveValue()
 
-    assert round(obj_forzado - obj_base) == PESO_COBERTURA_AUSENCIA, (
+    assert round(obj_forzado - obj_base) == PESO_COBERTURA_DIAS_LIBRES_FIJOS, (
         f"Forzar a Laura Libre el sábado (día libre fijo del jefe, sin "
-        f"ausencia real) debería costar exactamente PESO_COBERTURA_AUSENCIA "
-        f"({PESO_COBERTURA_AUSENCIA}) más que el óptimo: "
+        f"ausencia real) debería costar exactamente "
+        f"PESO_COBERTURA_DIAS_LIBRES_FIJOS "
+        f"({PESO_COBERTURA_DIAS_LIBRES_FIJOS}) más que el óptimo: "
         f"obj_base={obj_base}, obj_forzado={obj_forzado}"
     )
 
@@ -447,7 +461,7 @@ def test_cubrir_dias_libres_fijos_desactivado_no_activa_termino():
     cfg = _cfg_con_cobertura(semana_completa=False, cubrir_dias_libres_fijos=False)
     staff = _plantilla()
 
-    dias_ausencia, _ = _dias_cobertura_ausencia(staff, cfg, "jefe", cfg.cobertura_roles["subjefe"])
+    dias_ausencia, _fijos, _completa = _dias_cobertura_ausencia(staff, cfg, "jefe", cfg.cobertura_roles["subjefe"])
     assert dias_ausencia == set()
 
 
@@ -461,7 +475,7 @@ def test_cubrir_dias_libres_fijos_mas_semana_completa_combinadas():
     juan = next(p for p in staff if p["name"] == "Juan")
     juan["forced_days_off"] = list(DAYS)
 
-    dias_ausencia, semana_completa = _dias_cobertura_ausencia(
+    dias_ausencia, _dias_fijos, semana_completa = _dias_cobertura_ausencia(
         staff, cfg, "jefe", cfg.cobertura_roles["subjefe"]
     )
     assert dias_ausencia == set(range(7))
@@ -511,8 +525,13 @@ def test_cobertura_finde_respeta_max_coverage_sin_romper_limite():
         {"name": "Otro",  "role": "otro"},  # trabaja solo Sáb+Dom, fixed_roles Mañana
     ]
 
-    dias_ausencia, _ = _dias_cobertura_ausencia(staff, cfg, "jefe", cfg.cobertura_roles["subjefe"])
-    assert 5 in dias_ausencia  # cubrir_dias_libres_fijos activo: Sábado incluido pese a jefe presente
+    _dias_ausencia, dias_fijos, _completa = _dias_cobertura_ausencia(
+        staff, cfg, "jefe", cfg.cobertura_roles["subjefe"]
+    )
+    # cubrir_dias_libres_fijos activo: el Sábado entra por la vía de los
+    # días libres FIJOS (peso menor), no como ausencia real — el jefe está
+    # presente esta semana.
+    assert 5 in dias_fijos
 
     sched = generar_semana_cpsat(staff, SEMANA, cfg)
 

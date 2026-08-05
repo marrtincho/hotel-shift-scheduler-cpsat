@@ -32,7 +32,7 @@ from herramientas import (
     cargar_coverage_config, guardar_coverage_config,
     cargar_coverage_activa, validar_coverage_perfil,
     cargar_horarios_turnos, guardar_horarios_turnos, validar_horarios_turnos,
-    TURNOS_CON_HORARIO,
+    TURNOS_CON_HORARIO, transiciones_prohibidas, DESCANSO_MINIMO_HORAS,
     cargar_vacaciones_dotacion, guardar_vacaciones_dotacion,
     dotacion_vacaciones_de, dias_vacaciones_tomados_en_anio,
     DOTACION_VACACIONES_DEFAULT,
@@ -640,6 +640,19 @@ def _get_dept_config(dept_id: str):
         rid: r["dias_libres_fijos"] for rid, r in roles.items()
         if r.get("dias_libres_fijos") and rid != "night_fixed"
     }
+    # (esta sesión) no_night_roles era el único campo de cobertura de roles
+    # que este parche NO reconstruía: se quedaba con el valor hardcodeado de
+    # modelo_recepcion.py. El flag `sin_noches` de roles.json sí se leía en
+    # modelo_base y cobertura_nocturna (elegibilidad para CUBRIR noches), así
+    # que marcar/desmarcar la casilla en la UI cambiaba a quién se puede
+    # elegir como sustituto pero NO la restricción dura del modelo, que
+    # seguía prohibiendo (o permitiendo) las noches según la lista antigua.
+    # night_fixed se excluye por el mismo motivo que en los dos parches de
+    # arriba: su turno fijo ES Noche, tenga el flag el valor que tenga.
+    cfg.no_night_roles = {
+        rid for rid, r in roles.items()
+        if r.get("sin_noches") and rid != "night_fixed"
+    }
     nf = roles.get("night_fixed", {})
     if "dias_libres_fijos" in nf:
         cfg.night_fixed_days_off = nf["dias_libres_fijos"] or []
@@ -687,14 +700,46 @@ def _calcular_prev_last_shifts(schedule_semana_anterior: dict, staff_list: list)
     return resultado
 
 
+def _ruta_estado_cpsat(dept_id: str) -> str:
+    return os.path.join(DATA_DIR, f"cpsat_estado_{dept_id}.json")
+
+
+def _cargar_estado_cpsat(dept_id: str) -> dict:
+    """Contenido completo de cpsat_estado_{dept}.json ({} si no existe)."""
+    ruta = _ruta_estado_cpsat(dept_id)
+    if not os.path.exists(ruta):
+        return {}
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        # Un fichero corrupto no debe impedir generar: se parte de cero, que
+        # es exactamente lo que pasaba antes de que existiera el fichero.
+        return {}
+
+
+def _guardar_estado_cpsat(dept_id: str, estado_rotacion: dict) -> None:
+    guardar_json_atomico(_ruta_estado_cpsat(dept_id), {
+        "estado_rotacion": estado_rotacion,
+    })
+
+
+def _empleados_elegibles_noches(staff_list: list, cfg) -> list:
+    """Nombres que pueden entrar en la ronda de noches, en el orden en que
+    aparecen en la plantilla. Mismo criterio que cobertura_nocturna._elegibles
+    y que _estado_rotacion_inicial_cpsat: ni night_fixed (cubre sus propias
+    noches) ni ningún rol marcado sin_noches (cfg.no_night_roles)."""
+    return [p["name"] for p in staff_list
+            if p.get("role") != "night_fixed" and p.get("role") not in cfg.no_night_roles]
+
+
 def _estado_rotacion_inicial_cpsat(staff_list: list, cfg) -> dict:
     """Semilla de estado_rotacion (cobertura_nocturna.py) para el primer uso
     del motor CP-SAT en un departamento: sin esto, _elegir_orden_fijo revienta
     con 'orden está vacío' porque {} no trae ningún candidato. Mismo criterio
     de elegibilidad que seleccionar_candidato_cobertura_nocturna: fuera
     night_fixed (cubre sus propias noches) y los roles sin noche de cfg."""
-    elegibles = [p["name"] for p in staff_list
-                 if p.get("role") != "night_fixed" and p.get("role") not in cfg.no_night_roles]
+    elegibles = _empleados_elegibles_noches(staff_list, cfg)
     return {
         "orden": elegibles,
         "siguiente_turno": elegibles[0] if elegibles else None,
@@ -732,6 +777,7 @@ def _derivar_estado_racha_cpsat_desde_historial(dept_id: str, week_start: date, 
 
     noches_ultimos_5_dias = {}
     forced_days_off_extra = {}
+    dias_trabajados_previos = {}
     cubrieron_night_fixed_days_off = set()
 
     for nombre, turnos in prev_schedule.items():
@@ -742,6 +788,22 @@ def _derivar_estado_racha_cpsat_desde_historial(dept_id: str, week_start: date, 
         # que noches_siguiente en motor_cpsat.generar_semana_cpsat_con_
         # cobertura_nocturna).
         noches_ultimos_5_dias[nombre] = [turnos[d] == "Noche" for d in range(2, 7)]
+
+        # Días TRABAJADOS seguidos al cierre de la semana anterior (término M
+        # de motor_cpsat: tope preferido de días seguidos CRUZANDO semanas —
+        # el patrón de 2 libres es por semana, así que sin esto se pueden
+        # encadenar hasta 10 días sin romper ninguna regla dura). Se cuenta
+        # hacia atrás desde el domingo hasta el primer día no trabajado.
+        # Derivado del historial real igual que noches_ultimos_5_dias, y por
+        # el mismo motivo: una edición manual queda reflejada sin que ningún
+        # endpoint de edición tenga que recalcular nada.
+        racha_trabajo = 0
+        for d in range(6, -1, -1):
+            if turnos[d] in ("Libre", "", "SIN_ASIGNAR"):
+                break
+            racha_trabajo += 1
+        if racha_trabajo:
+            dias_trabajados_previos[nombre] = racha_trabajo
 
         # Mecanismo 1 (descanso de racha que no cupo dentro de la semana):
         # en agregar_restriccion_racha_noches, los ÚNICOS arranques de
@@ -779,7 +841,7 @@ def _derivar_estado_racha_cpsat_desde_historial(dept_id: str, week_start: date, 
             dict.fromkeys(existentes + [DAYS[0], DAYS[1]])
         )
 
-    return noches_ultimos_5_dias, forced_days_off_extra
+    return noches_ultimos_5_dias, forced_days_off_extra, dias_trabajados_previos
 
 
 def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: str,
@@ -798,14 +860,12 @@ def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: s
     """
     from motor_cpsat import generar_semana_cpsat_con_cobertura_nocturna
 
-    estado_path = os.path.join(DATA_DIR, f"cpsat_estado_{dept_id}.json")
-    estado_previo = json.loads(open(estado_path, encoding="utf-8").read()) \
-        if os.path.exists(estado_path) else {}
+    estado_previo = _cargar_estado_cpsat(dept_id)
     estado_rotacion = estado_previo.get("estado_rotacion") \
         or _estado_rotacion_inicial_cpsat(staff_list, cfg)
 
-    noches_ultimos_5_dias, forced_extra = _derivar_estado_racha_cpsat_desde_historial(
-        dept_id, week_start, cfg
+    noches_ultimos_5_dias, forced_extra, dias_trabajados_previos = (
+        _derivar_estado_racha_cpsat_desde_historial(dept_id, week_start, cfg)
     )
 
     for person in staff_list:
@@ -820,12 +880,11 @@ def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: s
         cfg=cfg,
         estado_rotacion=estado_rotacion,
         noches_ultimos_5_dias=noches_ultimos_5_dias,
+        dias_trabajados_previos=dias_trabajados_previos,
         prev_sunday_shifts=prev_sunday_shifts,
     )
 
-    guardar_json_atomico(estado_path, {
-        "estado_rotacion": resultado["estado_rotacion"],
-    })
+    _guardar_estado_cpsat(dept_id, resultado["estado_rotacion"])
 
     return resultado["schedule"], staff_list, week_start, {}, {}, []
 
@@ -846,36 +905,60 @@ def _calcular_advertencias(full_schedule: dict, staff_final: list[dict], cfg,
             mn = cfg.min_coverage.get(shift, 0)
             mx = cfg.max_coverage.get(shift, 99)
             if not (mn <= len(personas) <= mx):
+                # (esta sesión) cfg.max_coverage dejó de ser restricción
+                # dura en motor_cpsat.py (PESO_EXCESO_COBERTURA) -- superar
+                # el máximo ahora es un resultado válido y real, no solo
+                # una anomalía de edición manual, así que el mensaje indica
+                # explícitamente cuántas personas de más hay, no solo el
+                # conteo desnudo vs. el máximo.
+                mensaje = f"{day} – {shift}: {len(personas)} (mín {mn}, máx {mx})"
+                if len(personas) > mx:
+                    exceso = len(personas) - mx
+                    mensaje += f" — {exceso} persona(s) de más sobre el máximo"
                 advertencias.append({
                     "tipo": "cobertura",
-                    "mensaje": f"{day} – {shift}: {len(personas)} (mín {mn}, máx {mx})",
+                    "mensaje": mensaje,
                     "celdas": [{"nombre": p["name"], "dia_idx": day_idx} for p in personas],
                 })
 
-    # 2. Descanso: no Mañana tras Tarde/Noche, incluyendo el cruce con el
-    # domingo de la semana anterior si se conoce (prev_sunday_shifts).
-    from modelo_base import NO_MORNING_AFTER as NMA
+    # 2. Descanso mínimo entre turnos de días consecutivos, incluyendo el
+    # cruce con el domingo de la semana anterior si se conoce
+    # (prev_sunday_shifts).
+    #
+    # (esta sesión) Antes esto usaba modelo_base.NO_MORNING_AFTER, que solo
+    # conoce las transiciones que TERMINAN en Mañana — así que no avisaba de
+    # Noche→Tarde (8h) ni de Noche→Partido (3h), aunque motor_cpsat sí las
+    # bloquea como restricción dura. Una edición manual podía dejar un
+    # descanso de 3h sin ninguna advertencia. Ahora la tabla se DERIVA de
+    # los horarios realmente configurados del departamento y de
+    # herramientas.DESCANSO_MINIMO_HORAS, que es la fuente única de la regla.
+    horarios_dept = cargar_horarios_turnos(cfg.dept_id)
+    prohibidas = transiciones_prohibidas(horarios_dept)
     for p in staff_final:
         nombre = p["name"]
         turnos = full_schedule[nombre]
         for i in range(7):
             if i == 0:
                 prev_shift = (prev_sunday_shifts or {}).get(nombre)
-                if prev_shift is None or prev_shift not in NMA or turnos[0] != "Mañana":
+                if prev_shift is None or (prev_shift, turnos[0]) not in prohibidas:
                     continue
                 # El domingo anterior pertenece a la semana pasada: no hay
                 # celda que resaltar para él en esta parrilla, solo la actual.
                 advertencias.append({
                     "tipo": "descanso",
-                    "mensaje": f"{nombre}: Domingo anterior ({prev_shift}) → {DAYS[0]} (Mañana)",
+                    "mensaje": (f"{nombre}: Domingo anterior ({prev_shift}) → "
+                                f"{DAYS[0]} ({turnos[0]}) — menos de "
+                                f"{DESCANSO_MINIMO_HORAS}h de descanso"),
                     "celdas": [{"nombre": nombre, "dia_idx": 0}],
                 })
                 continue
             prev_shift, curr = turnos[i - 1], turnos[i]
-            if prev_shift in NMA and curr == "Mañana":
+            if (prev_shift, curr) in prohibidas:
                 advertencias.append({
                     "tipo": "descanso",
-                    "mensaje": f"{nombre}: {DAYS[i-1]} ({prev_shift}) → {DAYS[i]} (Mañana)",
+                    "mensaje": (f"{nombre}: {DAYS[i-1]} ({prev_shift}) → "
+                                f"{DAYS[i]} ({curr}) — menos de "
+                                f"{DESCANSO_MINIMO_HORAS}h de descanso"),
                     "celdas": [{"nombre": nombre, "dia_idx": i - 1},
                                {"nombre": nombre, "dia_idx": i}],
                 })
@@ -948,7 +1031,15 @@ def api_generar():
     # Chequeo de viabilidad previo: evita intentar generar con plantilla
     # manifiestamente inviable (demasiado pocas o demasiadas personas activas).
     from modelo_base import validar_viabilidad
-    viable, msg_viabilidad = validar_viabilidad(staff, cfg)
+    # Los turnos cuyo máximo NO es un tope duro dependen del motor activo: en
+    # motor_cpsat, Mañana/Tarde admiten superar el máximo (penalizado), así que
+    # no limitan cuánta gente cabe y "Personal excesivo" no debe bloquear la
+    # generación. El motor heurístico sí mantiene los cuatro máximos duros.
+    if motor_cpsat_activo():
+        from motor_cpsat import TURNOS_MAX_COBERTURA_BLANDA as _sin_techo
+    else:
+        _sin_techo = frozenset()
+    viable, msg_viabilidad = validar_viabilidad(staff, cfg, turnos_sin_techo=_sin_techo)
     if not viable:
         return err(msg_viabilidad, 422)
 
@@ -1211,6 +1302,44 @@ def _extra_dept_section(key: str, semana: date, dept_excluido: str) -> list:
     icons_otro = {rid: r.get("icon", "") for rid, r in cargar_roles(otro).items()}
     return [(e["schedule"], e["staff"], cfg_otro, icons_otro)]
 
+def _enviar_excel(entrada: dict, semana: date, key: str, dept_id: str, cfg):
+    """Genera el .xlsx EN MEMORIA y lo devuelve como descarga.
+
+    (esta sesión) Antes se escribía en disco, en BASE_DIR, y se servía esa
+    ruta con send_file. Funcionaba en local pero fallaba SIEMPRE en el
+    despliegue real: en el contenedor, BASE_DIR es /app, que el Containerfile
+    llena con `COPY . .` siendo root y luego cambia a `USER appuser` — así
+    que appuser no puede escribir ahí. wb.save() lanzaba PermissionError,
+    Flask devolvía su página de error 500 en HTML, y el frontend, que espera
+    JSON, mostraba el genérico "Error al exportar". No tenía nada que ver con
+    Cloudflare: el túnel solo era la única vía por la que se usaba el
+    contenedor. Reproducido con BASE_DIR sin permiso de escritura.
+
+    Generarlo en memoria arregla eso y de paso dos cosas más: ya no hace
+    falta ningún directorio escribible, y desaparece la colisión de dos
+    exportaciones simultáneas de la misma semana sobre un nombre de fichero
+    fijo (hoy improbable con workers=1/threads=1, pero era una bomba de
+    relojería si algún día se sube la concurrencia).
+    """
+    from io import BytesIO
+    from flask import send_file
+    from modelo_base import export_to_excel as exp_xl
+
+    icons = {rid: r.get("icon", "") for rid, r in cargar_roles(dept_id).items()}
+    extra = _extra_dept_section(key, semana, dept_id)
+
+    buffer = BytesIO()
+    exp_xl(entrada["schedule"], entrada["staff"], semana, buffer, cfg,
+           role_icons=icons, extra_sections=extra)
+    buffer.seek(0)
+
+    return send_file(
+        buffer, as_attachment=True,
+        download_name=f"horario_{key}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @app.route("/api/horario/exportar", methods=["POST"])
 @permiso_requerido("exportar_horario")
 def api_exportar():
@@ -1220,7 +1349,6 @@ def api_exportar():
     el mundo, en un despliegue remoto tras Cloudflare Tunnel). Ahora envía
     el fichero directamente como descarga, igual que
     /api/horario/exportar-semana."""
-    from flask import send_file
     body    = request.json or {}
     dept_id = body.get("dept", "recepcion")
     semana  = lunes_de(body.get("semana", date.today().isoformat()))
@@ -1230,15 +1358,7 @@ def api_exportar():
     if key not in historial:
         return err("Genera el horario antes de exportar")
     entrada = historial[key]
-    ruta    = os.path.join(BASE_DIR, f"horario_{key}.xlsx")
-    from modelo_base import export_to_excel as exp_xl
-    icons = {rid: r.get("icon", "") for rid, r in cargar_roles(dept_id).items()}
-    extra = _extra_dept_section(key, semana, dept_id)
-    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg,
-           role_icons=icons, extra_sections=extra)
-    return send_file(ruta, as_attachment=True,
-                     download_name=f"horario_{key}.xlsx",
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return _enviar_excel(entrada, semana, key, dept_id, cfg)
 
 @app.route("/api/horario/semanas", methods=["GET"])
 @login_requerido
@@ -1261,7 +1381,6 @@ def api_semanas():
 @app.route("/api/horario/exportar-semana/<semana_str>", methods=["GET"])
 @permiso_requerido("exportar_horario")
 def api_exportar_semana(semana_str):
-    from flask import send_file
     dept_id   = request.args.get("dept", "recepcion")
     cfg       = _get_dept_config(dept_id)
     historial = cargar_historial(dept_id)
@@ -1269,15 +1388,7 @@ def api_exportar_semana(semana_str):
         return err("Semana no encontrada", 404)
     entrada = historial[semana_str]
     semana  = date.fromisoformat(semana_str)
-    ruta    = os.path.join(BASE_DIR, f"horario_{semana_str}.xlsx")
-    from modelo_base import export_to_excel as exp_xl
-    icons = {rid: r.get("icon", "") for rid, r in cargar_roles(dept_id).items()}
-    extra = _extra_dept_section(semana_str, semana, dept_id)
-    exp_xl(entrada["schedule"], entrada["staff"], semana, ruta, cfg,
-           role_icons=icons, extra_sections=extra)
-    return send_file(ruta, as_attachment=True,
-                     download_name=f"horario_{semana_str}.xlsx",
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return _enviar_excel(entrada, semana, semana_str, dept_id, cfg)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # API — PETICIONES
@@ -2091,6 +2202,102 @@ def api_meta():
         "total_la_pendientes":  total_la,
         "año": date.today().year,
     })
+
+# ─── RONDA DE NOCHES (orden fijo de cobertura nocturna) ──────────────────────
+#
+# El orden es una LISTA FIJA que el admin controla: primero A, luego B, luego
+# C y vuelta a empezar. La generación semanal NO lo reordena — solo avanza el
+# puntero `siguiente_turno` por la lista y, si alguien no estaba disponible
+# cuando le tocaba, le anota una deuda para que recupere el turno. Ver
+# cobertura_nocturna._elegir_orden_fijo y REGLAS.md §1.9.
+
+@app.route("/api/rotacion-noches", methods=["GET"])
+@permiso_requerido("gestionar_rotacion_noches")
+def api_rotacion_noches_get():
+    """Orden actual de la ronda de noches de un departamento, ya reconciliado
+    con la plantilla vigente (altas al final, bajas fuera) para que el admin
+    vea exactamente lo que usará la próxima generación."""
+    from cobertura_nocturna import reconciliar_orden
+
+    dept_id = _normalizar_dept(request.args.get("dept", "recepcion"))
+    cfg = _get_dept_config(dept_id)
+    staff = cargar_plantilla(dept_id)
+
+    estado = _cargar_estado_cpsat(dept_id).get("estado_rotacion") \
+        or _estado_rotacion_inicial_cpsat(staff, cfg)
+    estado = reconciliar_orden(estado, staff, cfg)
+
+    roles_por_nombre = {p["name"]: p.get("role", "normal") for p in staff}
+    balance = estado.get("historico_balance", {}) or {}
+    deudas = estado.get("deudas", {}) or {}
+
+    return ok({
+        "dept": dept_id,
+        "siguiente_turno": estado.get("siguiente_turno"),
+        "orden": [
+            {
+                "nombre": n,
+                "rol": roles_por_nombre.get(n, ""),
+                "noches_cubiertas": (balance.get(n) or {}).get("covers", 0),
+                "deuda": deudas.get(n, 0),
+            }
+            for n in estado.get("orden", [])
+        ],
+    })
+
+
+@app.route("/api/rotacion-noches", methods=["PUT"])
+@permiso_requerido("gestionar_rotacion_noches")
+def api_rotacion_noches_set():
+    """Guarda un orden nuevo. Body: {dept, orden: [nombre, ...]}.
+
+    El orden recibido debe ser una permutación EXACTA de los empleados
+    elegibles hoy: ni nombres inventados, ni ausencias, ni repetidos. Se
+    valida en vez de reconciliar en silencio porque un orden incompleto
+    enviado por error dejaría gente fuera de la ronda de noches sin que nadie
+    se diera cuenta.
+    """
+    body = request.json or {}
+    dept_id = _normalizar_dept(body.get("dept", "recepcion"))
+    nuevo = body.get("orden")
+
+    if not isinstance(nuevo, list) or not all(isinstance(n, str) for n in nuevo):
+        return err("El orden debe ser una lista de nombres.", 400)
+
+    cfg = _get_dept_config(dept_id)
+    staff = cargar_plantilla(dept_id)
+    elegibles = _empleados_elegibles_noches(staff, cfg)
+
+    if len(nuevo) != len(set(nuevo)):
+        return err("El orden no puede repetir empleados.", 400)
+    if set(nuevo) != set(elegibles):
+        faltan = sorted(set(elegibles) - set(nuevo))
+        sobran = sorted(set(nuevo) - set(elegibles))
+        detalle = []
+        if faltan:
+            detalle.append(f"faltan: {', '.join(faltan)}")
+        if sobran:
+            detalle.append(f"no pueden cubrir noches: {', '.join(sobran)}")
+        return err(
+            "El orden debe incluir exactamente a los empleados que pueden "
+            f"cubrir noches ({'; '.join(detalle)}). Recarga la página si has "
+            "cambiado la plantilla.", 400
+        )
+
+    estado = _cargar_estado_cpsat(dept_id).get("estado_rotacion") \
+        or _estado_rotacion_inicial_cpsat(staff, cfg)
+    estado = dict(estado)
+    estado["orden"] = nuevo
+    # `siguiente_turno` se conserva si sigue en la lista: reordenar la ronda no
+    # debe saltarse ni repetir a quien ya le tocaba. Solo se recoloca al primero
+    # si apuntaba a alguien que ya no está.
+    if estado.get("siguiente_turno") not in nuevo:
+        estado["siguiente_turno"] = nuevo[0] if nuevo else None
+
+    _guardar_estado_cpsat(dept_id, estado)
+    registrar_accion("RONDA_NOCHES", f"{dept_id}: {' → '.join(nuevo)}")
+    return ok({"orden": nuevo, "siguiente_turno": estado["siguiente_turno"]})
+
 
 # ─── COVERAGE POR TEMPORADA ──────────────────────────────────────────────────
 

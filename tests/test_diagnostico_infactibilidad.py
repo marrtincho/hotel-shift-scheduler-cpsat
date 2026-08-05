@@ -107,9 +107,10 @@ def test_diagnostico_identifica_conflicto_real_3_vacaciones_mas_cobertura_noche(
 
     mensaje = str(excinfo.value)
     assert "status=INFEASIBLE" in mensaje, f"debía reportar INFEASIBLE: {mensaje}"
-    assert "Diagnóstico automático — combinación mínima en conflicto" in mensaje, (
-        f"el diagnóstico debía activarse (staff_list/cfg disponibles en "
-        f"generar_semana_cpsat): {mensaje}"
+    assert "Diagnóstico automático — combinación mínima irreducible en conflicto" in mensaje, (
+        f"el diagnóstico debía activarse y confirmar irreducibilidad "
+        f"(staff_list/cfg disponibles en generar_semana_cpsat, escenario "
+        f"pequeño con tiempo de sobra para completar la reducción): {mensaje}"
     )
 
     # Completo: los 3 nombres realmente en vacación simultánea deben
@@ -199,7 +200,7 @@ def test_diagnostico_es_rapido_en_el_escenario_de_3_vacaciones():
     mensaje = _diagnosticar_infactibilidad(staff, cfg)
     duracion = time.perf_counter() - inicio
 
-    assert "combinación mínima en conflicto" in mensaje
+    assert "combinación mínima irreducible en conflicto" in mensaje
     assert duracion < 2.0, (
         f"el diagnóstico del escenario de 3 vacaciones simultáneas tardó "
         f"{duracion:.3f}s — medido en Fase 5 en ~0.01s; un salto grande "

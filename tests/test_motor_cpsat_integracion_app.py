@@ -246,9 +246,9 @@ def test_estado_cpsat_persiste_y_se_recupera_entre_semanas_encadenadas(
     # con ninguna copia cacheada -- ya no existe ninguna).
     semana2 = SEMANA_MOZOS + timedelta(weeks=1)
     semana3 = SEMANA_MOZOS + timedelta(weeks=2)
-    noches_esperadas_2, _ = app_module._derivar_estado_racha_cpsat_desde_historial(
+    noches_esperadas_2, _, _ = app_module._derivar_estado_racha_cpsat_desde_historial(
         "mozos", semana2, cfg)
-    noches_esperadas_3, _ = app_module._derivar_estado_racha_cpsat_desde_historial(
+    noches_esperadas_3, _, _ = app_module._derivar_estado_racha_cpsat_desde_historial(
         "mozos", semana3, cfg)
 
     assert llamadas[1]["estado_rotacion"] == estados_en_disco[0]["estado_rotacion"]

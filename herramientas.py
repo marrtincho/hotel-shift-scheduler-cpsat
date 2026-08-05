@@ -983,7 +983,14 @@ HORARIOS_TURNOS_DEFAULT = {
     "Mañana":  [{"inicio": "07:00", "fin": "15:00"}],
     "Tarde":   [{"inicio": "15:00", "fin": "23:00"}],
     "Noche":   [{"inicio": "23:00", "fin": "07:00"}],
-    "Partido": [{"inicio": "10:00", "fin": "13:00"}, {"inicio": "17:00", "fin": "20:00"}],
+    # Partido es un turno CONTINUO de 10:00 a 18:00 (confirmado con el
+    # usuario esta sesión). Antes estaba guardado como dos tramos partidos
+    # (10:00-13:00 y 17:00-20:00), que no es el horario real que se trabaja.
+    # La variante excepcional de 12:00-20:00 no se modela: la lista de
+    # tramos significa "un turno con varios tramos el mismo día", no
+    # "varias variantes alternativas del turno", así que representarla
+    # requeriría cambiar el esquema del fichero.
+    "Partido": [{"inicio": "10:00", "fin": "18:00"}],
 }
 
 TURNOS_CON_HORARIO = ["Mañana", "Tarde", "Noche", "Partido"]
@@ -1035,6 +1042,80 @@ def validar_horarios_turnos(data: dict) -> list[str]:
                 if not isinstance(v, str) or not patron_hora.match(v):
                     errores.append(f"'{turno}.{campo}' debe tener formato HH:MM (recibido: {v!r})")
     return errores
+
+
+DESCANSO_MINIMO_HORAS = 9  # descanso mínimo entre el fin de un turno y el
+# comienzo del turno del día siguiente. Regla de negocio (confirmada con el
+# usuario), no una constante técnica: es lo que hace que "Mañana tras Tarde"
+# esté prohibido (23:00 -> 07:00 son solo 8h) y lo que, con los horarios por
+# defecto, prohíbe también Tarde y Partido el día después de una Noche.
+#
+# Hasta ahora esta regla vivía IMPLÍCITA y por duplicado en dos sitios que
+# no se hablaban entre sí: modelo_base.NO_MORNING_AFTER (que solo conoce las
+# transiciones que acaban en Mañana) y la restricción #3 de
+# motor_cpsat._construir_modelo (que sí bloquea las cuatro). El resultado era
+# que app._calcular_advertencias, apoyada en NO_MORNING_AFTER, no avisaba de
+# Noche->Tarde (8h) ni de Noche->Partido (3h) cuando una edición manual las
+# creaba. transiciones_prohibidas() es ahora la fuente única de la regla,
+# derivada de los horarios realmente configurados.
+
+
+def _minutos_del_dia(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def _inicio_fin_turno(tramos: list) -> tuple:
+    """(inicio, fin) de un turno en minutos desde las 00:00 del día en que
+    EMPIEZA. El inicio es el del primer tramo y el fin el del último — para
+    un turno partido (varios tramos) lo que importa de cara al descanso es
+    cuándo entra por primera vez y cuándo sale por última.
+
+    Un tramo cuyo `fin` no es posterior a su `inicio` cruza la medianoche
+    (el caso de Noche, 23:00->07:00), así que su fin se expresa como
+    minutos del día siguiente sumándole 24h — la misma convención que ya
+    asume validar_horarios_turnos al no exigir inicio < fin."""
+    inicios = [_minutos_del_dia(t["inicio"]) for t in tramos]
+    fines = []
+    for t in tramos:
+        ini, fin = _minutos_del_dia(t["inicio"]), _minutos_del_dia(t["fin"])
+        fines.append(fin + 24 * 60 if fin <= ini else fin)
+    return min(inicios), max(fines)
+
+
+def transiciones_prohibidas(horarios: dict = None) -> set:
+    """Conjunto de pares (turno_del_día_anterior, turno_del_día_siguiente)
+    cuyo descanso intermedio es MENOR que DESCANSO_MINIMO_HORAS.
+
+    `horarios` con el formato de horarios_turnos.json; si es None se usan
+    los valores por defecto (HORARIOS_TURNOS_DEFAULT) en vez de leer disco,
+    para que quien solo quiera la tabla canónica no dependa de DATA_DIR.
+
+    Con los horarios por defecto devuelve exactamente:
+        (Tarde, Mañana)   8h
+        (Noche, Mañana)   0h
+        (Noche, Tarde)    8h
+        (Noche, Partido)  3h
+    que es justo lo que bloquea la restricción #3 de motor_cpsat (ver el
+    test que ancla esa equivalencia para que no puedan divergir).
+    """
+    horarios = horarios if horarios is not None else HORARIOS_TURNOS_DEFAULT
+    minimo = DESCANSO_MINIMO_HORAS * 60
+    limites = {}
+    for turno in TURNOS_CON_HORARIO:
+        tramos = horarios.get(turno)
+        if isinstance(tramos, list) and tramos:
+            limites[turno] = _inicio_fin_turno(tramos)
+
+    prohibidas = set()
+    for previo, (_, fin_previo) in limites.items():
+        for siguiente, (inicio_siguiente, _) in limites.items():
+            # El turno siguiente empieza al día siguiente: +24h sobre el
+            # mismo origen con el que se midió el fin del turno previo.
+            descanso = (inicio_siguiente + 24 * 60) - fin_previo
+            if descanso < minimo:
+                prohibidas.add((previo, siguiente))
+    return prohibidas
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

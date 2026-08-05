@@ -340,6 +340,7 @@ function closeModal(id){
     <div class="nav-section admin-only">Administración</div>
     <div class="nav-item admin-only" data-sec="categorias"><span class="nav-icon">🏷</span>Categorías</div>
     <div class="nav-item admin-only" data-sec="temporadas"><span class="nav-icon">◑</span>Temporadas</div>
+    <div class="nav-item admin-only" data-sec="rotacion"><span class="nav-icon">🌙</span>Ronda de noches</div>
     <div class="nav-item admin-only" data-sec="usuarios"><span class="nav-icon">◉</span>Usuarios</div>
     <div class="nav-item admin-only" data-sec="log"><span class="nav-icon">◎</span>Log actividad</div>
     <div class="nav-item admin-only" data-sec="auditoria"><span class="nav-icon">⚖</span>Auditoría</div>
@@ -616,6 +617,46 @@ function closeModal(id){
 
     <!-- ═══ USUARIOS ═══ -->
     <!-- ═══ TEMPORADAS ═══ -->
+    <!-- ── RONDA DE NOCHES (solo admin) ───────────────────────────────── -->
+    <div class="section" id="sec-rotacion">
+      <div class="alert info" style="margin-bottom:16px">
+        Orden fijo en el que los empleados se turnan para cubrir las noches:
+        primero el 1, luego el 2, y al llegar al final vuelve a empezar.
+        <strong>La generación semanal no cambia este orden</strong> — solo avanza
+        por él, sea cual sea el número de noches que acumule cada uno.
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+        <label style="font-size:13px;font-weight:500">Departamento:</label>
+        <select id="rot-dept" class="inp" style="width:140px;padding:6px 10px;font-size:13px"
+                onchange="loadRotacion()">
+          <option value="recepcion">Recepción</option>
+          <option value="mozos">Mozos</option>
+        </select>
+        <span id="rot-siguiente" style="font-size:13px;color:var(--text-2)"></span>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="text-align:left;font-size:12px;color:var(--text-2)">
+              <th style="padding:8px 10px;width:48px">#</th>
+              <th style="padding:8px 10px">Empleado</th>
+              <th style="padding:8px 10px">Noches cubiertas</th>
+              <th style="padding:8px 10px;width:110px">Mover</th>
+            </tr>
+          </thead>
+          <tbody id="rot-body"></tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn pri sm" id="rot-guardar" onclick="saveRotacion()" disabled>Guardar orden</button>
+        <button class="btn sm" onclick="loadRotacion()">Descartar cambios</button>
+        <span id="rot-estado" style="font-size:13px;color:var(--text-2)"></span>
+      </div>
+    </div>
+
     <div class="section" id="sec-temporadas">
       <div class="alert info" id="tmp-viabilidad-alert" style="display:none"></div>
 
@@ -1153,15 +1194,68 @@ function semanaBloqueadaParaGenerar(off){
   return isPastWeek(off) && currentUser?.rol !== 'admin';
 }
 
+// Etiqueta en reposo de cada botón de acción de la parrilla. ÚNICA fuente de
+// verdad: los handlers ponen "Generando…/Vaciando…/Borrando…" con
+// marcarBotonOcupado() y updateGenerarState() las repone TODAS.
+//
+// (esta sesión) Antes, updateGenerarState() reponía el texto de "Generar"
+// pero de "Asignar a mano" y "Borrar" solo el `disabled` — así que se
+// quedaban en "Vaciando…"/"Borrando…" para siempre, incluso al cambiar de
+// semana (que llama a esta misma función). Solo era estético, el botón
+// seguía funcionando, pero daba la sensación de que la acción no había
+// terminado.
+const ETIQUETA_BOTON_ACCION = {
+  'btn-generar':       '⟳ Generar',
+  'btn-vaciar':        '✎ Asignar a mano',
+  'btn-borrar-semana': '🗑 Borrar',
+};
+
+// Red de seguridad: si una petición se queda colgada (corte de red, pestaña
+// suspendida, backend caído a media respuesta) el `finally` del handler puede
+// tardar en ejecutarse o no ejecutarse nunca. Pasado este tiempo se repone el
+// botón igualmente. 60s = el timeout de gunicorn (gunicorn.conf.py): más allá
+// de eso la petición está muerta de todas formas, y por debajo cortaría
+// generaciones legítimas (el solver admite hasta 20s + 10s de diagnóstico).
+const ESPERA_MAXIMA_BOTON_MS = 60000;
+let watchdogBotonAccion = null;
+
+function marcarBotonOcupado(id, texto){
+  const btn = document.getElementById(id);
+  if(!btn) return null;
+  btn.innerHTML = `<span class="spinner"></span> ${texto}`;
+  btn.disabled = true;
+  clearTimeout(watchdogBotonAccion);
+  watchdogBotonAccion = setTimeout(updateGenerarState, ESPERA_MAXIMA_BOTON_MS);
+  return btn;
+}
+
 function updateGenerarState(){
+  clearTimeout(watchdogBotonAccion);
   const btnGen    = document.getElementById('btn-generar');
   const btnExp    = document.getElementById('btn-exportar');
   const btnVaciar = document.getElementById('btn-vaciar');
   const btnBorrar = document.getElementById('btn-borrar-semana');
+  if(!btnGen || !btnExp || !btnVaciar || !btnBorrar) return;
+
   btnGen.style.display    = tienePermiso('generar_horario') ? '' : 'none';
   btnExp.style.display    = tienePermiso('exportar_horario') ? '' : 'none';
   btnVaciar.style.display = tienePermiso('vaciar_horario_manual') ? '' : 'none';
   btnBorrar.style.display = tienePermiso('eliminar_horario_semana') ? '' : 'none';
+
+  // Repone la etiqueta de reposo de los botones que marca
+  // marcarBotonOcupado(), no solo la de "Generar": es lo que garantiza que
+  // ninguno se quede con el texto de progreso, tanto al terminar la acción
+  // como al cambiar de semana. textContent (no innerHTML) elimina además el
+  // <span class="spinner">.
+  //
+  // "Exportar" queda FUERA a propósito: se gestiona solo, con su propio
+  // try/catch/finally que cubre también el fallo de red, y no pasa por
+  // marcarBotonOcupado. Reponerlo aquí lo dejaría con la etiqueta de reposo
+  // en mitad de una exportación si el usuario cambia de semana mientras se
+  // descarga el Excel.
+  btnVaciar.textContent = ETIQUETA_BOTON_ACCION['btn-vaciar'];
+  btnBorrar.textContent = ETIQUETA_BOTON_ACCION['btn-borrar-semana'];
+
   const bloqueada = semanaBloqueadaParaGenerar(weekOffset);
   if(bloqueada){
     btnGen.disabled = true;
@@ -1169,7 +1263,7 @@ function updateGenerarState(){
     btnGen.title = 'Esta semana ya pasó. Solo un administrador puede regenerarla.';
   } else {
     btnGen.disabled = false;
-    btnGen.textContent = '⟳ Generar';
+    btnGen.textContent = ETIQUETA_BOTON_ACCION['btn-generar'];
     btnGen.title = '';
   }
   btnVaciar.disabled = bloqueada;
@@ -1506,9 +1600,7 @@ document.getElementById('btn-generar').onclick = async ()=>{
     showAlert('err','Esta semana ya pasó y quedó fija. Solo un administrador puede regenerarla.');
     return;
   }
-  const btn = document.getElementById('btn-generar');
-  btn.innerHTML = '<span class="spinner"></span> Generando...';
-  btn.disabled = true;
+  marcarBotonOcupado('btn-generar', 'Generando...');
   try{
     const semana = isoDate(getMonday(weekOffset));
     const r = await api('POST','/horario/generar',{semana, dept: currentDept});
@@ -1536,9 +1628,7 @@ document.getElementById('btn-vaciar').onclick = async ()=>{
     return;
   }
   if(!confirm('¿Dejar la semana en blanco para asignar los turnos a mano? Si ya había un horario generado, se sustituye.')) return;
-  const btn = document.getElementById('btn-vaciar');
-  btn.innerHTML = '<span class="spinner"></span> Vaciando...';
-  btn.disabled = true;
+  marcarBotonOcupado('btn-vaciar', 'Vaciando...');
   try{
     const semana = isoDate(getMonday(weekOffset));
     const r = await api('POST','/horario/vaciar',{semana, dept: currentDept});
@@ -1560,9 +1650,7 @@ document.getElementById('btn-borrar-semana').onclick = async ()=>{
     return;
   }
   if(!confirm('¿Borrar el horario generado de esta semana? Esta acción no se puede deshacer.')) return;
-  const btn = document.getElementById('btn-borrar-semana');
-  btn.innerHTML = '<span class="spinner"></span> Borrando...';
-  btn.disabled = true;
+  marcarBotonOcupado('btn-borrar-semana', 'Borrando...');
   try{
     const semana = isoDate(getMonday(weekOffset));
     const r = await api('DELETE',`/horario/semana?semana=${semana}&dept=${currentDept}`);
@@ -1590,7 +1678,13 @@ document.getElementById('btn-exportar').onclick = async ()=>{
     if(!resp.ok){
       const d = await resp.json().catch(()=>({}));
       if(d.login){ showLogin(); return; }
-      toast(d.error || 'Error al exportar', 'err');
+      // Incluir el código HTTP cuando el cuerpo NO es JSON: eso significa que
+      // el servidor devolvió una página de error (un 500 de Flask por una
+      // excepción sin capturar, o un error del túnel/proxy), y sin el código
+      // el usuario solo veía "Error al exportar" sin ninguna pista. Fue
+      // exactamente lo que ocultó el PermissionError al escribir el .xlsx en
+      // el contenedor (ver app._enviar_excel).
+      toast(d.error || `Error al exportar (HTTP ${resp.status})`, 'err');
       return;
     }
     const disposition = resp.headers.get('Content-Disposition') || '';
@@ -3224,6 +3318,7 @@ function irASeccion(sec){
   if(sec==='usuarios')loadUsuarios();
   if(sec==='log')loadLog();
   if(sec==='temporadas')loadTemporadas();
+  if(sec==='rotacion')loadRotacion();
   if(sec==='auditoria')loadAuditoria();
   cerrarMenuMovil();
 }
@@ -3245,6 +3340,7 @@ sidebarOverlayEl.onclick = cerrarMenuMovil;
 SECS['usuarios']    = ['Usuarios','Gestión de acceso'];
 SECS['log']         = ['Log de actividad','Registro de acciones'];
 SECS['temporadas']  = ['Temporadas','Cobertura mínima y máxima por perfil'];
+SECS['rotacion']    = ['Ronda de noches','Orden fijo de cobertura nocturna'];
 
 // ── LIMPIAR HISTORIAL (admin) ─────────────────────────────────────
 function confirmarLimpiarHistorial(){
@@ -3264,6 +3360,97 @@ async function ejecutarLimpiarHistorial(){
     loadHistorial();
   } else {
     toast(r.error || 'Error al limpiar el historial','err');
+  }
+}
+
+// ── RONDA DE NOCHES — orden fijo de cobertura nocturna (solo admin) ──
+//
+// El orden es una lista fija que define en qué secuencia se turnan los
+// empleados elegibles para cubrir las noches. La generación semanal NO lo
+// reordena: solo avanza el puntero por la lista (ver REGLAS.md §1.9).
+let rotDatos  = null;   // respuesta del servidor tal cual llegó
+let rotBorrador = null; // orden en edición; null = sin cambios sin guardar
+
+async function loadRotacion(){
+  const dept = document.getElementById('rot-dept').value;
+  rotBorrador = null;
+  const r = await api('GET',`/rotacion-noches?dept=${dept}`);
+  if(!r.ok){ toast(r.error||'Error al cargar la ronda de noches','err'); return; }
+  rotDatos = r.data;
+  renderRotacion();
+}
+
+function _rotOrdenVisible(){
+  return rotBorrador || (rotDatos?.orden || []).map(e=>e.nombre);
+}
+
+function renderRotacion(){
+  const tbody = document.getElementById('rot-body');
+  const orden = _rotOrdenVisible();
+  const porNombre = Object.fromEntries((rotDatos?.orden||[]).map(e=>[e.nombre,e]));
+  tbody.innerHTML = '';
+
+  if(!orden.length){
+    tbody.innerHTML = `<tr><td colspan="4" style="padding:14px 10px;color:var(--text-2)">
+      Ningún empleado de este departamento puede cubrir noches. Revisa la
+      casilla "sin noches" de cada categoría.</td></tr>`;
+  }
+
+  orden.forEach((nombre, idx)=>{
+    const e = porNombre[nombre] || {};
+    const tr = document.createElement('tr');
+    tr.style.borderTop = '1px solid var(--border)';
+    const esSiguiente = nombre === rotDatos?.siguiente_turno;
+    tr.innerHTML = `
+      <td style="padding:8px 10px;font-weight:600;color:var(--text-2)">${idx+1}</td>
+      <td style="padding:8px 10px">
+        ${escapeHtml(nombre)}
+        ${esSiguiente ? '<span class="badge" style="margin-left:6px">próximo</span>' : ''}
+      </td>
+      <td style="padding:8px 10px;color:var(--text-2)">
+        ${e.noches_cubiertas ?? 0}${e.deuda ? ` · ${e.deuda} turno(s) pendiente(s)` : ''}
+      </td>
+      <td style="padding:8px 10px;white-space:nowrap">
+        <button class="btn ghost" style="padding:1px 6px;font-size:14px;line-height:1"
+                ${idx===0?'disabled':''} onclick="moveRot(${idx},-1)" title="Subir">↑</button>
+        <button class="btn ghost" style="padding:1px 6px;font-size:14px;line-height:1"
+                ${idx===orden.length-1?'disabled':''} onclick="moveRot(${idx},1)" title="Bajar">↓</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  const sig = rotDatos?.siguiente_turno;
+  document.getElementById('rot-siguiente').textContent =
+    sig ? `Próximo en cubrir noches: ${sig}` : '';
+  document.getElementById('rot-guardar').disabled = !rotBorrador;
+  document.getElementById('rot-estado').textContent =
+    rotBorrador ? 'Cambios sin guardar' : '';
+}
+
+function moveRot(idx, dir){
+  const orden = _rotOrdenVisible().slice();
+  const nuevo = idx + dir;
+  if(nuevo < 0 || nuevo >= orden.length) return;
+  [orden[idx], orden[nuevo]] = [orden[nuevo], orden[idx]];
+  rotBorrador = orden;
+  renderRotacion();
+}
+
+async function saveRotacion(){
+  if(!rotBorrador) return;
+  const dept = document.getElementById('rot-dept').value;
+  const btn = document.getElementById('rot-guardar');
+  btn.disabled = true;
+  try{
+    const r = await api('PUT','/rotacion-noches',{dept, orden: rotBorrador});
+    if(!r.ok){ toast(r.error,'err'); return; }
+    toast('Orden de la ronda de noches guardado');
+    await loadRotacion();   // relee para reflejar siguiente_turno del servidor
+  } finally {
+    // Si loadRotacion() falló, el botón debe volver a estar disponible para
+    // reintentar en vez de quedarse bloqueado (mismo criterio que los botones
+    // de la parrilla).
+    if(rotBorrador) btn.disabled = false;
   }
 }
 

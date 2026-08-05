@@ -64,7 +64,9 @@ def test_descanso_incluye_dia_previo_y_actual_de_la_persona():
 
     descanso = [a for a in advertencias if a["tipo"] == "descanso"]
     assert len(descanso) == 1
-    assert descanso[0]["mensaje"] == "Ana: Lunes (Tarde) → Martes (Mañana)"
+    assert descanso[0]["mensaje"] == (
+        "Ana: Lunes (Tarde) → Martes (Mañana) — menos de 9h de descanso"
+    )
     assert descanso[0]["celdas"] == [
         {"nombre": "Ana", "dia_idx": 0}, {"nombre": "Ana", "dia_idx": 1},
     ]
@@ -81,7 +83,9 @@ def test_descanso_cruce_con_domingo_de_semana_anterior():
 
     descanso = [a for a in advertencias if a["tipo"] == "descanso"]
     assert len(descanso) == 1
-    assert descanso[0]["mensaje"] == "Ana: Domingo anterior (Noche) → Lunes (Mañana)"
+    assert descanso[0]["mensaje"] == (
+        "Ana: Domingo anterior (Noche) → Lunes (Mañana) — menos de 9h de descanso"
+    )
     # El domingo de la semana pasada no tiene celda en esta parrilla: solo el lunes.
     assert descanso[0]["celdas"] == [{"nombre": "Ana", "dia_idx": 0}]
 
@@ -251,7 +255,8 @@ def test_los_tres_endpoints_devuelven_la_misma_estructura_ante_el_mismo_conflict
     assert _es_estructura_valida(adv_get)
     descanso_get = [a for a in adv_get if a["tipo"] == "descanso"]
     assert descanso_get == [{
-        "tipo": "descanso", "mensaje": "P0: Lunes (Tarde) → Martes (Mañana)",
+        "tipo": "descanso",
+            "mensaje": "P0: Lunes (Tarde) → Martes (Mañana) — menos de 9h de descanso",
         "celdas": [{"nombre": "P0", "dia_idx": 0}, {"nombre": "P0", "dia_idx": 1}],
     }]
 

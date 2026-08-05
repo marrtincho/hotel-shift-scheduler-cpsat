@@ -66,6 +66,11 @@ PERMISOS = {
         "ver_estadisticas",
         "ver_propio_horario",
         "ver_auditoria",
+        # Orden de la ronda de noches: SOLO admin, deliberadamente. Define en
+        # qué orden fijo se turnan los empleados para cubrir las noches, y un
+        # cambio afecta a todas las semanas que se generen a partir de
+        # entonces — no es una edición puntual como las del encargado.
+        "gestionar_rotacion_noches",
     },
     "encargado": {
         "ver_plantilla", "editar_plantilla",

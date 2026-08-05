@@ -103,7 +103,7 @@ def test_editar_domingo_a_mano_no_dejar_noche_fantasma_en_semana_siguiente(clien
     _editar_turno(client, dept="mozos", semana=SEMANA_1, nombre=candidato, dia_idx=6, turno="Libre")
 
     cfg = app_module._get_dept_config("mozos")
-    noches, _ = app_module._derivar_estado_racha_cpsat_desde_historial("mozos", semana2, cfg)
+    noches, _, _ = app_module._derivar_estado_racha_cpsat_desde_historial("mozos", semana2, cfg)
 
     assert noches[candidato][4] is False, (
         f"BUG: la derivación para la semana siguiente sigue viendo el "
@@ -138,7 +138,7 @@ def test_forzar_domingo_a_noche_a_mano_se_refleja_en_la_derivacion(client, data_
     _editar_turno(client, dept="mozos", semana=SEMANA_1, nombre=candidato, dia_idx=6, turno="Noche")
 
     cfg = app_module._get_dept_config("mozos")
-    noches, _ = app_module._derivar_estado_racha_cpsat_desde_historial("mozos", semana2, cfg)
+    noches, _, _ = app_module._derivar_estado_racha_cpsat_desde_historial("mozos", semana2, cfg)
     assert noches[candidato][4] is True, (
         f"La edición manual de {candidato} (domingo Libre->Noche) debía "
         f"reflejarse en la derivación: noches_ultimos_5_dias[{candidato!r}]="

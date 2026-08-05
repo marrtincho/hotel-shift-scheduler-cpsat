@@ -184,23 +184,33 @@ def test_modo_respaldo_por_ausencia_larga_preserva_orden_y_siguiente_turno():
     estado = avanzar_semana_ausencia_night_fixed(staff_ausente, estado)
     assert estado["ausencias_night_fixed_consecutivas"] == 2
 
+    # (ACTUALIZADO esta sesión — pedido explícito del usuario: el orden fijo
+    # se aplica también en modo respaldo, "más allá de si existe el rol de
+    # noche fijo o no". Antes, el modo respaldo caía en balance puro y aquí
+    # se esperaba N2, el de menor covers-pending; ahora el ciclo NO se
+    # interrumpe y sigue por siguiente_turno.)
     elegido2, estado = seleccionar_candidato_cobertura_nocturna(staff_ausente, cfg, estado)
-    assert elegido2 == "N2", "en modo respaldo debe ganar quien tiene menor covers-pending (N2)"
-    assert estado["orden"] == orden, "el orden fijo no se toca en modo respaldo"
-    assert estado["siguiente_turno"] == estado_antes_respaldo["siguiente_turno"], (
-        "siguiente_turno debe quedar intacto en modo respaldo, para retomar "
-        "exactamente ahí cuando night_fixed vuelva"
+    assert elegido2 == "N4", (
+        "en modo respaldo el ciclo fijo continúa por siguiente_turno (N4), "
+        "no se cambia a balance puro"
     )
+    assert estado["orden"] == orden, "el orden fijo nunca se reordena solo"
+    assert estado["siguiente_turno"] == "N5", (
+        "el ciclo avanza también en modo respaldo — antes se congelaba"
+    )
+    assert estado_antes_respaldo["siguiente_turno"] == "N4"
 
-    # Semana 3: night_fixed vuelve (no ausente) -> el orden fijo se retoma
-    # exactamente donde se quedó siguiente_turno (N4).
+    # Semana 3: night_fixed vuelve. El ciclo sigue exactamente donde estaba,
+    # sin saltos ni repeticiones por el cambio de modo.
     staff_presente = [{"name": "NocheFijo", "role": "night_fixed"}] + \
                       [{"name": n, "role": "normal"} for n in orden]
     estado = avanzar_semana_ausencia_night_fixed(staff_presente, estado)
     assert estado["ausencias_night_fixed_consecutivas"] == 0
 
     elegido3, estado = seleccionar_candidato_cobertura_nocturna(staff_presente, cfg, estado)
-    assert elegido3 == "N4", "al volver night_fixed, retoma el orden justo donde quedó"
+    assert elegido3 == "N5", (
+        "el ciclo es continuo a través del cambio de modo: N3 -> N4 -> N5"
+    )
 
 
 # ─── Modo respaldo: rol night_fixed inexistente ──────────────────────────
@@ -217,13 +227,22 @@ def test_modo_respaldo_por_rol_inexistente_es_permanente():
 
     # Sin llamar a avanzar_semana_ausencia_night_fixed en absoluto (no hace
     # falta: el disparador es "no existe el rol", no un contador de semanas).
-    for _ in range(3):
+    #
+    # (ACTUALIZADO esta sesión — pedido explícito del usuario.) Este es el
+    # caso de la plantilla REAL de Recepción: no hay night_fixed, así que el
+    # modo respaldo está permanentemente activo. Antes eso significaba balance
+    # puro siempre y el orden fijo era código muerto en producción; ahora el
+    # ciclo fijo rota N1 -> N2 -> N3 -> N1 y es lo que se ve en el horario.
+    elegidos = []
+    for _ in range(4):
         elegido, estado = seleccionar_candidato_cobertura_nocturna(staff_sin_night_fixed, cfg, estado)
-        assert elegido == "N1", (
-            "sin night_fixed en plantilla, siempre debe ganar el balance puro "
-            "(N1, menor covers-pending), nunca el orden fijo"
-        )
-        assert estado["orden"] == orden, "orden/siguiente_turno no deben tocarse en modo respaldo"
+        elegidos.append(elegido)
+        assert estado["orden"] == orden, "el orden fijo nunca se reordena solo"
+
+    assert elegidos == ["N1", "N2", "N3", "N1"], (
+        f"sin night_fixed el ciclo fijo debe rotar y volver a empezar, no "
+        f"repetir siempre al de menor covers: {elegidos}"
+    )
 
 
 # ─── Incorporación y baja de empleados ───────────────────────────────────
@@ -416,3 +435,81 @@ def test_bloqueados_por_racha_infactibilidad_real_cuando_todos_bloqueados():
             staff, cfg, estado, dias_cubrir={0},
             bloqueados_por_racha={"Ana", "Diego", "Miguel"},
         )
+
+
+# ─── Reconciliación de 'orden' con la plantilla (esta sesión) ────────────
+
+def test_reconciliar_orden_incorpora_nuevos_al_final_sin_recuperar_atrasos():
+    """REGRESIÓN: incorporar_empleado_orden/dar_de_baja_empleado_orden
+    existían desde el principio pero NADIE las llamaba fuera de sus tests, así
+    que 'orden' se quedaba obsoleto en cuanto cambiaba la plantilla. Con el
+    orden fijo activo también en modo respaldo eso importa: _elegir_orden_fijo
+    solo mira dentro de 'orden', así que un empleado ausente de la lista nunca
+    haría noches.
+
+    El alta entra al FINAL del ciclo y sin recuperar atrasos (confirmado con
+    el usuario): un fichaje nuevo con covers=0 no debe encadenar decenas de
+    noches para 'ponerse al día' — que es justo lo que hacía el balance puro.
+    """
+    from cobertura_nocturna import reconciliar_orden
+
+    cfg = _cfg()
+    staff = [{"name": n, "role": "normal"} for n in ("N1", "N2", "N3", "Nuevo")]
+    estado = _estado_base(
+        ["N1", "N2", "N3"], siguiente="N1",
+        balance={"N1": {"covers": 30, "pending": 0}, "N2": {"covers": 30, "pending": 0},
+                 "N3": {"covers": 25, "pending": 0}},
+    )
+
+    estado = reconciliar_orden(estado, staff, cfg)
+    assert estado["orden"] == ["N1", "N2", "N3", "Nuevo"]
+
+    elegidos = []
+    for _ in range(8):
+        elegido, estado = seleccionar_candidato_cobertura_nocturna(staff, cfg, estado)
+        elegidos.append(elegido)
+    assert elegidos == ["N1", "N2", "N3", "Nuevo"] * 2, (
+        f"el nuevo espera su turno como todos: {elegidos}"
+    )
+
+
+def test_reconciliar_orden_da_de_baja_a_quien_ya_no_esta_en_plantilla():
+    from cobertura_nocturna import reconciliar_orden
+
+    cfg = _cfg()
+    staff = [{"name": n, "role": "normal"} for n in ("N1", "N3")]
+    estado = _estado_base(["N1", "N2", "N3"], siguiente="N2")
+
+    estado = reconciliar_orden(estado, staff, cfg)
+    assert estado["orden"] == ["N1", "N3"]
+    assert estado["siguiente_turno"] in ("N1", "N3"), (
+        "siguiente_turno apuntaba al que se dio de baja; debe recolocarse"
+    )
+
+
+def test_reconciliar_orden_excluye_roles_sin_noches_y_night_fixed():
+    """Mismo criterio de elegibilidad que _elegibles y que
+    app._estado_rotacion_inicial_cpsat: 'empleados capaces de cubrir noches'."""
+    from cobertura_nocturna import reconciliar_orden
+
+    cfg = _cfg()  # no_night_roles incluye jefe/subjefe/adjunto_recepcion
+    staff = [
+        {"name": "NocheFijo", "role": "night_fixed"},
+        {"name": "Jefe", "role": "jefe"},
+        {"name": "Sub", "role": "subjefe"},
+        {"name": "N1", "role": "normal"},
+        {"name": "N2", "role": "normal"},
+    ]
+    # Estado virgen (primera generación del departamento): 'orden' vacío.
+    estado_virgen = {
+        "orden": [], "siguiente_turno": None, "deudas": {},
+        "usar_orden_fijo": True, "historico_balance": {},
+        "ausencias_night_fixed_consecutivas": 0,
+    }
+    estado = reconciliar_orden(estado_virgen, staff, cfg)
+    assert estado["orden"] == ["N1", "N2"]
+    assert estado["siguiente_turno"] == "N1", (
+        "con 'orden' vacío, siguiente_turno debe quedar apuntando al ciclo "
+        "recién construido — si no, _elegir_orden_fijo empezaría por el 0 "
+        "igualmente pero el estado quedaría incoherente en disco"
+    )

@@ -391,10 +391,74 @@ def seleccionar_candidato_cobertura_nocturna(staff_list: list, cfg, estado_rotac
     if not estado_rotacion.get("usar_orden_fijo", True):
         return _elegir_balance_puro(elegibles, estado_rotacion)
 
-    if _en_modo_respaldo(staff_list, estado_rotacion):
-        return _elegir_balance_puro(elegibles, estado_rotacion)
-
+    # El ORDEN FIJO se aplica también en modo respaldo (CAMBIO de esta sesión,
+    # pedido explícito del usuario: "debería ser fijo, más allá de si existe el
+    # rol de noche fijo o no"). Antes, el modo respaldo caía en
+    # _elegir_balance_puro; como la plantilla real de Recepción no tiene
+    # night_fixed, el modo respaldo está SIEMPRE activo, así que el orden fijo
+    # era código muerto en producción.
+    #
+    # El ciclo que producía _elegir_balance_puro era correcto por accidente:
+    # tras un bloque de 5 noches el contador `covers` sube 5 y esa persona se va
+    # al final de la cola, lo que con 3 personas equivalentes da un ciclo
+    # perfecto (medido: Carlos→Martin→Seba, huecos de 10 días). Pero se deshacía
+    # en cuanto algo rompía la simetría — comprobado: un empleado nuevo
+    # (covers=0) frente a veteranos (covers=30) encadenaba 12 bloques seguidos,
+    # y a quien se saltaba por vacaciones no se le anotaba deuda, así que perdía
+    # el turno sin compensación. _elegir_orden_fijo sí recorre el ciclo desde
+    # siguiente_turno y anota deudas[c] += 1 por cada persona saltada, que la
+    # recupera en cuanto vuelve a estar disponible.
     return _elegir_orden_fijo(elegibles, estado_rotacion)
+
+
+def reconciliar_orden(estado_rotacion: dict, staff_list: list, cfg) -> dict:
+    """Sincroniza 'orden' con quién puede cubrir noches HOY (NUEVO, esta
+    sesión). Añade al FINAL a quien sea elegible y no esté todavía en la
+    lista, y da de baja a quien ya no está en la plantilla — reutilizando
+    incorporar_empleado_orden / dar_de_baja_empleado_orden (reglas 5 y 6).
+    Respeta el orden relativo de quienes ya estaban: reordenar la lista a
+    mano en cpsat_estado_{dept}.json sigue siendo la forma de configurarla.
+
+    Existe porque el orden fijo pasó a usarse también en modo respaldo y
+    _elegir_orden_fijo solo mira dentro de 'orden': alguien elegible pero
+    ausente de la lista NUNCA haría noches, y si nadie de 'orden' fuera
+    elegible lanzaría RuntimeError aunque hubiera gente disponible. Las dos
+    funciones de alta/baja existían desde el principio pero NADIE las
+    llamaba fuera de sus tests, así que la lista se quedaba obsoleta en
+    cuanto cambiaba la plantilla.
+
+    "Elegible" = mismo criterio que _elegibles y que
+    app._estado_rotacion_inicial_cpsat: ni night_fixed (cubre sus propias
+    noches) ni ningún rol de cfg.no_night_roles. Deliberadamente NO se filtra
+    por vacaciones/peticiones ni por descanso de racha: esos son bloqueos de
+    UNA semana concreta, y quien esté de vacaciones hoy debe conservar su
+    sitio en el ciclo para cuando vuelva.
+
+    Alta = al FINAL del ciclo, sin recuperar atrasos (confirmado con el
+    usuario): nadie encadena decenas de noches seguidas para "ponerse al
+    día" con el histórico de los demás.
+    """
+    estado = dict(estado_rotacion)
+    elegibles_hoy = [
+        p["name"] for p in staff_list
+        if p.get("role") != "night_fixed" and p.get("role") not in cfg.no_night_roles
+    ]
+    for nombre in elegibles_hoy:
+        if nombre not in estado.get("orden", []):
+            estado = incorporar_empleado_orden(estado, nombre)
+
+    en_plantilla = {p["name"] for p in staff_list}
+    for nombre in list(estado.get("orden", [])):
+        if nombre not in en_plantilla:
+            estado = dar_de_baja_empleado_orden(estado, nombre)
+
+    # siguiente_turno puede haber quedado a None (baja del último) o apuntar a
+    # alguien que ya no está: se recoloca al principio del ciclo.
+    orden = estado.get("orden", [])
+    if orden and estado.get("siguiente_turno") not in orden:
+        estado["siguiente_turno"] = orden[0]
+
+    return estado
 
 
 def incorporar_empleado_orden(estado_rotacion: dict, nombre: str) -> dict:

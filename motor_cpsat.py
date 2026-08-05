@@ -7,7 +7,10 @@ lectura de histórico reutilizadas tal cual (ver Fase 2 más abajo).
 
 ── Fase 1 — restricciones duras ─────────────────────────────────────────────
   1. Un turno por persona/día (incluye "Libre").
-  2. Cobertura mín/máx por turno y día (cfg.min_coverage / cfg.max_coverage).
+  2. Cobertura mínima por turno y día (cfg.min_coverage) — DURA. Cobertura
+     MÁXIMA (cfg.max_coverage) — DURA en Noche y Partido, BLANDA en
+     Mañana/Tarde, ver su propia sección más abajo ("término K: exceso de
+     cobertura máxima en Mañana/Tarde").
   3. No-Mañana-tras-Tarde/Noche, incluida la transición con el domingo de la
      semana anterior (prev_sunday_shifts).
   4. Roles con turno fijo (cfg.fixed_roles): turno fijo todos los días que
@@ -251,10 +254,16 @@ I. Sobre-cobertura de turnos diurnos: penaliza, por cada día y cada turno
    empuja a usar, no algo a penalizar además por sobre-cobertura — ya
    tiene su propio coste vía D).
 
-   Caso que se resuelve solo, sin lógica especial: si Mañana/Tarde ya
-   están en su máximo (cfg.max_coverage), la restricción dura de fase 1
-   ya impide meter a nadie de más ese turno — I no tiene nada que
-   penalizar ahí, y Partido tampoco haría falta.
+   NOTA (corrección posterior — término K): esto se escribió cuando
+   cfg.max_coverage era dura para TODOS los turnos, y decía que si
+   Mañana/Tarde ya estaban en su máximo la restricción dura impedía meter
+   a nadie más, así que I no tenía nada que penalizar ahí. Ya no es cierto:
+   Mañana/Tarde son precisamente los dos turnos donde el máximo pasó a ser
+   blando, así que SÍ se puede meter gente de más y I sigue sumando por
+   encima del mínimo. No es un problema — es justo el orden que se quiere:
+   una persona de más en Mañana/Tarde cuesta K(5000)+I(30), y Partido, con
+   su máximo todavía duro, sigue siendo la válvula de escape barata
+   (D=20) mientras le quede hueco.
 
 Los pesos de B/D se recalibraron y se añadió PESO_SOBRECOBERTURA_DIURNA
 (I) — ver los comentarios junto a cada constante para la magnitud elegida
@@ -396,11 +405,69 @@ la cobertura mínima — un encargado enfrentado a un conflicto real de
 personal puede decidir romper el patrón de 2 seguidos para alguien
 concreto esa semana, igual que puede decidir bajar la cobertura mínima;
 no es una política estructural del departamento (a diferencia de
-cobertura máxima, turno fijo de rol o no-Mañana-tras-Tarde/Noche, que sí
-quedan siempre activas sin gating). Así, cuando esta restricción forma
+turno fijo de rol o no-Mañana-tras-Tarde/Noche, que sí quedan siempre
+activas sin gating — cobertura MÁXIMA también quedaba en ese grupo hasta
+esta sesión, ver el cambio más abajo). Así, cuando esta restricción forma
 parte de un conflicto de infactibilidad, el diagnóstico automático la
 señala por nombre en vez de caer en el mensaje genérico de "conflicto
 estructural no cubierto".
+
+── Esta sesión — término K: exceso de cobertura máxima en Mañana/Tarde
+   (antes restricción dura en todos los turnos) ─────────────────────────
+PEDIDO EXPLÍCITO DEL USUARIO, motivado por un caso real de producción
+(semana 2026-08-10): cfg.max_coverage, hasta ahora restricción DURA de
+fase 1 (#2), puede volver el modelo INFEASIBLE por un desajuste entre
+personal disponible y los topes de cobertura configurados para la
+temporada — bloqueando la generación de la semana ENTERA en vez de
+producir el mejor horario posible y avisar de dónde se excedió. cfg.
+min_coverage SIGUE siendo dura, sin cambios: el servicio nunca puede
+quedar por debajo de lo necesario, solo puede quedar por ENCIMA (más
+gente cubriendo un turno de la que en teoría hace falta — un problema de
+coste/planificación de temporada, no de servicio no cubierto).
+
+ALCANCE (confirmado con el usuario tras la revisión de código): el máximo
+pasa a blando SOLO en Mañana y Tarde (TURNOS_MAX_COBERTURA_BLANDA). En
+Noche y Partido sigue siendo DURO. Motivo — una primera versión de este
+término lo hizo blando en los CUATRO turnos, y eso introdujo una
+regresión seria: al no llevar ningún término extra propio, Noche quedaba
+como el destino MÁS BARATO para el personal sobrante (K=5000 pelado,
+frente a K+I=5030 en Mañana/Tarde y K+D=5020 en Partido), así que el
+solver "resolvía" un excedente de plantilla inventándose noches. Y una
+noche inventada es justo lo que este módulo no puede permitirse: quién
+cubre cada noche NO lo decide el solver (lo decide cobertura_nocturna.py
+y se fija como restricción dura DESPUÉS de construir el modelo, ver
+generar_semana_cpsat_con_cobertura_nocturna), así que una noche de más
+rompe la rotación por bloques y además contamina el estado de la semana
+siguiente — noches_ultimos_5_dias se re-deriva del horario realmente
+guardado (app._derivar_estado_racha_cpsat_desde_historial), de modo que
+la noche fantasma se propaga hacia adelante. Partido se mantiene duro por
+el motivo simétrico: su máximo (1-2 personas) es lo que lo mantiene como
+turno excepcional; sin tope se convertiría en el segundo vertedero
+barato. Con Mañana/Tarde sin techo, el excedente SIEMPRE tiene dónde ir,
+así que el caso 2026-08-10 se resuelve igual sin ninguno de esos efectos.
+
+Se modela como exceso = max(0, cobertura_real - max_coverage) por turno y
+día (variable entera, IntVar(0, len(names)) — nunca puede superar la
+plantilla completa), penalizado con PESO_EXCESO_COBERTURA(5000) — el peso
+más alto del módulo, muy por encima de G(1000, cobertura de ausencia de
+otro rol) a propósito: si K no fuera claramente mayor que G, el solver
+podría preferir superar max_coverage antes que dejar sin cubrir la
+ausencia de jefe/jefatura, invirtiendo una prioridad ya establecida sin
+que nadie lo pidiera. Lineal: superar el máximo en 2 personas cuesta el
+doble que en 1.
+
+El modelo de diagnóstico (_construir_modelo_diagnostico) reproduce la
+cobertura máxima SOLO de Noche/Partido (siempre activa, sin gatear —
+sigue siendo una política estructural que puede causar un INFEASIBLE
+genuino). La de Mañana/Tarde no aparece ahí en absoluto: al no ser ya una
+restricción dura del modelo real, señalarla como "conflicto" sería
+señalar algo que el modelo real no trata como bloqueante.
+
+Advertencias: cuando la solución final supera algún máximo, el mecanismo
+YA EXISTENTE de advertencias estructuradas (app._calcular_advertencias,
+comparación genérica `mn <= len(personas) <= mx`) ya lo detecta sin
+cambios — solo se amplió su mensaje para indicar explícitamente cuántas
+personas de más hay, no solo el conteo total vs. el máximo.
 """
 
 import threading
@@ -425,6 +492,15 @@ DAY_SHIFTS = ["Mañana", "Tarde", "Partido"]
 # VÁLVULA DE ESCAPE que I incentiva usar en vez de penalizar, no un turno
 # más a penalizar por sobre-cobertura (ya tiene su propio coste vía D).
 TURNOS_DIURNOS_SIN_PARTIDO = [s for s in DAY_SHIFTS if s != "Partido"]
+
+# Turnos cuyo cfg.max_coverage es una preferencia BLANDA (término K) en vez
+# de una restricción dura. Exactamente Mañana/Tarde — es el mismo conjunto
+# que TURNOS_DIURNOS_SIN_PARTIDO, y se deriva de él a propósito para que no
+# puedan divergir: son las dos caras del mismo criterio ("los turnos diurnos
+# ordinarios, donde meter una persona de más es un problema de coste y no de
+# servicio"). Noche y Partido quedan DUROS — ver el término K en el docstring
+# del módulo para el porqué de cada uno.
+TURNOS_MAX_COBERTURA_BLANDA = TURNOS_DIURNOS_SIN_PARTIDO
 
 # ─── Pesos de los términos de objetivo (fase 2) — constantes ajustables ─────
 PESO_EQUIDAD_FINDES          = 100  # término A — subido de 10 a 100 (Fase 5,
@@ -462,7 +538,20 @@ PESO_DOMINGO_SUSTITUTO       = 15   # término F (ver docstring del módulo) —
 # con nada; cuando no lo hay, 15 sigue siendo un valor moderado razonable
 # frente a G(1000)/E(200)/A(100)/B(50). Ver test_gating_prefiere_par_consecutivo...
 # (Paso 3 de esta sesión) para la confirmación de que el gating sigue intacto.
-PESO_COBERTURA_AUSENCIA      = 1000  # término G — el más alto del módulo, ver docstring
+PESO_COBERTURA_AUSENCIA      = 1000  # término G — ver docstring
+PESO_COBERTURA_DIAS_LIBRES_FIJOS = 200  # término G, segunda mitad (NUEVO,
+# esta sesión — confirmado con el usuario): el cubridor (subjefe) también
+# debe ocupar el turno fijo del cubierto (jefe, Mañana) en los días libres
+# FIJOS de este, no solo en sus ausencias reales — el jefe tampoco está en
+# el hotel un sábado. Pero con MENOS fuerza: 200 frente a los 1000 de una
+# ausencia real. Motivo: los días libres fijos se repiten TODAS las semanas,
+# así que cobrarlos al peso de una ausencia real dejaría al subjefe sin
+# librar un fin de semana prácticamente nunca. 200 lo pone a la altura de E
+# (PESO_FINDE_ROL_EXCLUIDO, que ya empuja al subjefe a no llevarse el finde
+# completo libre) y claramente por debajo de G: presiona hacia la mañana del
+# sábado y del domingo, pero cede sin drama ante cobertura mínima, ante una
+# ausencia real del jefe y ante la acumulación de otras preferencias.
+# Se activa solo si el rol lleva cubrir_dias_libres_fijos en roles.json.
 PESO_COMPLEMENTARIO_JEFATURA = 10   # término H — YA NO está "por encima de B"
 # tras el rediseño de prioridades (B=50 > H=10): sigue siendo la preferencia
 # más fácil de ceder de las de "reparto de turnos concretos" frente a D(20)/
@@ -489,6 +578,56 @@ PESO_LIBRE_DEBIDO_VACACIONES = 15   # término J (NUEVO, esta sesión — cierre
 # (A/E/G) ni de reparto histórico (C) — cede con la misma facilidad que
 # F/H frente a cobertura mínima (restricción dura #2) y frente a B
 # (continuidad) si hiciera falta.
+PESO_EXCESO_COBERTURA        = 5000  # término K (NUEVO, esta sesión — pedido
+# explícito del usuario: cfg.max_coverage pasa de restricción DURA a blanda,
+# SOLO en Mañana/Tarde — ver TURNOS_MAX_COBERTURA_BLANDA y la sección del
+# término K en el docstring del módulo para por qué Noche y Partido siguen
+# duros). El más alto del módulo, muy por encima de G=1000 (hasta ahora el
+# máximo) — a propósito: G ya cede "solo ante max_coverage" (ver su propio
+# comentario), así que si K no fuera claramente mayor, el solver podría
+# preferir superar max_coverage antes que dejar sin cubrir la ausencia de
+# un rol, invirtiendo esa prioridad ya establecida sin que nadie lo pidiera.
+# Con 5000 (5x G), superar el máximo solo compensa cuando la alternativa es
+# GENUINAMENTE no encontrar ninguna solución (INFEASIBLE) — nunca por
+# ahorrarse la suma de A-J en un caso normal (esa suma rara vez pasa de unos
+# pocos cientos por semana, igual que ya se documentaba para G). Lineal:
+# superar el máximo en 2 personas cuesta exactamente el doble que en 1
+# (sin tope superior artificial más allá de len(names), la plantilla
+# completa).
+
+PESO_ORDEN_EXCESO            = 20000  # término L (NUEVO, esta sesión — pedido
+# explícito del usuario): "solo superar los máximos cuando se hayan alcanzado
+# AMBOS; de nada sirve exceder el máximo de Tarde cuando Mañana aún no lo ha
+# alcanzado". Penaliza, por día, que se supere el máximo de un turno mientras
+# el otro turno de máximo blando TODAVÍA tiene sitio libre.
+#
+# POR QUÉ ES BLANDO Y NO DURO (decisión deliberada, no un descuido): con
+# K=5000 por persona de más, una distribución "en mal orden" ya es SIEMPRE más
+# cara que la equivalente bien ordenada, porque necesita más exceso total para
+# colocar a la misma gente (p.ej. con 7 personas en Mañana/Tarde y topes 3/3:
+# 3+4 cuesta 5090, mientras que 2+5 cuesta 10090). Es decir: el solver nunca
+# elige el mal orden por conveniencia — solo puede caer en él cuando está
+# ESTRUCTURALMENTE forzado (típicamente porque quien podría ir a Mañana viene
+# de Tarde o Noche el día anterior y la regla de descanso de 9h se lo impide).
+# Como restricción dura, ese caso pasaría de "horario válido con un aviso" a
+# INFEASIBLE y semana entera sin generar — exactamente el fallo que el término
+# K existe para evitar. Con 20000 (4x K, y por encima de G=1000) el orden
+# correcto gana siempre que exista alguna alternativa legal, y cede solo
+# cuando la única opción sería no generar nada.
+PESO_RACHA_TRABAJO           = 300  # término M (NUEVO, esta sesión — confirmado
+# con el usuario): penaliza cada día trabajado por encima de
+# MAX_DIAS_TRABAJADOS_SEGUIDOS contando el arrastre de la semana anterior.
+# Situado entre E(200, que empuja al subjefe a trabajar el finde) y G(1000,
+# cobertura de ausencia): encadenar 8-9 días es peor que cualquier preferencia
+# de reparto de turnos (B/I/D/F/H) o de colocación de findes (A/E), pero no
+# debe ganar a la cobertura obligatoria de un rol ausente ni, por supuesto, al
+# exceso de cobertura (K). Blando a propósito — ver el término M.
+MAX_DIAS_TRABAJADOS_SEGUIDOS = 6  # tope preferido de días trabajados seguidos
+# CRUZANDO semanas. Dentro de una semana el patrón de 2 libres consecutivos
+# (restricción #7) ya implica un máximo de 5, pero ese patrón es POR SEMANA:
+# librar Lun+Mar una semana y Sáb+Dom la siguiente deja 10 días seguidos sin
+# romper ninguna regla dura. 6 deja margen para que el cruce de semana no
+# obligue a recolocar los libres de todo el mundo, y corta las rachas de 8-10.
 
 DIAS_LIBRES_SEGUIDOS_POR_SEMANA = 2  # restricción DURA NUEVA (esta sesión —
 # hallazgo de producción, ver docstring del módulo): exactamente este
@@ -527,15 +666,24 @@ def _tiene_par_consecutivo_disponible(cfg, dias_bloqueados: set) -> bool:
 def _dias_cobertura_ausencia(staff_list: list, cfg, rol_cubierto: str, info: dict) -> tuple:
     """Replica el cálculo de días de ausencia de _marcar_cobertura_ausencias
     en modelo_base.py, puramente en Python (no depende de ninguna variable
-    del solver): devuelve (dias_ausencia: set[int], semana_completa: bool).
+    del solver): devuelve
+    (dias_ausencia: set[int], dias_libres_fijos: set[int], semana_completa: bool).
 
     "Ausente" = rol_cubierto no existe en staff_list, o la persona con ese
-    rol tiene el día en forced_days_off/extra_days_off. Los días libres
-    FIJOS del rol cubierto (cfg.fixed_days_off) NO cuentan como ausencia.
-    "Semana completa" = el rol no existe, o la persona tiene los 7 días en
-    forced_days_off (extra_days_off no cuenta para esto, igual que el
-    original). Si info["dias_libres_fijos"] está activo, se añaden además
-    (siempre, sea o no ausencia real) los días libres fijos del cubierto.
+    rol tiene el día en forced_days_off/extra_days_off. "Semana completa" =
+    el rol no existe, o la persona tiene los 7 días en forced_days_off
+    (extra_days_off no cuenta para esto, igual que el original).
+
+    Los días libres FIJOS del rol cubierto (cfg.fixed_days_off — p.ej. el
+    Sábado y Domingo del jefe) se devuelven en un conjunto APARTE, y solo si
+    info["dias_libres_fijos"] está activo. Van separados a propósito
+    (CAMBIO de esta sesión, confirmado con el usuario): el jefe tampoco está
+    en el hotel en sus días libres fijos, así que el subjefe también debería
+    ocupar esas mañanas — pero con MENOS fuerza que ante una ausencia real
+    (vacaciones/peticiones), porque son días que se repiten cada semana y
+    exigirlos con el peso de una ausencia real dejaría al subjefe sin librar
+    un fin de semana prácticamente nunca. Ver PESO_COBERTURA_DIAS_LIBRES_
+    FIJOS frente a PESO_COBERTURA_AUSENCIA en el término G.
     """
     cubierto = next((p for p in staff_list if p.get("role") == rol_cubierto), None)
     if cubierto is None:
@@ -548,10 +696,13 @@ def _dias_cobertura_ausencia(staff_list: list, cfg, rol_cubierto: str, info: dic
         dias_ausencia = {DAYS.index(d) for d in ausentes if d in DAYS}
         semana_completa = forced >= set(DAYS)
 
+    dias_libres_fijos = set()
     if info.get("dias_libres_fijos"):
-        dias_ausencia |= set(cfg.fixed_days_off.get(rol_cubierto, []))
+        # Los que ya son ausencia real no se duplican aquí: se cobran una
+        # sola vez, y al peso más alto de los dos.
+        dias_libres_fijos = set(cfg.fixed_days_off.get(rol_cubierto, [])) - dias_ausencia
 
-    return dias_ausencia, semana_completa
+    return dias_ausencia, dias_libres_fijos, semana_completa
 
 
 def _inicio_bloque_vacaciones(person: dict):
@@ -617,7 +768,8 @@ def _inicio_bloque_vacaciones(person: dict):
 def _construir_modelo(staff_list: list, week_start: date, cfg,
                        prev_sunday_shifts: dict = None,
                        nombre_sustituto_cobertura: str = None,
-                       dias_bloqueados_externos: dict = None):
+                       dias_bloqueados_externos: dict = None,
+                       dias_trabajados_previos: dict = None):
     """Construye el CpModel completo (restricciones fase 1 + objetivo fase 2)
     sin resolverlo. Separado de generar_semana_cpsat para que los tests
     puedan añadir restricciones extra (p.ej. fijar una celda) sin duplicar
@@ -651,6 +803,10 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     """
     prev_sunday_shifts = prev_sunday_shifts or {}
     dias_bloqueados_externos = dias_bloqueados_externos or {}
+    # {nombre: días ya trabajados SEGUIDOS al cierre de la semana anterior}
+    # (término M). {} por defecto = nadie arrastra racha, que es el
+    # comportamiento de quien no lo use (tests directos, primera semana).
+    dias_trabajados_previos = dias_trabajados_previos or {}
     model = cp_model.CpModel()
 
     names = [p["name"] for p in staff_list]
@@ -663,12 +819,38 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
             for s in SHIFTS:
                 x[name, d, s] = model.NewBoolVar(f"x_{name}_{d}_{s}")
 
+    # objetivo_terms: movido aquí (antes vivía solo en la sección "Fase 2"
+    # más abajo) porque la restricción #2 (cobertura, justo debajo) ya
+    # necesita añadir su propio término blando de exceso — ver esa
+    # restricción para el porqué.
+    objetivo_terms = []
+
     # 1. Un turno por persona/día.
     for name in names:
         for d in range(7):
             model.AddExactlyOne(x[name, d, s] for s in SHIFTS)
 
-    # 2. Cobertura mín/máx por turno y día.
+    # 2. Cobertura mínima (DURA, sin cambios) / máxima (BLANDA SOLO en
+    # Mañana/Tarde, ver TURNOS_MAX_COBERTURA_BLANDA). El servicio nunca
+    # puede quedar por debajo de min_coverage (sigue siendo una restricción
+    # dura), y en Mañana/Tarde superar max_coverage ya no vuelve el modelo
+    # INFEASIBLE — se penaliza con PESO_EXCESO_COBERTURA para que el solver
+    # solo lo acepte cuando la alternativa sea genuinamente no encontrar
+    # ninguna solución (p.ej. el caso real de producción: 2026-08-10, donde
+    # el patrón de 2-libres-consecutivos de varias personas sin garantía
+    # estructural competía entre sí de forma matemáticamente irresoluble
+    # contra topes de cobertura ajustados). Motivo del cambio: antes,
+    # max_coverage como restricción dura podía bloquear la generación
+    # ENTERA de una semana por un desajuste de personal vs. configuración
+    # de temporada, en vez de generar el mejor horario posible y avisar
+    # al encargado exactamente dónde se excedió.
+    #
+    # Noche y Partido siguen DUROS (corrección posterior — ver término K en
+    # el docstring del módulo): con TODOS los turnos blandos, Noche era el
+    # destino MÁS BARATO para el personal sobrante, y una noche que el
+    # solver se inventa rompe la rotación por bloques decidida fuera del
+    # modelo y contamina el estado de la semana siguiente.
+    #
     # sorted(...) — no basta con fijar num_search_workers=1 para
     # reproducibilidad total (Fase 5, revisión de la comparativa):
     # iterar un set() directamente depende del hash-seed aleatorio de cada
@@ -680,13 +862,75 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     # input. sorted() elimina la dependencia del hash-seed sin depender de
     # que el entorno de despliegue fije PYTHONHASHSEED.
     turnos_con_cobertura = sorted(set(cfg.min_coverage) | set(cfg.max_coverage))
+    # Guardados para el término L (orden de exceso), justo debajo del bucle.
+    total_por = {}
+    exceso_por = {}
     for s in turnos_con_cobertura:
         mn = cfg.min_coverage.get(s, 0)
         mx = cfg.max_coverage.get(s, len(names))
         for d in range(7):
             total = sum(x[name, d, s] for name in names)
+            total_por[s, d] = total
             model.Add(total >= mn)
-            model.Add(total <= mx)
+            if s in TURNOS_MAX_COBERTURA_BLANDA:
+                # exceso = max(0, total - mx) — lineal, penalización
+                # proporcional (superar el máximo en 2 cuesta el doble que
+                # en 1, pedido explícito del usuario). Cota superior
+                # len(names): total nunca puede superar la plantilla
+                # completa.
+                exceso = model.NewIntVar(0, len(names), f"exceso_cobertura_{s}_{d}")
+                model.Add(exceso >= total - mx)
+                exceso_por[s, d] = exceso
+                objetivo_terms.append(PESO_EXCESO_COBERTURA * exceso)
+            else:
+                model.Add(total <= mx)
+
+    # L. Orden del exceso (pedido explícito del usuario): no superar el máximo
+    # de un turno mientras el OTRO turno de máximo blando todavía tenga sitio.
+    # "De nada sirve exceder el máximo de Tarde cuando Mañana aún no lo ha
+    # alcanzado." Ver PESO_ORDEN_EXCESO para por qué es blando y no duro.
+    #
+    # Con exactamente dos turnos blandos (Mañana/Tarde) basta agregarlo por
+    # día: "hay algún exceso" Y "queda algún hueco" es equivalente a la
+    # formulación por pares, porque un turno no puede tener exceso y hueco a
+    # la vez (exceso > 0 implica total > mx, luego hueco = 0). Escrito de
+    # forma genérica sobre TURNOS_MAX_COBERTURA_BLANDA para que siga siendo
+    # correcto si algún día se añade un tercer turno blando.
+    for d in range(7):
+        excesos_dia = [exceso_por[s, d] for s in TURNOS_MAX_COBERTURA_BLANDA
+                       if (s, d) in exceso_por]
+        if len(excesos_dia) < 2:
+            continue  # con un solo turno blando no hay "orden" que imponer
+
+        huecos_dia = []
+        for s in TURNOS_MAX_COBERTURA_BLANDA:
+            if (s, d) not in exceso_por:
+                continue
+            mx_s = cfg.max_coverage.get(s, len(names))
+            # hueco = max(0, mx - cobertura_real). AddMaxEquality (igualdad
+            # exacta) y no una desigualdad: el hueco entra en un AND que se
+            # penaliza, no en un término con presión propia hacia abajo, así
+            # que el solver podría dejarlo en 0 "gratis" y desactivar la
+            # penalización sin que fuera cierto.
+            hueco = model.NewIntVar(0, max(0, mx_s), f"hueco_cobertura_{s}_{d}")
+            model.AddMaxEquality(hueco, [mx_s - total_por[s, d], 0])
+            huecos_dia.append(hueco)
+
+        hay_exceso = model.NewBoolVar(f"hay_exceso_{d}")
+        model.Add(sum(excesos_dia) >= 1).OnlyEnforceIf(hay_exceso)
+        model.Add(sum(excesos_dia) == 0).OnlyEnforceIf(hay_exceso.Not())
+
+        hay_hueco = model.NewBoolVar(f"hay_hueco_{d}")
+        model.Add(sum(huecos_dia) >= 1).OnlyEnforceIf(hay_hueco)
+        model.Add(sum(huecos_dia) == 0).OnlyEnforceIf(hay_hueco.Not())
+
+        # AND por reificación de 3 desigualdades, mismo patrón que
+        # weekend_libre / break_var / both_s en el resto del módulo.
+        mal_orden = model.NewBoolVar(f"exceso_fuera_de_orden_{d}")
+        model.Add(mal_orden <= hay_exceso)
+        model.Add(mal_orden <= hay_hueco)
+        model.Add(mal_orden >= hay_exceso + hay_hueco - 1)
+        objetivo_terms.append(PESO_ORDEN_EXCESO * mal_orden)
 
     # no_night_roles: nunca Noche.
     for name in names:
@@ -808,7 +1052,12 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         # estructuralmente forzado a Libre para ella — tras Noche el
         # sábado, la restricción de transición exige Noche o Libre el
         # domingo, y Noche ahí competiría con night_fixed (o cualquier
-        # otra cobertura ya fija ese día) por encima de max_coverage. El
+        # otra cobertura ya fija ese día) por encima de max_coverage. Este
+        # razonamiento SIGUE siendo válido tras el término K: el máximo de
+        # Noche es uno de los dos que se mantienen DUROS a propósito (ver
+        # TURNOS_MAX_COBERTURA_BLANDA), justamente para que el solver no
+        # pueda añadir noches que nadie planificó.
+        # El
         # Domingo CUENTA como uno de sus DIAS_LIBRES_SEGUIDOS_POR_SEMANA(2)
         # — no se apila aparte como una vacación — y el que queda
         # pendiente (1) se coloca donde haga falta, SIN exigir que sea
@@ -849,18 +1098,33 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         }
         dias_peticion = (forced_libre[name] - dias_vacaciones_idx) - dias_bloqueados_persona
 
-        if len(dias_peticion) > DIAS_LIBRES_SEGUIDOS_POR_SEMANA:
-            continue  # más peticiones concedidas que el propio patrón admite
-
         no_disponibles = (forced_libre[name] - dias_peticion) | dias_bloqueados_persona
         dias_no_forzados_totales = [d for d in range(7) if d not in no_disponibles]
+
+        if len(dias_peticion) > DIAS_LIBRES_SEGUIDOS_POR_SEMANA:
+            # Más peticiones concedidas que el propio patrón admite: el
+            # patrón ya está más que cubierto, así que no se puede exigir
+            # nada más — pero SÍ hay que impedir libres ADICIONALES.
+            # (CORRECCIÓN esta sesión) Antes esto era un `continue` seco,
+            # que dejaba los días restantes sin ninguna cota: alguien con 3
+            # peticiones concedidas podía acabar con los 7 días Libre, el
+            # mismo fallo silencioso ("7 libres / 0 días trabajados") que
+            # esta restricción existe para evitar.
+            resto = [d for d in dias_no_forzados_totales if d not in dias_peticion]
+            if resto:
+                model.Add(sum(x[name, d, "Libre"] for d in resto) == 0)
+            continue
 
         if dias_peticion:
             faltan = DIAS_LIBRES_SEGUIDOS_POR_SEMANA - len(dias_peticion)
             dias_no_forzados = [d for d in dias_no_forzados_totales if d not in dias_peticion]
-            if faltan < 0:
-                continue
             if faltan > 0 and len(dias_no_forzados) < faltan:
+                # No quedan días donde colocar lo que falta del patrón. No
+                # hace falta cota adicional aquí: esta rama solo se alcanza
+                # con faltan==1 y dias_no_forzados vacío (con 2 peticiones
+                # faltan==0 y se sigue por el camino normal de abajo), así
+                # que no hay ningún día suelto que el solver pudiera poner
+                # Libre de más.
                 continue
             # faltan == 0 (dos peticiones ya completan el patrón): el resto
             # de días NO forzados deben quedar SIN Libre — sin este "== 0"
@@ -882,6 +1146,13 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
 
         dias_no_forzados = dias_no_forzados_totales
         if len(dias_no_forzados) < DIAS_LIBRES_SEGUIDOS_POR_SEMANA:
+            # Vacación/baja larga que ya cubre 6-7 días: no hay sitio para
+            # exigir el patrón. Se deja SIN cota adicional a propósito: el
+            # único día suelto que pudiera quedar ya está rodeado de días de
+            # vacación, así que ponerlo Libre no es el fallo de reparto que
+            # esta restricción persigue (esa persona no está acaparando los
+            # libres de nadie), y forzarla a trabajar justo ese día sí
+            # podría volver la semana infactible sin ninguna ganancia real.
             continue
 
         no_forzados_set = set(dias_no_forzados)
@@ -906,7 +1177,9 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         )
 
     # ─── Fase 2: términos de objetivo ────────────────────────────────────
-    objetivo_terms = []
+    # (objetivo_terms ya se inicializó antes de la restricción #1 — la
+    # restricción #2, cobertura máxima, ya necesitaba empezar a añadir
+    # términos blandos antes de llegar aquí.)
 
     # Variable auxiliar compartida por A y E: finde completo libre.
     weekend_libre = {}
@@ -921,11 +1194,36 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     # cfg.roles_excluidos_equidad entran en la suma; las demás no aparecen
     # aquí en absoluto (ver docstring del módulo).
     ratios = _get_weekend_ratios(cfg.dept_id, staff_list)
-    ratios_validos = [d["ratio"] for d in ratios.values()]
+
+    # La media se calcula SOLO sobre las personas que de verdad entran en
+    # este término (CORRECCIÓN esta sesión). Antes se calculaba sobre todo
+    # `ratios`, incluidas las que tienen el fin de semana libre GARANTIZADO
+    # por una restricción dura — el jefe (fixed_days_off=[5,6]) y el
+    # night_fixed, cuyo ratio histórico tiende a 1.0 por construcción. Eso
+    # inflaba la media y desplazaba el coeficiente (ratio - avg_ratio) de
+    # todas las demás hacia el lado negativo, es decir: convertía "dar un
+    # finde libre a cualquiera" en una recompensa sistemática en vez de en
+    # el mecanismo de equidad relativa que este término pretende ser.
+    def _entra_en_equidad(nombre: str) -> bool:
+        rol = by_name[nombre].get("role")
+        if rol in cfg.roles_excluidos_equidad:
+            return False
+        # Finde libre garantizado por restricción dura: su ratio no mide
+        # equidad, mide su propia configuración. Se comprueba que los días
+        # libres fijos cubran REALMENTE el finde entero (5 y 6) — un rol con
+        # fixed_days_off entre semana (p.ej. [0,1]) sí compite por los
+        # findes como cualquier otro y debe seguir contando.
+        dias_fijos = set(cfg.night_fixed_days_off if rol == "night_fixed"
+                         else cfg.fixed_days_off.get(rol, []))
+        return not {5, 6} <= dias_fijos
+
+    ratios_validos = [
+        d["ratio"] for nombre, d in ratios.items()
+        if nombre in by_name and _entra_en_equidad(nombre)
+    ]
     avg_ratio = sum(ratios_validos) / len(ratios_validos) if ratios_validos else 0.0
     for name in names:
-        role = by_name[name].get("role")
-        if role in cfg.roles_excluidos_equidad:
+        if not _entra_en_equidad(name):
             continue
         ratio = ratios.get(name, {}).get("ratio", avg_ratio)
         # Coste relativo a la media: negativo (recompensa) si está por
@@ -978,6 +1276,64 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
             model.Add(break_var == work_both - sum(keep_terms))
             objetivo_terms.append(PESO_ROTURAS_CONTINUIDAD * break_var)
 
+    # B (cruce de semana) — NUEVO, esta sesión: el bucle de arriba empieza en
+    # d=1, así que compara 0-1, 1-2 … 5-6 pero NUNCA el domingo de la semana
+    # anterior con el lunes de esta. Medido antes de este arreglo sobre la
+    # plantilla real (4 semanas encadenadas): 100% de continuidad DENTRO de la
+    # semana frente a solo 42% en el cruce Domingo→Lunes — apenas por encima
+    # del azar entre tres turnos diurnos (33%), porque nada lo penalizaba.
+    #
+    # No era una decisión de diseño sino un hueco: la regla de negocio es "no
+    # cambiar de turno entre dos días TRABAJADOS consecutivos", y Domingo→Lunes
+    # es exactamente ese caso cuando la persona trabaja ambos. Es distinto del
+    # cambio a través de los DÍAS LIBRES, que sigue siendo gratis a propósito
+    # (ver el test de continuidad entre libres): si el domingo anterior fue
+    # Libre, prev_shift no está en DAY_SHIFTS y este término ni se añade.
+    #
+    # El domingo anterior es un DATO constante (prev_sunday_shifts), no una
+    # variable del modelo, así que no hace falta el patrón work_both/keep del
+    # bucle de arriba: basta con
+    #   rotura = trabaja_el_lunes − mantiene_el_mismo_turno
+    # que vale 1 solo si el lunes trabaja un turno diurno distinto, y 0 si
+    # mantiene el turno, si libra o si hace Noche.
+    for name in names:
+        prev_shift = prev_sunday_shifts.get(name)
+        if prev_shift not in DAY_SHIFTS:
+            continue
+        break_cruce = model.NewBoolVar(f"break_cruce_semana_{name}")
+        model.Add(break_cruce == work_var[name, 0] - x[name, 0, prev_shift])
+        objetivo_terms.append(PESO_ROTURAS_CONTINUIDAD * break_cruce)
+
+    # M. Días trabajados seguidos cruzando semanas (NUEVO, esta sesión —
+    # confirmado con el usuario). El patrón de libres (restricción #7) es POR
+    # SEMANA, así que nada impedía librar Lun+Mar una semana y Sáb+Dom la
+    # siguiente: 10 días trabajados seguidos sin romper ninguna regla. Medido
+    # sobre la plantilla real en 4 semanas encadenadas: Maira 9 días seguidos,
+    # Carmen 8.
+    #
+    # Se modela como ventana deslizante sobre la secuencia
+    # [días ya trabajados al cierre de la semana anterior] + [los 7 de esta],
+    # penalizando cada ventana de MAX_DIAS_TRABAJADOS_SEGUIDOS+1 días que esté
+    # entera trabajada. Es BLANDO (igual que el orden de exceso, y por el mismo
+    # motivo): como restricción dura podría volver INFEASIBLE una semana entera
+    # por un arrastre de la anterior que ya no se puede cambiar.
+    for name in names:
+        r = min(int(dias_trabajados_previos.get(name, 0) or 0), 7)
+        secuencia = [1] * r + [work_var[name, d] for d in range(7)]
+        ventana = MAX_DIAS_TRABAJADOS_SEGUIDOS + 1
+        for g in range(0, len(secuencia) - ventana + 1):
+            tramo = secuencia[g:g + ventana]
+            if all(isinstance(v, int) for v in tramo):
+                # Ventana enteramente dentro de la semana ANTERIOR: son todo
+                # constantes, ya está decidida y no hay nada que penalizar
+                # aquí (penalizarla solo añadiría una constante al objetivo).
+                # isinstance(v, int) y no `v == 1`: sobre una BoolVar, `== 1`
+                # construye una expresión del modelo, no un booleano de Python.
+                continue
+            exceso_racha = model.NewIntVar(0, ventana, f"exceso_racha_trabajo_{name}_{g}")
+            model.Add(exceso_racha >= sum(tramo) - MAX_DIAS_TRABAJADOS_SEGUIDOS)
+            objetivo_terms.append(PESO_RACHA_TRABAJO * exceso_racha)
+
     # C. Desequilibrio histórico de turnos: prefiere el turno menos hecho.
     shift_counts = _get_shift_counts(cfg.dept_id)
     for name in names:
@@ -1025,12 +1381,20 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         if not turno_cobertura:
             continue
 
-        dias_ausencia, semana_completa = _dias_cobertura_ausencia(staff_list, cfg, rol_cubierto, info)
+        dias_ausencia, dias_libres_fijos, semana_completa = _dias_cobertura_ausencia(
+            staff_list, cfg, rol_cubierto, info
+        )
         cobertura_total_semana = semana_completa and info.get("semana_completa")
 
         for name in cubridores:
             for d in dias_ausencia:
                 objetivo_terms.append(PESO_COBERTURA_AUSENCIA * (1 - x[name, d, turno_cobertura]))
+            # Días libres FIJOS del cubierto: mismo mecanismo, peso menor
+            # (ver _dias_cobertura_ausencia y la constante).
+            for d in dias_libres_fijos:
+                objetivo_terms.append(
+                    PESO_COBERTURA_DIAS_LIBRES_FIJOS * (1 - x[name, d, turno_cobertura])
+                )
             if cobertura_total_semana:
                 for d in (5, 6):
                     objetivo_terms.append(PESO_COBERTURA_AUSENCIA * x[name, d, "Libre"])
@@ -1204,17 +1568,27 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
 
     asunciones = {}
 
-    # Cobertura: máxima siempre activa (política estructural); mínima
-    # gateada por asunción, agrupada por (día, turno) — es la unidad más
-    # pequeña con sentido para un encargado ("la cobertura mínima de Noche
-    # el Sábado").
+    # Cobertura: la máxima se modela SOLO para los turnos donde sigue
+    # siendo dura (Noche y Partido — todo lo que no está en
+    # TURNOS_MAX_COBERTURA_BLANDA). En Mañana/Tarde dejó de ser dura en
+    # _construir_modelo (ver PESO_EXCESO_COBERTURA) y por tanto no puede
+    # causar un INFEASIBLE genuino, así que reproducirla aquí haría que el
+    # diagnóstico señalara como "conflicto" algo que el modelo real ya no
+    # trata como bloqueante. Se deja siempre activa, sin gatear, igual que
+    # antes: sigue siendo una política estructural del departamento, no
+    # algo que un encargado conceda para una semana concreta.
+    #
+    # Mínima sigue gateada por asunción, agrupada por (día, turno) — es la
+    # unidad más pequeña con sentido para un encargado ("la cobertura
+    # mínima de Noche el Sábado").
     turnos_con_cobertura = sorted(set(cfg.min_coverage) | set(cfg.max_coverage))
     for s in turnos_con_cobertura:
         mn = cfg.min_coverage.get(s, 0)
         mx = cfg.max_coverage.get(s, len(names))
         for d in range(7):
             total = sum(x[name, d, s] for name in names)
-            model.Add(total <= mx)
+            if s not in TURNOS_MAX_COBERTURA_BLANDA:
+                model.Add(total <= mx)
             if mn > 0:
                 a = model.NewBoolVar(f"asum_mincov_{s}_{d}")
                 model.Add(total >= mn).OnlyEnforceIf(a)
@@ -1354,12 +1728,91 @@ TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS = 10.0  # límite propio del diagnóstico —
 # informa explícitamente en vez de colgar la respuesta (ver más abajo).
 
 
+def _reducir_a_nucleo_irreducible(model: cp_model.CpModel, nucleo_inicial: set,
+                                   tiempo_limite: float) -> tuple:
+    """SufficientAssumptionsForInfeasibility() devuelve un subconjunto
+    SUFICIENTE para la infactibilidad (documentado así por ortools), no uno
+    IRREDUCIBLE — puede contener motivos redundantes que, si se quitaran,
+    el resto seguiría siendo infactible igual (o sea, no eran realmente
+    necesarios para el conflicto). Esta función lo reduce con el algoritmo
+    estándar "deletion-based" (uno de los métodos habituales para calcular
+    un IIS — Irreducible Infeasible Subset): por cada asunción del núcleo,
+    prueba a quitarla y researcar infactibilidad con las demás — si SIGUE
+    infactible sin ella, sobraba (se descarta definitivamente); si se
+    vuelve factible, era necesaria (se conserva).
+
+    UNA SOLA PASADA sobre el núcleo inicial basta: es la garantía que da el
+    filtro de borrado clásico. Cuando se procesa una asunción, se prueba
+    contra el conjunto que queda tras haber descartado ya todas las
+    anteriores, así que al terminar la pasada cada asunción conservada es
+    necesaria para el conjunto FINAL, no solo para el de su momento — que
+    es justo la definición de irreducible. Una versión anterior de esta
+    función iteraba hasta punto fijo (`while cambiado`), lo que multiplica
+    el número de resoluciones sin poder quitar ni una asunción más.
+    Medido en un escenario de 36 asunciones (9 personas, 5 de vacaciones
+    simultáneas): la pasada única tarda ~0.08s sobre los ~0.02s del
+    diagnóstico sin reducción, así que el punto fijo tampoco llegaba a
+    agotar TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS a esta escala — el motivo
+    del cambio es que las vueltas extra son trabajo demostrablemente
+    inútil, no un incendio de rendimiento. El presupuesto de tiempo sigue
+    ahí para escalas mayores.
+
+    Reutiliza el MISMO objeto `model` para cada resolución de prueba
+    (ClearAssumptions + AddAssumptions con el subconjunto candidato en
+    cada vuelta) en vez de reconstruirlo desde cero — las variables de
+    asunción y sus OnlyEnforceIf ya están fijadas en el modelo; lo único
+    que cambia entre pruebas es QUÉ subconjunto se le pasa como
+    "asumido" a esta resolución en concreto.
+
+    Devuelve (nucleo_final: set[BoolVar], verificado_completo: bool) —
+    verificado_completo=False si el presupuesto de tiempo se agotó a
+    mitad del barrido (el núcleo devuelto SIGUE siendo suficiente e
+    infactible — nunca se pierde esa garantía — pero no se llegó a
+    confirmar que ya no se puede reducir más, así que podría seguir
+    conteniendo algún motivo redundante sin detectar)."""
+    nucleo = set(nucleo_inicial)
+    t0 = time.time()
+    for var in sorted(nucleo_inicial, key=lambda v: v.Index()):
+        # sorted() por Index: el orden de barrido determina cuál de dos
+        # motivos intercambiables se conserva, así que iterar un set() daría
+        # mensajes distintos entre ejecuciones (mismo motivo que el sorted()
+        # de la restricción #2 — el hash-seed de Python no es fijo).
+        restante = tiempo_limite - (time.time() - t0)
+        if restante <= 0:
+            return nucleo, False
+        candidato = nucleo - {var}
+        if not candidato:
+            continue  # no tiene sentido researcar sobre el conjunto vacío
+        solver_prueba = cp_model.CpSolver()
+        solver_prueba.parameters.num_search_workers = 1
+        solver_prueba.parameters.max_time_in_seconds = restante
+        model.ClearAssumptions()
+        model.AddAssumptions(list(candidato))
+        status = solver_prueba.Solve(model)
+        if status == cp_model.INFEASIBLE:
+            nucleo = candidato  # var era redundante -- descartada
+        elif status == cp_model.UNKNOWN:
+            # No se pudo concluir a tiempo si var era o no redundante —
+            # postura conservadora: se conserva (nunca se descarta algo
+            # sin confirmar que de verdad sobraba) y se corta el barrido
+            # aquí (el presupuesto ya se está agotando).
+            return nucleo, False
+        # FEASIBLE/OPTIMAL sin var -> var era necesaria, se queda en
+        # nucleo tal cual, seguir probando con la siguiente.
+    return nucleo, True
+
+
 def _diagnosticar_infactibilidad(staff_list: list, cfg) -> str:
     """Reconstruye el modelo reducido con asunciones
-    (_construir_modelo_diagnostico) y usa
-    solver.SufficientAssumptionsForInfeasibility() para encontrar el
-    subconjunto MÍNIMO de motivos "cedibles" (vacaciones/peticiones,
-    cobertura mínima puntual) que, combinados, no tienen solución.
+    (_construir_modelo_diagnostico), usa
+    solver.SufficientAssumptionsForInfeasibility() para encontrar un
+    subconjunto SUFICIENTE de motivos "cedibles" (vacaciones/peticiones,
+    cobertura mínima puntual) que, combinados, no tienen solución, y
+    luego lo reduce a un núcleo IRREDUCIBLE de verdad con
+    _reducir_a_nucleo_irreducible (ver esa función — SufficientAssumptions
+    ForInfeasibility por sí sola NO garantiza minimalidad, solo
+    suficiencia, así que sin este segundo paso el mensaje podía incluir
+    motivos que en realidad no hacían falta para el conflicto real).
 
     Nunca lanza excepción por sí misma (solo diagnostica, ver nota de
     diseño arriba): si no logra reproducir la infactibilidad con las
@@ -1369,6 +1822,7 @@ def _diagnosticar_infactibilidad(staff_list: list, cfg) -> str:
     dice explícitamente en vez de colgar la respuesta o inventar una
     explicación.
     """
+    t0 = time.time()
     model, x, names, asunciones = _construir_modelo_diagnostico(staff_list, cfg)
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = 1
@@ -1393,15 +1847,23 @@ def _diagnosticar_infactibilidad(staff_list: list, cfg) -> str:
             "Diagnóstico automático: no se pudo reproducir la infactibilidad "
             "usando solo vacaciones/peticiones y cobertura mínima puntual — "
             "el conflicto real depende de alguna restricción estructural "
-            "(cobertura máxima, roles sin Noche, turno fijo de rol, "
-            "no-Mañana-tras-Tarde/Noche) no cubierta por este diagnóstico "
+            "(cobertura máxima de Noche/Partido, roles sin Noche, turno "
+            "fijo de rol, no-Mañana-tras-Tarde/Noche) no cubierta por este diagnóstico "
             "automático. Revisar manualmente."
         )
 
     indices_core = set(solver.SufficientAssumptionsForInfeasibility())
-    razones = sorted(
-        {desc for var, desc in asunciones.items() if var.Index() in indices_core}
-    )
+    nucleo_suficiente = {var for var in asunciones if var.Index() in indices_core}
+
+    tiempo_restante = TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS - (time.time() - t0)
+    if tiempo_restante > 0 and nucleo_suficiente:
+        nucleo_final, verificado = _reducir_a_nucleo_irreducible(
+            model, nucleo_suficiente, tiempo_restante
+        )
+    else:
+        nucleo_final, verificado = nucleo_suficiente, False
+
+    razones = sorted({asunciones[var] for var in nucleo_final})
 
     if not razones:
         return (
@@ -1411,7 +1873,15 @@ def _diagnosticar_infactibilidad(staff_list: list, cfg) -> str:
             "restricción de fase 1 no cedible). Revisar manualmente."
         )
 
-    return "Diagnóstico automático — combinación mínima en conflicto: " + "; ".join(razones) + "."
+    mensaje = (
+        ("Diagnóstico automático — combinación mínima irreducible en conflicto: "
+         if verificado else
+         "Diagnóstico automático — combinación suficiente en conflicto "
+         "(no se confirmó a tiempo que ya no se pudiera reducir más, "
+         "puede incluir algún motivo redundante): ")
+        + "; ".join(razones) + "."
+    )
+    return mensaje
 
 
 def _mensaje_infactible(solver: cp_model.CpSolver, status, staff_list: list = None, cfg=None) -> str:
@@ -1699,7 +2169,10 @@ def _resolver_y_extraer_con_extra(model: cp_model.CpModel, x: dict, names: list,
     extra_vars: {clave: BoolVar}. Devuelve (schedule, {clave: 0|1}).
     """
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 20.0  # 90.0 -> 20.0 (Fase 5,
+    solver.parameters.max_time_in_seconds = MAX_TIME_SOLVER  # 90.0 -> 20.0 (Fase 5,
+    # (esta sesión) antes era el literal 20.0 duplicado aquí: el mismo valor
+    # que MAX_TIME_SOLVER pero sin referenciarlo, así que subir la constante
+    # no habría afectado a esta función.
     # decisión final tras el rediseño B>I>D): con PESO_ROTURAS_CONTINUIDAD=50
     # y el término I, la búsqueda mono-hilo (num_search_workers=1, fijado por
     # determinismo) puede tardar hasta 90s en PROBAR optimalidad a escala
@@ -1905,6 +2378,7 @@ def generar_semana_cpsat_con_cobertura_nocturna(
     staff_list: list, week_start: date, cfg,
     estado_rotacion: dict, noches_ultimos_5_dias: dict,
     prev_sunday_shifts: dict = None,
+    dias_trabajados_previos: dict = None,
 ) -> dict:
     """Orquesta una semana completa conectando cobertura_nocturna.py (QUIÉN
     cubre — dato de entrada, no lo decide el solver) con las restricciones
@@ -1955,9 +2429,15 @@ def generar_semana_cpsat_con_cobertura_nocturna(
         persona_bloqueada_dia,
         longitud_bloque_respaldo,
         registrar_noche_bloque,
+        reconciliar_orden,
     )
 
     estado_rotacion = avanzar_semana_ausencia_night_fixed(staff_list, estado_rotacion)
+    # Sincroniza la lista 'orden' del ciclo fijo con quién puede cubrir noches
+    # esta semana (altas al final, bajas fuera). Necesario desde que el orden
+    # fijo se usa también en modo respaldo: _elegir_orden_fijo solo mira dentro
+    # de 'orden', así que sin esto un empleado nuevo nunca haría noches.
+    estado_rotacion = reconciliar_orden(estado_rotacion, staff_list, cfg)
 
     cobertura_externa = {}  # day_idx -> nombre
     # nombre_sustituto_unico: solo tiene sentido en modo normal (una misma
@@ -2008,6 +2488,27 @@ def generar_semana_cpsat_con_cobertura_nocturna(
         bloque = dict(estado_rotacion.get("bloque_actual") or {
             "nombre": None, "noches_totales": 0, "noches_cubiertas": 0,
         })
+
+        # Un bloque solo CONTINÚA si de verdad venía encadenado: esa persona
+        # tuvo Noche el último día de la semana anterior (noches_ultimos_5_
+        # dias[nombre][-1] = domingo pasado). Si no, el bloque quedó OBSOLETO
+        # y hay que descartarlo (CORRECCIÓN, esta sesión).
+        #
+        # Bug preexistente que destapó el paso a orden fijo en modo respaldo:
+        # bloque_actual solo lo mantiene la rama de modo RESPALDO, así que
+        # unas semanas de modo NORMAL en medio (night_fixed presente otra vez)
+        # lo dejan congelado. Traza real del escenario de alternancia:
+        #   sem 5 (respaldo) N6 cubre 4 de 5 -> bloque_actual={N6,5,4}
+        #   sem 6-7 (normal) N6 no hace ninguna noche, bloque_actual intacto
+        #   sem 8-9 (respaldo) se reanuda el bloque de N6 como si siguiera
+        # Reanudarlo clava una noche SUELTA (el lunes) a alguien cuya última
+        # noche fue tres semanas antes: sin Noche el domingo anterior y con el
+        # martes ya ocupado por otro bloque, la regla de MIN_NOCHES_RACHA(2)
+        # es imposible de cumplir y la semana entera sale INFEASIBLE.
+        if bloque["nombre"] is not None:
+            empalme_bloque = noches_ultimos_5_dias.get(bloque["nombre"]) or []
+            if not (empalme_bloque and empalme_bloque[-1]):
+                bloque = {"nombre": None, "noches_totales": 0, "noches_cubiertas": 0}
 
         for d in range(7):
             # ¿el titular del bloque en curso sigue siendo elegible hoy?
@@ -2101,6 +2602,7 @@ def generar_semana_cpsat_con_cobertura_nocturna(
         staff_list, week_start, cfg, prev_sunday_shifts,
         nombre_sustituto_cobertura=nombre_sustituto_unico,
         dias_bloqueados_externos=dias_bloqueados_externos,
+        dias_trabajados_previos=dias_trabajados_previos,
     )
 
     for d, nombre in cobertura_externa.items():

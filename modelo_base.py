@@ -235,7 +235,8 @@ def _save_night_history(rotation_key: str, history: dict):
 
 # ─── CHEQUEO DE VIABILIDAD PREVIO A LA GENERACIÓN ───────────────────────────
 
-def validar_viabilidad(staff_activo: list, cfg: DeptConfig) -> tuple[bool, str]:
+def validar_viabilidad(staff_activo: list, cfg: DeptConfig,
+                       turnos_sin_techo=frozenset()) -> tuple[bool, str]:
     """Comprueba antes de generar si el equipo tiene capacidad para el horario.
 
     Cada persona trabaja 5 de 7 días (libra 2), independientemente del rol.
@@ -243,6 +244,25 @@ def validar_viabilidad(staff_activo: list, cfg: DeptConfig) -> tuple[bool, str]:
       - días_trabajo = personas_activas × 5
       - necesidad_semana = sum(min_coverage) × 7
       - capacidad_semana = sum(max_coverage) × 7
+
+    turnos_sin_techo: turnos cuyo cfg.max_coverage NO es un tope duro en el
+    motor que se va a usar, así que no limitan cuánta gente cabe. Con al menos
+    uno de ellos, la capacidad semanal es ILIMITADA y las dos comprobaciones
+    de "sobra gente" se omiten por completo (dejan de tener sentido: el motor
+    absorbe cualquier excedente superando ese máximo y avisando).
+
+    Existe porque motor_cpsat.py convirtió el máximo de Mañana/Tarde en una
+    preferencia blanda (PESO_EXCESO_COBERTURA) y esta función, escrita cuando
+    los cuatro máximos eran duros, seguía rechazando con "Personal excesivo"
+    semanas que ese motor sí resuelve — bloqueando la generación ANTES de que
+    el solver llegara a ejecutarse, justo en el caso que aquel cambio quería
+    desbloquear. El motor heurístico de este mismo módulo sí mantiene los
+    máximos duros, así que por defecto (frozenset()) el comportamiento
+    histórico no cambia: quien quiera la semántica nueva la pide
+    explícitamente (ver app._get_dept_config / api_generar).
+
+    La comprobación de "Personal insuficiente" NO depende de esto: se apoya en
+    min_coverage, que sigue siendo dura en todos los motores y todos los turnos.
 
     Devuelve (True, '') si es viable, o (False, mensaje_accionable) si no lo es.
     """
@@ -270,7 +290,13 @@ def validar_viabilidad(staff_activo: list, cfg: DeptConfig) -> tuple[bool, str]:
             f"de temporada."
         )
 
-    if dias_trabajo > capacidad_semana:
+    # Con algún turno sin techo real, "sobra gente" deja de ser un concepto:
+    # el excedente siempre cabe en ese turno (a cambio de una penalización en
+    # el objetivo y una advertencia), así que ni esta comprobación ni la de
+    # min_libres_dia de más abajo tienen nada que decidir.
+    capacidad_ilimitada = bool(set(turnos_sin_techo) & set(cfg.max_coverage))
+
+    if not capacidad_ilimitada and dias_trabajo > capacidad_semana:
         sobran = -(-(dias_trabajo - capacidad_semana) // 5)
         return False, (
             f"Personal excesivo: {n} persona(s) activa(s) aportan {dias_trabajo} "
@@ -286,7 +312,7 @@ def validar_viabilidad(staff_activo: list, cfg: DeptConfig) -> tuple[bool, str]:
     # pero si NADIE la tiene (todos los roles activos tienen días fijos, p.ej.
     # night_fixed/jefe) esa exigencia diaria es irrealizable pese a que el
     # total semanal cuadre, porque los días libres fijos no se pueden mover.
-    min_libres_dia = max(0, n - capacidad_max_dia)
+    min_libres_dia = 0 if capacidad_ilimitada else max(0, n - capacidad_max_dia)
     if min_libres_dia > 0:
         roles_sin_rotacion = set(cfg.fixed_days_off.keys()) | {"night_fixed"}
         personas_flexibles = [p for p in personas_activas
