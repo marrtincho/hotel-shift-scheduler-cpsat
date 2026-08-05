@@ -1,15 +1,13 @@
 """
-tests/test_cobertura_nocturna_orden_fijo.py — Valida cobertura_nocturna.py
-(prototipo aislado): selección por orden fijo con respaldo de balance
-histórico para cubrir los días libres de night_fixed.
+tests/test_cobertura_nocturna_orden_fijo.py — Valida cobertura_nocturna.py:
+selección de quién cubre las noches por orden fijo, con balance histórico
+como respaldo.
 
-No confundir con tests/test_cobertura_nocturna.py (preexistente, prueba el
-mecanismo de bloques rotatorios de modelo_base._plan_noches_bloques —
-código de producción, no tocado por este prototipo).
+No confundir con tests/test_cobertura_nocturna.py, que prueba el mecanismo
+de bloques rotatorios del motor heurístico (modelo_base._plan_noches_bloques).
 
-No usa herramientas/DATA_DIR (a diferencia de motor_cpsat.py en fase 2):
-todo el estado vive en el dict estado_rotacion que pasa el propio test, no
-hay lectura de disco aquí.
+No usa herramientas/DATA_DIR: todo el estado vive en el dict estado_rotacion
+que pasa el propio test, no hay lectura de disco aquí.
 """
 
 import pytest
@@ -184,7 +182,7 @@ def test_modo_respaldo_por_ausencia_larga_preserva_orden_y_siguiente_turno():
     estado = avanzar_semana_ausencia_night_fixed(staff_ausente, estado)
     assert estado["ausencias_night_fixed_consecutivas"] == 2
 
-    # (ACTUALIZADO esta sesión — pedido explícito del usuario: el orden fijo
+    # (requisito de negocio: el orden fijo
     # se aplica también en modo respaldo, "más allá de si existe el rol de
     # noche fijo o no". Antes, el modo respaldo caía en balance puro y aquí
     # se esperaba N2, el de menor covers-pending; ahora el ciclo NO se
@@ -228,7 +226,7 @@ def test_modo_respaldo_por_rol_inexistente_es_permanente():
     # Sin llamar a avanzar_semana_ausencia_night_fixed en absoluto (no hace
     # falta: el disparador es "no existe el rol", no un contador de semanas).
     #
-    # (ACTUALIZADO esta sesión — pedido explícito del usuario.) Este es el
+    # (requisito de negocio.) Este es el
     # caso de la plantilla REAL de Recepción: no hay night_fixed, así que el
     # modo respaldo está permanentemente activo. Antes eso significaba balance
     # puro siempre y el orden fijo era código muerto en producción; ahora el
@@ -280,7 +278,7 @@ def test_baja_del_siguiente_turno_cuando_era_el_ultimo_pasa_al_primero():
     assert estado2["siguiente_turno"] == "N1", "N4 era el último: el nuevo siguiente es el primero"
 
 
-# ─── Bug real detectado en Fase 5 (informe INFORME_FASE_5.md, Paso 3) ──────
+# ─── Bug real detectado en Fase 5 (ver docs/INFORME_FASE_5.md, Paso 3) ─────
 #
 # En modo respaldo (sin night_fixed en plantilla, o >=2 semanas ausente),
 # quien orquesta la generación (motor_cpsat.generar_semana_cpsat_con_
@@ -437,7 +435,7 @@ def test_bloqueados_por_racha_infactibilidad_real_cuando_todos_bloqueados():
         )
 
 
-# ─── Reconciliación de 'orden' con la plantilla (esta sesión) ────────────
+# ─── Reconciliación de 'orden' con la plantilla ────────────
 
 def test_reconciliar_orden_incorpora_nuevos_al_final_sin_recuperar_atrasos():
     """REGRESIÓN: incorporar_empleado_orden/dar_de_baja_empleado_orden

@@ -984,7 +984,7 @@ HORARIOS_TURNOS_DEFAULT = {
     "Tarde":   [{"inicio": "15:00", "fin": "23:00"}],
     "Noche":   [{"inicio": "23:00", "fin": "07:00"}],
     # Partido es un turno CONTINUO de 10:00 a 18:00 (confirmado con el
-    # usuario esta sesión). Antes estaba guardado como dos tramos partidos
+    # usuario). Antes estaba guardado como dos tramos partidos
     # (10:00-13:00 y 17:00-20:00), que no es el horario real que se trabaja.
     # La variante excepcional de 12:00-20:00 no se modela: la lista de
     # tramos significa "un turno con varios tramos el mismo día", no

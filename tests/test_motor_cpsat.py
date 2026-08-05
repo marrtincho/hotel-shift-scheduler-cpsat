@@ -72,7 +72,7 @@ def _cfg(**overrides) -> DeptConfig:
 
 
 def _staff_basico():
-    # Gus/Hugo (NUEVO, esta sesión — hallazgo de producción): con la
+    # Gus/Hugo (hallazgo de producción): con la
     # restricción dura nueva de patrón de libres (motor_cpsat.
     # DIAS_LIBRES_SEGUIDOS_POR_SEMANA — exactamente 2 libres CONSECUTIVOS
     # por semana, no solo "al menos 2"), los 6 "normal" originales no
@@ -414,7 +414,7 @@ def test_equidad_prioriza_a_quien_tiene_menos_findes_libres_historicos():
     from herramientas import registrar_semana
 
     cfg = _cfg()  # dept_id="test": Mañana2+Tarde2+Noche1=5 mínimo
-    # Sobrado6/Sobrado7 (NUEVO, esta sesión — hallazgo de producción, ver
+    # Sobrado6/Sobrado7 (hallazgo de producción, ver
     # motor_cpsat.MIN_LIBRES_POR_SEMANA): con solo 6 personas y 5 mínimo
     # diario, no queda margen para que cada una tenga también sus 2 libres
     # obligatorios (restricción dura nueva) — 2 personas extra dan el
@@ -488,7 +488,7 @@ def test_rol_excluido_sin_fixed_days_off_casi_nunca_libra_finde_completo():
     0 (o casi 0) de esas semanas — no por restricción dura, sino por el peso
     alto del término E. El nombre del rol ("cubridor") es arbitrario y no
     aparece en ningún sitio de motor_cpsat.py."""
-    # N6/N7 (NUEVO, esta sesión — hallazgo de producción, ver motor_cpsat.
+    # N6/N7 (hallazgo de producción, ver motor_cpsat.
     # MIN_LIBRES_POR_SEMANA): con solo 6 personas (mínimo diario 5) no
     # queda margen para que cada una tenga también sus 2 libres
     # obligatorios (restricción dura nueva) — 2 personas extra dan el
@@ -528,7 +528,7 @@ def test_rol_excluido_sin_fixed_days_off_si_libra_con_peticion_concedida():
     para Cubridor justo ese finde: la restricción dura #6 (fase 1) debe
     ganarle a la penalización blanda del término E — el finde libre se
     fuerza igual, sin conflicto."""
-    # N6/N7 (NUEVO, esta sesión, mismo motivo que en el test anterior — ver
+    # N6/N7 (NUEVO, mismo motivo que en el test anterior — ver
     # motor_cpsat.MIN_LIBRES_POR_SEMANA).
     cfg = _cfg(roles_excluidos_equidad={"cubridor"})
     staff = [
@@ -639,7 +639,7 @@ def test_termino_e_cede_cuando_la_alternativa_cuesta_mas_de_200():
     # convierte "Cubridor libra el finde" en algo estructuralmente forzado
     # por el máximo (N1+N2-N5 ya agotan el máximo de 5 el finde en el
     # escenario real, así que a Cubridor no le queda sitio), no una mera
-    # preferencia blanda; ver docstring. N6/N7/N8 (NUEVO, esta sesión —
+    # preferencia blanda; ver docstring. N6/N7/N8 (NUEVO —
     # hallazgo de producción): dan el margen de libres que Cubridor/N1/
     # N2-N5 necesitan para su propio patrón CONSECUTIVO de 2 (restricción
     # dura nueva) SIN competir por el finde. Usan un rol con
@@ -717,7 +717,7 @@ def test_termino_e_cede_cuando_la_alternativa_cuesta_mas_de_200():
     # ── Contrafactual: confirma que la alternativa bloqueada de verdad
     # habría presionado sobre el resto del sistema (no es una comparación
     # vacía) ──
-    # NOTA (esta sesión — max_coverage pasó de restricción dura a blanda,
+    # NOTA (max_coverage pasó de restricción dura a blanda,
     # PESO_EXCESO_COBERTURA): la versión original de este contrafactual
     # esperaba que N1 quedara Libre AMBOS días del finde de forma
     # ABSOLUTA, por exclusión estructural de capacidad (con max_coverage

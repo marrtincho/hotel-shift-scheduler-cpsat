@@ -1,6 +1,12 @@
 # Informe de Fase 5 — Comparativa motor heurístico vs CP-SAT
 
-Fecha: 2026-07-31. Repo: `HorariosRecepcion-cpsat` (prototipo aislado, no toca `app.py`/`modelo_base.py` de producción salvo lectura). Entorno: `.venv_cpsat` (ortools 9.15.6755).
+>  **Documento histórico.** Recoge la validación del motor CP-SAT frente al
+> heurístico durante su desarrollo, cuando todavía era un prototipo aislado. Desde
+> entonces CP-SAT pasó a ser el motor de producción y varias reglas cambiaron. Para
+> el estado actual del motor, la referencia es `REGLAS.md`; esto se conserva por la
+> metodología y las mediciones.
+
+Fecha: 2026-07-31. Entorno: `.venv_cpsat` (ortools 9.15.6755).
 
 ## Paso 0 — ¿Existe una función unificadora de las 4 fases?
 

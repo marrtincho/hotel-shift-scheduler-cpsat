@@ -1,6 +1,6 @@
 """
 tests/test_prioridad_continuidad_sobrecobertura.py — Valida el rediseño de
-prioridades de Fase 5 (sesión posterior a fijar num_search_workers=1 +
+prioridades de Fase 5 (revisión posterior a fijar num_search_workers=1 +
 sorted()): orden de negocio estricto B (continuidad) > I (sobre-cobertura
 diurna, término NUEVO) > D (uso de Partido).
 
@@ -70,9 +70,9 @@ def test_sobrante_va_a_partido_no_a_sobrecubrir_manana_o_tarde():
     """min_coverage Mañana=2/Tarde=2/Noche=1, una persona de sobra ese día,
     sin presión de continuidad (P6 solo trabaja ese día, Libre el resto).
     Resultado de negocio esperado: 2 Mañana + 2 Tarde + 1 Noche + 1 Partido
-    — NO 3 Mañana + 2 Tarde + 1 Noche."""
+ — NO 3 Mañana + 2 Tarde + 1 Noche."""
     # M1/M2/T1/T2/N1 usan roles con TURNO FIJO (cfg.fixed_roles) en vez de
-    # un model.Add(...) manual por día (NUEVO, esta sesión — hallazgo de
+    # un model.Add(...) manual por día (hallazgo de
     # producción): con la restricción dura nueva de mínimo de libres
     # semanales (motor_cpsat.MIN_LIBRES_POR_SEMANA), forzarlos a trabajar
     # su turno los 7 días de la semana (como hacía la versión anterior de
@@ -165,7 +165,7 @@ def test_continuidad_gana_sobre_evitar_sobrecobertura():
     término B (confirmado al depurar este test); Mañana->Tarde no tiene
     ninguna restricción dura equivalente, así que aísla de verdad el
     término B sin chocar con fase 1."""
-    # Z_manana/T_fijo con roles de TURNO FIJO propios (NUEVO, esta sesión —
+    # Z_manana/T_fijo con roles de TURNO FIJO propios (NUEVO —
     # mismo motivo que en los escenarios 1/3 de arriba): forzarlos a
     # trabajar 7/7 vía model.Add contradice la restricción dura nueva de
     # mínimo de libres semanales; cfg.fixed_roles está excluido de ella.
@@ -174,7 +174,7 @@ def test_continuidad_gana_sobre_evitar_sobrecobertura():
     # excluida igualmente por tener también turno fijo), en vez de con
     # model.Add, reproduciendo el mismo comportamiento que antes.
     # P_manana/V_reserva TAMBIÉN con fixed_days_off propio cubriendo
-    # Miércoles-Domingo (NUEVO, esta sesión — mismo motivo que Z_manana/
+    # Miércoles-Domingo (mismo motivo que Z_manana/
     # T_fijo arriba): forzarlos Libre 5/7 días vía model.Add contradice la
     # restricción dura nueva de patrón de libres (exige EXACTAMENTE 2).
     # cfg.fixed_days_off excluye el rol POR COMPLETO de esa restricción

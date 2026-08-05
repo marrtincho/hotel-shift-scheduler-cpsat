@@ -1,21 +1,24 @@
 """
-cobertura_nocturna.py — Prototipo AISLADO: selección de quién cubre los días
-libres de night_fixed, por orden fijo con respaldo de balance histórico.
+cobertura_nocturna.py — Decide QUIÉN cubre cada noche.
 
-No toca app.py ni modelo_base.py. Sustituye, solo dentro de este prototipo,
-el criterio de select_night_covers (modelo_base.py) — que elige siempre por
-menor histórico de noches cubiertas — por un ORDEN FIJO como mecanismo
-principal, usando el histórico solo como respaldo en dos casos concretos
-(ver `seleccionar_candidato_cobertura_nocturna`). select_night_covers no se
-modifica ni se importa; solo se usó como referencia de comportamiento para
-el filtro de elegibilidad y el criterio de balance puro.
+Esta decisión es deliberadamente ajena al solver: motor_cpsat.py la toma como
+dato de entrada y la fija en el modelo como restricción dura antes de resolver.
+Así el orden de las noches es predecible y auditable para el equipo, en vez de
+un subproducto de la optimización.
 
-No implementa todavía: la migración de night_rotation_*.json al nuevo
-formato de estado (sesión siguiente), ni la conexión con la restricción de
-racha de noches en motor_cpsat.py (también sesión siguiente) — esta función
-solo decide QUIÉN cubre cada noche que haga falta cubrir; qué días
-concretos hacen falta cubrir y cómo se modela la racha es responsabilidad
-de quien la invoque.
+El mecanismo principal es un ORDEN FIJO y cíclico (empleado A, luego B, luego
+C, vuelta a A) que el admin configura desde la interfaz. A quien le toque y no
+esté disponible se le anota una deuda, y la recupera en cuanto vuelve. El
+balance histórico solo se usa como respaldo cuando se desactiva el orden fijo
+(`usar_orden_fijo: false`).
+
+Este módulo solo decide el "quién". Qué días hay que cubrir y cómo se modela la
+racha de noches es responsabilidad de quien lo invoque — hoy
+motor_cpsat.generar_semana_cpsat_con_cobertura_nocturna. Ver REGLAS.md §1.9
+para la regla de negocio completa y §1.10 para los límites de racha.
+
+Importa DAYS de modelo_base y nada más: motor_cpsat.py importa de aquí, no al
+revés, para evitar un ciclo de imports.
 
 ── Formato de estado_rotacion ────────────────────────────────────────────
 {
@@ -36,7 +39,7 @@ de quien la invoque.
     # separado.
     "ausencias_night_fixed_consecutivas": int,
 
-    # Campo NUEVO (esta sesión — regla de rotación de cobertura nocturna en
+    # Campo NUEVO (regla de rotación de cobertura nocturna en
     # bloques): quién está a mitad de un bloque de noches seguidas en modo
     # respaldo, y cuánto lleva cubierto. Un bloque de BLOQUE_RESPALDO_MIN(4)-
     # BLOQUE_RESPALDO_MAX(5) noches casi nunca cabe entero en una semana de
@@ -49,7 +52,7 @@ de quien la invoque.
     # Vacío = {"nombre": None, "noches_totales": 0, "noches_cubiertas": 0}.
     "bloque_actual": {"nombre": str | None, "noches_totales": int, "noches_cubiertas": int},
 
-    # Campo NUEVO (esta sesión, junto con bloque_actual): días de descanso
+    # Campo asociado a bloque_actual: días de descanso
     # obligatorio post-racha YA pendientes al arrancar la semana, según el
     # propio modelo CP-SAT (postweek1/postweek2 de motor_cpsat.
     # agregar_restriccion_racha_noches) — fuente autoritativa para
@@ -88,7 +91,7 @@ de quien la invoque.
 
 from modelo_base import DAYS
 
-# ─── Bloques de cobertura en modo respaldo (NUEVA, esta sesión) ────────────
+# ─── Bloques de cobertura en modo respaldo ──────────────────────────────
 # Regla de negocio: en modo respaldo (sin rol night_fixed en la plantilla),
 # cada persona de la rotación cubre un BLOQUE de noches seguidas, no una
 # noche suelta a la vez (que es como funcionaba hasta ahora: una llamada a
@@ -140,7 +143,7 @@ def _bloqueados_por_peticion_o_vacacion(staff_list: list, cfg, dias_cubrir: set 
 
 def persona_bloqueada_dia(staff_list: list, cfg, nombre: str, dia_idx: int) -> bool:
     """Wrapper delgado sobre _bloqueados_por_peticion_o_vacacion para UN
-    nombre y UN día concretos (NUEVO, esta sesión — bloques de cobertura en
+    nombre y UN día concretos (bloques de cobertura en
     modo respaldo): usado por el bucle de motor_cpsat.py para saber, día a
     día, si el titular del bloque de Noche EN CURSO sigue siendo elegible
     hoy (vacación/petición concedida a mitad de bloque) — si no lo es, el
@@ -240,7 +243,7 @@ def _elegir_balance_puro(elegibles: list, estado: dict) -> tuple:
 
 def registrar_noche_bloque(estado_rotacion: dict, nombre: str) -> dict:
     """Incrementa historico_balance[nombre]["covers"] SIN volver a elegir
-    (NUEVO, esta sesión — bloques de cobertura en modo respaldo): usado por
+    (bloques de cobertura en modo respaldo): usado por
     el bucle de motor_cpsat.py cuando el día de hoy es CONTINUACIÓN de un
     bloque ya en curso (el "quién" ya se decidió al arrancar el bloque, ver
     longitud_bloque_respaldo) — el balance histórico debe seguir reflejando
@@ -263,7 +266,7 @@ def longitud_bloque_respaldo(staff_list: list, nombre: str, dia_inicio: int) -> 
     RESPALDO_MAX(5)) cubre `nombre` a partir de `dia_inicio` (NUEVO, esta
     sesión — bloques de cobertura en modo respaldo).
 
-    Por defecto BLOQUE_RESPALDO_MAX(5) (confirmado con el usuario: "siempre
+    Por defecto BLOQUE_RESPALDO_MAX(5) (confirmado como regla de negocio: "siempre
     5 salvo que la rotación exija menos"). Se acorta a un valor menor SOLO
     si `nombre` ya tiene una vacación/petición concedida (forced_days_off)
     dentro de la semana visible que truncaría el bloque de 5 antes de
@@ -391,8 +394,8 @@ def seleccionar_candidato_cobertura_nocturna(staff_list: list, cfg, estado_rotac
     if not estado_rotacion.get("usar_orden_fijo", True):
         return _elegir_balance_puro(elegibles, estado_rotacion)
 
-    # El ORDEN FIJO se aplica también en modo respaldo (CAMBIO de esta sesión,
-    # pedido explícito del usuario: "debería ser fijo, más allá de si existe el
+    # El ORDEN FIJO se aplica también en modo respaldo (CAMBIO de,
+    # requisito de negocio: "debería ser fijo, más allá de si existe el
     # rol de noche fijo o no"). Antes, el modo respaldo caía en
     # _elegir_balance_puro; como la plantilla real de Recepción no tiene
     # night_fixed, el modo respaldo está SIEMPRE activo, así que el orden fijo

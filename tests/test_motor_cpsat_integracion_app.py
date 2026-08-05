@@ -179,7 +179,7 @@ def test_generar_con_cpsat_activo_mozos_respeta_contrato_de_seis_valores(
 
 def test_estado_cpsat_persiste_y_se_recupera_entre_semanas_encadenadas(
         client, data_dir, monkeypatch):
-    """NOTA (esta sesión — Opción B del diagnóstico de "Noche fantasma" tras
+    """NOTA (Opción B del diagnóstico de "Noche fantasma" tras
     edición manual): estado_rotacion (orden fijo + deudas, una cola de
     turnos que no es un hecho observable en el schedule) sigue
     persistiéndose sin cambios en cpsat_estado_{dept}.json. noches_ultimos_
@@ -230,7 +230,7 @@ def test_estado_cpsat_persiste_y_se_recupera_entre_semanas_encadenadas(
     assert len(llamadas) == 3
 
     # El fichero ya solo persiste estado_rotacion -- ver nota de la
-    # docstring arriba (Opción B del diagnóstico de esta sesión).
+    # docstring arriba (Opción B del diagnóstico de).
     for estado in estados_en_disco:
         assert set(estado.keys()) == {"estado_rotacion"}
 

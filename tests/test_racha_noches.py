@@ -96,7 +96,7 @@ def _simular_cadena(nombres_normales, n_semanas, patron_ausencia=None, estado_su
 
     devolver_trazas: si True, además del dict de turnos concatenados,
     devuelve la lista de estado_rotacion (uno por semana, tras esa semana)
-    — para comprobar directamente el contador de semanas consecutivas de
+ — para comprobar directamente el contador de semanas consecutivas de
     ausencia en vez de inferirlo indirectamente de la carga de Noche.
 
     Devuelve {nombre: [turnos concatenados cronológicamente de TODAS las
@@ -335,7 +335,7 @@ def test_control_negativo_sin_restriccion_de_racha_6_noches_es_factible():
         agregar_restriccion_racha_noches por error, este test lo detecta
         (el primer bloque dejaría de ser el único factible)."""
     # N1 usa un rol propio ("n1_test_rol") con fixed_days_off=[Domingo]
-    # (NUEVO, esta sesión — hallazgo de producción): _forzar_racha_6 ya deja
+    # (hallazgo de producción): _forzar_racha_6 ya deja
     # a N1 trabajando Lunes-Sábado (6/7 días) sin ninguna alternativa
     # posible más que el Domingo — con la restricción dura nueva de mínimo
     # de libres semanales (motor_cpsat.MIN_LIBRES_POR_SEMANA), un rol
@@ -435,14 +435,14 @@ def test_respaldo_dentro_de_una_semana_no_produce_infeasible_espurio_por_racha()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Restricción NUEVA (esta sesión) — tras Noche solo puede seguir Noche o
+# Restricción NUEVA — tras Noche solo puede seguir Noche o
 # Libre (Tarde y Partido también quedan bloqueados, no solo Mañana)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_tras_noche_solo_noche_o_libre():
     """Fuerza a N1 en Noche el lunes y confirma, uno a uno, que el martes:
       - Tarde y Partido son INFEASIBLE si se fuerzan explícitamente
-        (restricción dura NUEVA de esta sesión — antes solo Mañana estaba
+        (restricción dura NUEVA de — antes solo Mañana estaba
         bloqueada tras Noche).
       - Libre y Noche siguen siendo FEASIBLE (la restricción no bloquea
         más de lo que debe)."""
@@ -451,7 +451,7 @@ def test_tras_noche_solo_noche_o_libre():
     # N1-N8 (no solo N1-N6): forzar a N1 en Noche 2 días seguidos no deja
     # margen, con solo 6 "normal", para que cada uno cumpla también su
     # propio patrón de 2 libres consecutivos (restricción dura de la
-    # sesión anterior) — INFEASIBLE ajeno a lo que este test verifica (la
+    # revisión anterior) — INFEASIBLE ajeno a lo que este test verifica (la
     # transición tras Noche). 2 personas extra dan el margen que hacía falta.
     nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7", "N8"]
     cfg = _cfg()
@@ -493,7 +493,7 @@ def test_tras_noche_solo_noche_o_libre_transicion_domingo_a_lunes():
     # N1-N8 (no solo N1-N6): forzar a N1 en Noche 2 días seguidos no deja
     # margen, con solo 6 "normal", para que cada uno cumpla también su
     # propio patrón de 2 libres consecutivos (restricción dura de la
-    # sesión anterior) — INFEASIBLE ajeno a lo que este test verifica (la
+    # revisión anterior) — INFEASIBLE ajeno a lo que este test verifica (la
     # transición tras Noche). 2 personas extra dan el margen que hacía falta.
     nombres = ["N1", "N2", "N3", "N4", "N5", "N6", "N7", "N8"]
     cfg = _cfg()

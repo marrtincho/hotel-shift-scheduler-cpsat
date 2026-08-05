@@ -640,7 +640,7 @@ def _get_dept_config(dept_id: str):
         rid: r["dias_libres_fijos"] for rid, r in roles.items()
         if r.get("dias_libres_fijos") and rid != "night_fixed"
     }
-    # (esta sesión) no_night_roles era el único campo de cobertura de roles
+    # no_night_roles era el único campo de cobertura de roles
     # que este parche NO reconstruía: se quedaba con el valor hardcodeado de
     # modelo_recepcion.py. El flag `sin_noches` de roles.json sí se leía en
     # modelo_base y cobertura_nocturna (elegibilidad para CUBRIR noches), así
@@ -755,7 +755,7 @@ def _derivar_estado_racha_cpsat_desde_historial(dept_id: str, week_start: date, 
     historial real ya guardado (mismo patrón que _prev_sunday_shifts arriba),
     en vez de leer una copia cacheada en cpsat_estado_{dept}.json.
 
-    Motivo (diagnóstico de esta sesión): esos dos valores, cuando se
+    Motivo (diagnóstico de): esos dos valores, cuando se
     persistían tal cual los calculó el solver en el momento de generar,
     quedaban desincronizados en cuanto alguien editaba a mano (api_editar_
     turno) el domingo o los últimos días de una racha de noches de la
@@ -905,7 +905,7 @@ def _calcular_advertencias(full_schedule: dict, staff_final: list[dict], cfg,
             mn = cfg.min_coverage.get(shift, 0)
             mx = cfg.max_coverage.get(shift, 99)
             if not (mn <= len(personas) <= mx):
-                # (esta sesión) cfg.max_coverage dejó de ser restricción
+                # cfg.max_coverage dejó de ser restricción
                 # dura en motor_cpsat.py (PESO_EXCESO_COBERTURA) -- superar
                 # el máximo ahora es un resultado válido y real, no solo
                 # una anomalía de edición manual, así que el mensaje indica
@@ -925,7 +925,7 @@ def _calcular_advertencias(full_schedule: dict, staff_final: list[dict], cfg,
     # cruce con el domingo de la semana anterior si se conoce
     # (prev_sunday_shifts).
     #
-    # (esta sesión) Antes esto usaba modelo_base.NO_MORNING_AFTER, que solo
+    # Antes esto usaba modelo_base.NO_MORNING_AFTER, que solo
     # conoce las transiciones que TERMINAN en Mañana — así que no avisaba de
     # Noche→Tarde (8h) ni de Noche→Partido (3h), aunque motor_cpsat sí las
     # bloquea como restricción dura. Una edición manual podía dejar un
@@ -1305,7 +1305,7 @@ def _extra_dept_section(key: str, semana: date, dept_excluido: str) -> list:
 def _enviar_excel(entrada: dict, semana: date, key: str, dept_id: str, cfg):
     """Genera el .xlsx EN MEMORIA y lo devuelve como descarga.
 
-    (esta sesión) Antes se escribía en disco, en BASE_DIR, y se servía esa
+    Antes se escribía en disco, en BASE_DIR, y se servía esa
     ruta con send_file. Funcionaba en local pero fallaba SIEMPRE en el
     despliegue real: en el contenedor, BASE_DIR es /app, que el Containerfile
     llena con `COPY . .` siendo root y luego cambia a `USER appuser` — así

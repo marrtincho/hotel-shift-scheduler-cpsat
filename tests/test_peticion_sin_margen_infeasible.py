@@ -1,9 +1,9 @@
 """
 tests/test_peticion_sin_margen_infeasible.py — Caso de producción real
-(esta sesión): un encargado reportó que generar el horario de Recepción
+un encargado reportó que generar el horario de Recepción
 fallaba con INFEASIBLE tras conceder una petición suelta a un empleado.
 
-Diagnóstico dirigido (confirmado con el usuario antes de tocar nada):
+Diagnóstico dirigido (confirmado como regla de negocio antes de tocar nada):
 NO es un bug de motor_cpsat.py. La restricción #7 (patrón de 2 días libres
 semanales) está bien implementada tal como se especificó: cuando alguien
 tiene una petición concedida, esta CUENTA como uno de los 2 libres
@@ -86,7 +86,7 @@ def test_sin_peticion_el_patron_general_si_tiene_margen():
 
 
 def test_peticion_en_dia_sin_margen_en_ambos_vecinos_es_infeasible():
-    """CASO REAL DE PRODUCCIÓN (esta sesión): Martin tiene una petición
+    """CASO REAL DE PRODUCCIÓN: Martin tiene una petición
     concedida el Miércoles. Sus únicos 2 candidatos posibles para el
     segundo libre del patrón (Martes o Jueves, los vecinos inmediatos del
     Miércoles) son, esta semana concreta, los dos únicos días sin ningún

@@ -280,7 +280,7 @@ def test_editar_solo_el_nombre_no_genera_intervencion_de_rol(client, data_dir):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_editar_turno_sin_justificacion_funciona(client, data_dir):
-    """NOTA (esta sesión — pedido explícito del usuario): se quitó el
+    """NOTA (requisito de negocio): se quitó el
     requisito de justificación obligatoria (mínimo 5 caracteres) al cambiar
     un turno a mano. El campo sigue aceptándose y guardándose si se manda
     (ver test_editar_turno_con_justificacion_valida_se_guarda), pero ya no

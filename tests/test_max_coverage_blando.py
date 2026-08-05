@@ -1,5 +1,5 @@
 """
-tests/test_max_coverage_blando.py — Valida el cambio de esta sesión (pedido
+tests/test_max_coverage_blando.py — Valida el cambio de (pedido
 explícito del usuario, motivado por el caso real de producción 2026-08-10):
 cfg.max_coverage pasa de restricción DURA a preferencia blanda con
 PESO_EXCESO_COBERTURA(5000) en motor_cpsat.py. cfg.min_coverage sigue
@@ -8,7 +8,7 @@ siendo dura, sin cambios.
 Cubre los 3 escenarios pedidos:
   1. El caso real 2026-08-10 (composición que antes era genuinamente
      INFEASIBLE solo por max_coverage — confirmado con el diagnóstico de
-     núcleo irreducible de esta misma sesión, ver test_peticion_sin_margen_
+     núcleo irreducible , ver test_peticion_sin_margen_
      infeasible.py para el hallazgo original de esa tirantez): ahora SÍ
      genera horario, y la advertencia estructurada indica exactamente
      turno/día/cuántas personas de más.
@@ -88,7 +88,7 @@ def _cfg_recepcion_estrecha() -> DeptConfig:
 def test_caso_real_20260810_genera_y_advierte_exceso_exacto():
     """Composición real reportada por el usuario (1 jefe, 1 subjefe, 3
     adjuntos, 7 "normal" incluyendo Martín con petición Miércoles) — ya
-    confirmado en esta sesión (diagnóstico de núcleo irreducible) que era
+    confirmado en (diagnóstico de núcleo irreducible) que era
     genuinamente INFEASIBLE por el patrón de 2-libres-consecutivos de 10
     personas compitiendo contra max_coverage, sin depender de la petición
     de Martín ni de ninguna vacación. Con max_coverage blando debe generar
@@ -117,9 +117,9 @@ def test_caso_real_20260810_genera_y_advierte_exceso_exacto():
     schedule = resultado["schedule"]
 
     # Martín sigue recibiendo su petición (Miércoles) como uno de sus 2
-    # libres semanales -- el arreglo de esta sesión (max_coverage blando)
+    # libres semanales -- el arreglo de (max_coverage blando)
     # no debe alterar en nada el comportamiento ya confirmado de la
-    # petición (fix de una sesión anterior).
+    # petición (fix de una revisión anterior).
     assert schedule["Martin"][2] == "Libre", (
         f"Miércoles (petición de Martín) debía seguir siendo Libre: {schedule['Martin']}"
     )
@@ -216,7 +216,7 @@ def test_min_coverage_sigue_siendo_dura_reporta_infeasible():
     """Escenario donde cubrir min_coverage es matemáticamente imposible
     (Noche=4 exigido, pero después de vacaciones simultáneas de 3 de los
     únicos elegibles solo quedan 3 personas disponibles esos días) debe
-    seguir reportando INFEASIBLE -- el cambio de esta sesión solo afecta
+    seguir reportando INFEASIBLE -- el cambio de solo afecta
     a max_coverage, min_coverage no se tocó."""
     cfg = DeptConfig(
         dept_id="test", dept_label="Test",

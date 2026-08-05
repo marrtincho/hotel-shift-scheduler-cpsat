@@ -1,9 +1,10 @@
 # REGLAS.md — Fuente única de verdad del motor de horarios
 
 > **Generado leyendo el código real** de `motor_cpsat.py`, `cobertura_nocturna.py`,
-> `app.py` y `modelo_base.py`, no de documentación previa. Los docstrings del propio
-> `motor_cpsat.py` contienen varias afirmaciones desactualizadas: están recogidas en
-> la sección [§6 Discrepancias](#6-discrepancias-entre-el-código-y-la-documentación-previa).
+> `app.py` y `modelo_base.py`. Este documento es la fuente única de las reglas de
+> negocio: los docstrings de los módulos describen su arquitectura, no las reglas.
+> Antes de tocar el motor, ver también
+> [§6 Limitaciones conocidas](#6-limitaciones-conocidas-y-trampas-de-mantenimiento).
 >
 > **Si vas a modificar el motor, lee primero [§4 Reglas no negociables](#4-reglas-no-negociables).**
 >
@@ -125,7 +126,8 @@ y es la parte del motor donde más fácil es asumir algo falso:
 vacaciones sigue necesitando sus 2 libres consecutivos en el resto de la semana.
 Los días de **petición** SÍ consumen el patrón. El código separa ambos con
 `dias_peticion = (forced_libre - dias_vacaciones_idx) - dias_bloqueados_persona`.
-⚠️ El docstring del módulo afirma lo contrario para las peticiones — ver [§6.1](#61-peticiones-el-docstring-dice-lo-contrario-que-el-código).
+⚠️ Es la parte del motor donde más fácil es asumir algo falso: que una petición se
+apila aparte de los 2 libres, como sí hacen las vacaciones. No es así.
 
 ### 1.9 Cobertura nocturna fijada externamente
 **Regla:** quién hace Noche cada día **no lo decide el solver**. Lo decide
@@ -245,7 +247,8 @@ Negativo (recompensa) para quien está por debajo de la media. Datos de
 **Quién entra:** función local `_entra_en_equidad` — quedan fuera los roles de
 `cfg.roles_excluidos_equidad` **y** los que tienen el finde garantizado por
 restricción dura (`{5,6} ⊆ días fijos`), tanto del término como del cálculo de la media.
-⚠️ El docstring solo menciona el primer criterio — ver [§6.4](#64-alcance-del-término-a-equidad).
+⚠️ Son **dos** criterios de exclusión, no uno: el rol excluido de equidad y el finde
+garantizado por restricción dura.
 
 ### 2.2 B — Roturas de continuidad
 Penaliza cambiar de turno entre **dos días consecutivos ambos trabajados**. Solo
@@ -324,7 +327,7 @@ se repiten todas las semanas y cobrarlos como una ausencia real dejaría al subj
 librar un fin de semana casi nunca. Se activa con `cubrir_dias_libres_fijos` en
 `data/roles.json` (hoy `true` para `subjefe`). Devuelto en un conjunto aparte por
 `_dias_cobertura_ausencia`, que **excluye** los días que ya son ausencia real (no se
-cobra dos veces). ⚠️ Ver [§6.3](#63-días-libres-fijos-del-cubierto).
+cobra dos veces).
 
 ### 2.9 H — Turno complementario jefe/subjefe
 En los días en que ambos trabajan, penaliza que coincidan en el mismo turno no-Libre.
@@ -532,102 +535,59 @@ usará los valores estáticos, que pueden diferir de producción.
 
 ---
 
-## 6. Discrepancias entre el código y la documentación previa
+## 6. Limitaciones conocidas y trampas de mantenimiento
 
-Cada punto se ha verificado contra el código en esta revisión. **Los docstrings de
-`motor_cpsat.py` NO son fiables en estos puntos.**
+Puntos donde el código es correcto pero frágil, o donde una lectura ingenua lleva a
+conclusiones falsas. Es lo primero que conviene mirar antes de tocar el motor.
 
-### 6.1 Peticiones: el docstring dice lo contrario que el código
-El docstring del módulo (sección "restricción dura NUEVA: patrón de libres") afirma:
+### 6.1 Los docstrings ya no narran la historia del módulo
+Durante el desarrollo por fases, `motor_cpsat.py` y `cobertura_nocturna.py` acumularon
+cabeceras que eran un registro cronológico de cambios, y varias de sus afirmaciones
+habían quedado desmentidas por el propio código —entre otras, que `motor_cpsat` era «un
+prototipo aislado que no toca app.py» cuando es el motor de producción—. Esas cabeceras
+se reescribieron como descripción de arquitectura y **este documento es la fuente única
+de las reglas de negocio**. Si cambias una regla, actualiza aquí: no vuelvas a
+convertir los docstrings en un changelog.
 
-> «Los días YA forzados Libre por vacaciones/peticiones concedidas o LA quedan FUERA
-> del conteo de estos 2: se apilan aparte […] Alguien con una petición suelta un
-> miércoles sigue necesitando su propio par de 2 seguidos en el resto de la semana»
+### 6.2 Las cuatro transiciones de descanso están escritas a mano
+`_construir_modelo` codifica literalmente `Tarde→Mañana`, `Noche→Mañana`, `Noche→Tarde`
+y `Noche→Partido`; **no** las lee de `herramientas.transiciones_prohibidas()`. Si
+cambias el horario de un turno en `data/horarios_turnos.json`, el modelo no se entera
+solo. Lo que impide que ambas definiciones diverjan es
+`tests/test_revision_reglas.py::test_transiciones_prohibidas_derivadas_coinciden_con_el_modelo`.
 
-**El código hace lo contrario para las peticiones.** Una petición **cuenta como uno de
-los 2** días del patrón; solo las **vacaciones** se apilan aparte. La distinción se
-hace con `dias_vacaciones`. Hay un comentario correcto más abajo, en el propio bloque
-de código, que contradice el docstring de arriba. Fuente de verdad: [§1.8](#18-patrón-de-días-libres-semanales-2-consecutivos).
+### 6.3 `BLOQUE_RESPALDO_MAX` duplica un valor a mano
+`cobertura_nocturna.BLOQUE_RESPALDO_MAX` (5) repite el valor de
+`motor_cpsat.MAX_NOCHES_VENTANA`. No se puede importar sin crear un ciclo
+(`motor_cpsat` importa de `cobertura_nocturna`, no al revés), así que hay que
+mantenerlos sincronizados manualmente.
 
-### 6.2 «Deliberadamente NO implementado en fase 1» — ya está todo implementado
-El docstring lista como pendientes de fases futuras:
-> «Noches con racha o rotación por bloques […] El sustituto de los días libres de
-> night_fixed […] y la cobertura de jefatura […] Turno complementario jefe/subjefe.»
+### 6.4 El modelo de diagnóstico es una aproximación
+`_construir_modelo_diagnostico` reproduce las restricciones duras de fase 1, pero:
+- **no** incluye las noches ya fijadas por la orquestación (`dias_bloqueados_externos`),
+  así que un INFEASIBLE originado ahí cae en el mensaje genérico "no se pudo reproducir
+  la infactibilidad";
+- modela el patrón de libres en su forma simple (conteo exacto + par consecutivo), sin
+  replicar las ramas de peticiones de [§1.8](#18-patrón-de-días-libres-semanales-2-consecutivos).
 
-**Las tres están implementadas**: racha ([§1.10](#110-racha-de-noches)),
-sustituto y cobertura de jefatura ([§1.9](#19-cobertura-nocturna-fijada-externamente), [§2.7](#27-g-cobertura-de-ausencia-de-otro-rol)),
-complementario jefe/subjefe ([§2.9](#29-h-turno-complementario-jefesubjefe)).
+### 6.5 `validar_viabilidad` depende del motor activo
+`app.api_generar` la llama **antes** de elegir motor, y su fórmula de capacidad trata
+`max_coverage` como techo duro. Como en CP-SAT el máximo de Mañana/Tarde es blando, hay
+que pasarle `turnos_sin_techo`; si no, rechaza con "Personal excesivo" semanas que el
+motor sí resuelve. `api_generar` solo lo pasa cuando `motor_cpsat_activo()`, para que el
+motor heurístico conserve su comportamiento. Si algún día se añaden más turnos blandos,
+esta llamada hay que revisarla.
 
-### 6.3 Días libres fijos del cubierto
-El docstring de la restricción 8 dice que, con `dias_libres_fijos` activo, esos días
-«se añaden» al conjunto de días de ausencia — es decir, al mismo peso 1000.
-**Ya no:** se devuelven en un conjunto **aparte** y se cobran a
-`PESO_COBERTURA_DIAS_LIBRES_FIJOS = 200`, excluyendo los que ya son ausencia real.
+### 6.6 La configuración efectiva no está en el código
+`modelo_recepcion.py` / `modelo_mozos.py` son **solo fallback**. Los valores reales
+salen de `data/roles*.json` y `data/coverage_config.json` vía `app._get_dept_config`
+(ver [§5.3](#53-configuración-efectiva)). Quien llame a `motor_cpsat` directamente
+—tests, scripts— no pasa por ese parcheo y usa los estáticos, que pueden diferir de
+producción. Además `data/` **no está versionado**: los ajustes hechos en una máquina no
+viajan con el repositorio.
 
-### 6.4 Alcance del término A (equidad)
-El docstring dice que el término se calcula «SOLO sobre personas cuyo rol NO está en
-`cfg.roles_excluidos_equidad`». **Falta un criterio:** también quedan fuera —del
-término y del cálculo de la media— quienes tienen el finde garantizado por restricción
-dura (`{5,6} ⊆ días fijos`), hoy el `jefe`.
-
-### 6.5 «PESO_COBERTURA_AUSENCIA es el peso más alto del módulo»
-**Falso desde que existe el término K.** G = 1000; `PESO_EXCESO_COBERTURA` = 5000.
-El mismo párrafo añade que G «cede ÚNICAMENTE ante max_coverage (restricción dura de
-fase 1)», que también quedó obsoleto: el máximo de Mañana/Tarde ya no es duro, así que
-G solo cede ante `min_coverage` y ante el máximo de Noche/Partido.
-
-### 6.6 «PESO_ROTURAS_CONTINUIDAD (B=5)»
-El docstring del término H sitúa H «entre B=5 y D=20». **B vale 50**, no 5 — el propio
-comentario junto a la constante `PESO_COMPLEMENTARIO_JEFATURA` lo reconoce, pero el
-docstring del módulo no se actualizó. El orden real es B(50) > I(30) > D(20) > F(15) > H(10).
-
-### 6.7 «Prototipo AISLADO … no toca app.py»
-La primera línea de `motor_cpsat.py` dice:
-> «Prototipo AISLADO del motor de horarios sobre CP-SAT. No toca app.py ni el motor
-> heurístico de modelo_base.py (que sigue siendo el usado en producción)»
-
-**Ambas mitades son falsas hoy.** `app.py` importa y llama a `motor_cpsat`
-(`_generar_con_motor_cpsat`), y `data/config_motor.json` = `{"activo": true}`, así que
-**CP-SAT es el motor de producción**, no `modelo_base`. `README.md` arrastra el mismo
-error al describir `modelo_base.py` como «el núcleo del sistema».
-
-### 6.8 `validar_viabilidad` bloqueaba lo que el motor sí resuelve — CORREGIDO
-**Era un desajuste de comportamiento, no de documentación. Ya está arreglado**; se deja
-documentado porque explica la forma actual de la función.
-
-`app.api_generar` llama a `modelo_base.validar_viabilidad` **antes** de elegir motor, y
-rechazaba con 422 si `personas_activas × 5 > sum(max_coverage) × 7`. Esa fórmula
-trataba `max_coverage` como techo **duro de los cuatro turnos** — cierto antes del
-término K. Consecuencia: el escenario de 12 personas que motivó hacer blando
-`max_coverage` **seguía bloqueado con "Personal excesivo"**, sin que el solver llegara
-a ejecutarse.
-
-**Arreglo:** `validar_viabilidad(staff, cfg, turnos_sin_techo=frozenset())`. Si algún
-turno pasado ahí tiene entrada en `cfg.max_coverage`, la capacidad semanal se considera
-**ilimitada** y se omiten las dos comprobaciones de "sobra gente" (`Personal excesivo` y
-`min_libres_dia`). `api_generar` pasa `TURNOS_MAX_COBERTURA_BLANDA` **solo cuando
-`motor_cpsat_activo()`**; con el motor heurístico, que sí mantiene los cuatro máximos
-duros, el valor por defecto conserva el comportamiento histórico intacto.
-
-`Personal insuficiente` **no** se ve afectado: se apoya en `min_coverage`, que es dura
-en todos los motores y todos los turnos ([§4.3](#43-min_coverage-de-todos-los-turnos-dura-sin-excepción)).
-
-Anclado por `tests/test_revision_reglas.py::test_validar_viabilidad_no_bloquea_lo_que_el_motor_si_resuelve`
-y `::test_validar_viabilidad_sigue_detectando_falta_de_personal`.
-
-### 6.9 Menores
-- `cobertura_nocturna.BLOQUE_RESPALDO_MAX` (5) duplica a mano el valor de
-  `motor_cpsat.MAX_NOCHES_VENTANA`; no se puede importar por el ciclo de imports y hay
-  que mantenerlos sincronizados manualmente (comentario en `cobertura_nocturna.py:96`).
-- `_construir_modelo_diagnostico` **no** reproduce las noches fijadas por la
-  orquestación (`dias_bloqueados_externos`), así que un INFEASIBLE originado ahí cae en
-  el mensaje genérico "no se pudo reproducir la infactibilidad".
-- `_construir_modelo_diagnostico` modela el patrón de libres en su forma simple
-  (conteo exacto + par consecutivo); **no** replica las ramas de peticiones de
-  [§1.8](#18-patrón-de-días-libres-semanales-2-consecutivos).
-- El docstring de fase 1 dice que los días libres del `night_fixed` «NO reciben
-  sustituto». Es cierto **dentro de `_construir_modelo`**, pero la orquestación de
-  fase 3 sí les asigna sustituto. Es una afirmación de alcance, no un error, pero se
-  lee como contradicción.
-- `README.md` describe los tests como «pruebas de humo»; hoy son 267 tests que cubren
-  racha, cobertura de jefatura, continuidad, equidad y diagnóstico.
+### 6.7 El orden de las restricciones afecta al resultado
+Con empates en el valor óptimo, el orden en que se añaden las restricciones decide qué
+solución se devuelve. Por eso hay `sorted()` sobre conjuntos que de otro modo se
+iterarían en orden dependiente del hash-seed del proceso. No sustituyas esos `sorted()`
+por iteración directa de un `set()` aunque parezca equivalente.

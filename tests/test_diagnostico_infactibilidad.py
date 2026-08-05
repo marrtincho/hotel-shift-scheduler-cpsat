@@ -1,6 +1,6 @@
 """
 tests/test_diagnostico_infactibilidad.py — Valida el diagnóstico automático
-de infactibilidad (NUEVO, esta sesión — Tema 3, cierre de pendientes Fase
+de infactibilidad (Tema 3, cierre de pendientes Fase
 5) de motor_cpsat.py: _diagnosticar_infactibilidad /
 _construir_modelo_diagnostico, usando la API de ortools confirmada
 disponible en la versión instalada (9.15.6755) — CpModel.AddAssumptions +
@@ -18,7 +18,7 @@ Cubre los 2 escenarios pedidos:
      más (irrelevantes) ni menos (incompleto).
   2. Un caso FACTIBLE nunca activa este camino (sin falsos positivos).
 
-Además (sesión posterior, medición de tiempos): confirma que el
+Además (revisión posterior, medición de tiempos): confirma que el
 mecanismo (AddAssumptions + SufficientAssumptionsForInfeasibility) es
 rápido en el escenario de prueba y que TIENE un límite de tiempo propio
 (TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS) — medido empíricamente ANTES de
@@ -212,7 +212,7 @@ def test_diagnostico_tiene_limite_de_tiempo_propio_y_no_cuelga_en_caso_complejo(
     """Verifica que _diagnosticar_infactibilidad NO se queda sin límite de
     tiempo: con un escenario deliberadamente más complejo (60 personas,
     vacaciones solapadas de forma dispersa) que resulta ser FACTIBLE — el
-    caso lento medido en esta sesión (~90s sin límite) — y con
+    caso lento medido en (~90s sin límite) — y con
     TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS monkeypateado a un valor pequeño
     (para que el test sea rápido sin dejar de ejercitar de verdad la rama
     de timeout), confirma que la función devuelve un mensaje explícito de
@@ -270,7 +270,7 @@ def test_constante_de_tiempo_maximo_es_razonable_frente_al_timeout_de_gunicorn()
     """Confirma que TIEMPO_MAXIMO_DIAGNOSTICO_SEGUNDOS, sumado al tope del
     modelo principal (20s, ver _resolver_y_extraer), deja margen real bajo
     el timeout de 60s configurado en gunicorn.conf.py para el despliegue
-    — si alguien sube esta constante sin pensar en esa relación, este
+ — si alguien sube esta constante sin pensar en esa relación, este
     test debe fallar en vez de dejar pasar la regresión en silencio."""
     from motor_cpsat import _resolver_y_extraer
     import inspect

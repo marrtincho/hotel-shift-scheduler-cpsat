@@ -93,7 +93,7 @@ def _cfg(dias_libres_aux, **overrides) -> DeptConfig:
 
 
 def _staff(dias_vac: list) -> list:
-    """Buffer1/Buffer2 (NUEVO, esta sesión — hallazgo de producción, ver
+    """Buffer1/Buffer2 (hallazgo de producción, ver
     motor_cpsat.MIN_LIBRES_POR_SEMANA): con la restricción dura nueva de
     mínimo de libres semanales, N1/N2 (role="normal") también deben
     conseguir sus propios 2 libres — algo que el diseño original de 4
@@ -158,7 +158,7 @@ def test_vacaciones_empiezan_miercoles_activa_1_libre_debido():
     tiene exactamente 1 hueco de holgura — el único óptimo de coste 0 es
     que Vero se quede con él (resto trabajado el Lunes, forzado).
 
-    dias_bloqueados_externos={"Vero": {0}} (NUEVO, esta sesión — hallazgo
+    dias_bloqueados_externos={"Vero": {0}} (hallazgo
     de producción): sin esto, la restricción dura nueva de patrón de
     libres (motor_cpsat.DIAS_LIBRES_SEGUIDOS_POR_SEMANA) no tiene forma de
     saber que el Lunes está estructuralmente bloqueado para Vero (0
@@ -232,7 +232,7 @@ def test_termino_cede_cuando_el_libre_debido_rompe_cobertura_minima():
         cover_consecutive=True, night_rotation_key="test",
         allow_non_consecutive_cover=False, prefer_next_week_for_cover=False,
     )
-    # N4 (NUEVO, esta sesión — hallazgo de producción): con solo Vero/N1/N2
+    # N4 (hallazgo de producción): con solo Vero/N1/N2
     # como "normal" y cobertura sin holgura (min=3=headcount-1), los 3 no
     # tenían margen para cumplir también su propio patrón de 2 libres
     # seguidos (restricción dura nueva) — INFEASIBLE ajeno a lo que este
@@ -340,7 +340,7 @@ def test_compatible_con_termino_f_domingo_suelto_sustituto():
         "coexistencia real de ambos términos"
     )
 
-    # dias_bloqueados_externos={"Vero": {0,1,2}} (NUEVO, esta sesión —
+    # dias_bloqueados_externos={"Vero": {0,1,2}} (NUEVO —
     # hallazgo de producción, mismo motivo que en el escenario 2 de
     # arriba): Lunes-Miércoles están estructuralmente bloqueados para Vero
     # (0 holgura por Aux librando esos días), no por una vacación/petición

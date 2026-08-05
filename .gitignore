@@ -30,3 +30,39 @@ __pycache__/
 # Configuración local de Claude Code (permisos de sesión), no relevante
 # para el repositorio público.
 /.claude/settings.local.json
+
+# ───────────────────────────────────────────────────────────────────────────
+# Herramientas locales de desarrollo y diagnóstico
+#
+# NO se versionan para mantener limpia la raíz del repositorio, pero SÍ se
+# conservan en la máquina de trabajo: son las que se usan para diagnosticar
+# regresiones, reproducir incidencias concretas y comparar el motor CP-SAT
+# contra el heurístico. Siguen estando en el historial de git si hicieran
+# falta de nuevo (ver docs/INFORME_FASE_5.md, que documenta su uso).
+# ───────────────────────────────────────────────────────────────────────────
+
+# Configuración del IDE
+.idea/
+
+# Diagnóstico y reproducción de incidencias
+diagnostico_regresiones.py
+escenario_viernes_carla_cpsat.py
+escenario_viernes_carla_reconstruido.py
+
+# Comparativa motor heurístico vs CP-SAT (y sus instantáneas de referencia)
+analizar_referencia_heuristico.py
+comparar_metricas_comunes.py
+generar_comparativa_cpsat.py
+generar_referencia_motor_actual.py
+verif_punto4_tabla_continuidad.py
+comparativa_cpsat_*.json
+comparativa_metricas_comunes.json
+referencia_motor_actual.json
+resumen_heuristico.json
+
+# Migración puntual de formato de datos, ya aplicada en producción
+migrar_night_rotation.py
+
+# Restos de versiones anteriores, sin uso en el código actual
+config_personal.json
+templates/

@@ -9,7 +9,7 @@ api_editar_turno modifica. estado_rotacion (orden fijo + deudas, una cola de
 turnos que no es un hecho observable en el schedule) sigue persistiéndose sin
 cambios en ese fichero.
 
-Bug original (diagnóstico de esta sesión): antes de este arreglo, editar a
+Bug original (diagnóstico de): antes de este arreglo, editar a
 mano el domingo de alguien (o los últimos días de una racha de noches) tras
 generar una semana no se reflejaba en absoluto en cpsat_estado_{dept}.json
 -- la semana siguiente heredaba una "Noche fantasma" del solver original en

@@ -8,7 +8,7 @@ una cadena larga (12 semanas, más que las 8 mínimas pedidas) y confirma:
 
   1. Ninguna semana de la cadena produce INFEASIBLE espurio.
   2. El seguimiento determinista de racha en Python (motor_cpsat._RachaTracker,
-     extraído del bucle de modo respaldo en esta sesión para poder probarlo
+     extraído del bucle de modo respaldo en para poder probarlo
      de forma aislada) COINCIDE EXACTAMENTE, día a día y persona a persona,
      con lo que agregar_restriccion_racha_noches fuerza DENTRO del modelo
      CP-SAT — no solo "no revienta", sino que el conjunto de días que el
@@ -213,7 +213,7 @@ def test_viernes_de_carla_12_semanas_modo_respaldo_sin_infeasible_y_tracker_coin
         # internamente generar_semana_cpsat_con_cobertura_nocturna, pero
         # instanciado aquí para poder capturar, día a día, qué predecía
         # ANTES de saber el resultado real de cada día). Pasa
-        # descanso_pendiente_inicial (NUEVO, esta sesión) igual que la
+        # descanso_pendiente_inicial  igual que la
         # llamada real — sin esto, esta réplica sub-predice el descanso
         # pendiente que cruza el límite de semana (el mismo tipo de fallo
         # que este test existe para detectar, pero en la réplica del test,
@@ -379,7 +379,7 @@ def test_racha_que_completa_al_filo_del_finde_tracker_coincide_con_forced_days_o
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Bloques de cobertura en modo respaldo (NUEVO, esta sesión — regla de
+# Bloques de cobertura en modo respaldo (regla de
 # rotación de cobertura nocturna en bloques de 4-5 noches seguidas)
 # ═══════════════════════════════════════════════════════════════════════════
 

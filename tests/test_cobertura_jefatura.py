@@ -261,7 +261,7 @@ def test_cubrir_dias_libres_fijos_activo_subjefe_trabaja_el_finde(data_dir):
 def test_cubrir_dias_libres_fijos_desactivado_no_cambia_comportamiento_previo(data_dir):
     """No regresión: con la casilla desactivada (default), el subjefe no
     trabaja el finde por este motivo y puede librar Sáb+Dom con normalidad
-    — mismo comportamiento que antes de añadir esta casilla."""
+ — mismo comportamiento que antes de añadir esta casilla."""
     cfg = _cfg_con_cobertura(semana_completa=False, cubrir_dias_libres_fijos=False)
     staff = _plantilla()  # Juan (jefe) sin peticiones ni vacaciones
 

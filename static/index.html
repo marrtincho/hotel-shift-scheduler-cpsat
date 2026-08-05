@@ -1198,7 +1198,7 @@ function semanaBloqueadaParaGenerar(off){
 // verdad: los handlers ponen "Generando…/Vaciando…/Borrando…" con
 // marcarBotonOcupado() y updateGenerarState() las repone TODAS.
 //
-// (esta sesión) Antes, updateGenerarState() reponía el texto de "Generar"
+// Antes, updateGenerarState() reponía el texto de "Generar"
 // pero de "Asignar a mano" y "Borrar" solo el `disabled` — así que se
 // quedaban en "Vaciando…"/"Borrando…" para siempre, incluso al cambiar de
 // semana (que llama a esta misma función). Solo era estético, el botón
@@ -2798,7 +2798,7 @@ async function api(method, path, body=null){
   // JSON) -- sin este try/catch, r.json() lanzaría una excepción aquí que
   // dejaría cualquier botón "Generando.../Borrando..." bloqueado para
   // siempre en la interfaz, porque el código que lo restaura nunca llegaría
-  // a ejecutarse (ver diagnóstico de esta sesión).
+  // a ejecutarse (ver diagnóstico de).
   let d;
   try{
     d = await r.json();

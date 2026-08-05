@@ -1,7 +1,6 @@
 """
-tests/test_revision_reglas.py — Tests añadidos en la revisión de código de
-esta sesión. Cada bloque ancla una de las reglas de negocio que la revisión
-encontró mal cubiertas o mal implementadas:
+tests/test_revision_reglas.py — Reglas de negocio que una revisión de código
+encontró mal cubiertas o mal implementadas. Cada bloque ancla una de ellas:
 
   1. Noche fantasma: con max_coverage blando SOLO en Mañana/Tarde, un
      excedente de plantilla nunca puede convertirse en noches que el solver
@@ -88,7 +87,7 @@ def _estado_rotacion_inicial(staff: list, cfg: DeptConfig) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_excedente_de_plantilla_nunca_genera_noches_extra():
-    """REGRESIÓN (revisión de esta sesión). Cuando max_coverage era blando en
+    """REGRESIÓN detectada en revisión de código. Cuando max_coverage era blando en
     los CUATRO turnos, Noche era el destino MÁS BARATO para el personal
     sobrante: K=5000 pelado, frente a K+I=5030 en Mañana/Tarde y K+D=5020 en
     Partido. El solver "resolvía" el excedente inventándose noches — que es
@@ -140,7 +139,7 @@ def test_max_coverage_blando_solo_en_manana_y_tarde():
 
 
 def test_el_exceso_respeta_el_orden_ambos_al_maximo_antes_de_exceder():
-    """Regla de negocio (pedido explícito del usuario): no se supera el máximo
+    """Regla de negocio: no se supera el máximo
     de un turno mientras el OTRO turno de máximo blando todavía tenga sitio.
     "De nada sirve exceder el máximo de Tarde cuando Mañana aún no lo ha
     alcanzado."
@@ -195,7 +194,7 @@ def test_orden_del_exceso_es_preferencia_dominante_no_restriccion_dura():
 
 
 def test_validar_viabilidad_no_bloquea_lo_que_el_motor_si_resuelve():
-    """REGRESIÓN (revisión de esta sesión): app.api_generar llama a
+    """REGRESIÓN (revisión de código): app.api_generar llama a
     modelo_base.validar_viabilidad ANTES de elegir motor, y su fórmula de
     capacidad (personas x 5 <= sum(max_coverage) x 7) trataba max_coverage
     como techo duro de los CUATRO turnos. Con Mañana/Tarde blandas eso
@@ -304,7 +303,7 @@ def test_el_modelo_nunca_asigna_tarde_ni_partido_tras_noche():
 
 @pytest.mark.parametrize("siguiente,horas", [("Tarde", 8), ("Partido", 3)])
 def test_advertencias_detectan_descanso_corto_tras_noche(siguiente, horas):
-    """REGRESIÓN (revisión de esta sesión): app._calcular_advertencias se
+    """REGRESIÓN (revisión de código): app._calcular_advertencias se
     apoyaba en modelo_base.NO_MORNING_AFTER, que solo conoce las
     transiciones que TERMINAN en Mañana — así que una edición manual podía
     dejar Noche→Partido (3h de descanso) sin ninguna advertencia."""
@@ -388,7 +387,7 @@ def _coste(model, x, fijaciones) -> float:
 
 
 def test_cambio_de_turno_a_traves_de_los_libres_no_se_penaliza():
-    """DECISIÓN DE NEGOCIO confirmada con el usuario en la revisión: el
+    """DECISIÓN DE NEGOCIO confirmado como regla de negocio en la revisión: el
     bloque de días libres es exactamente donde SÍ se puede rotar de turno
     sin coste; lo que se penaliza es cambiar a mitad de semana. Este test
     fija esa decisión para que no se rompa sin querer.
@@ -458,7 +457,7 @@ def _delta_cambiar_el_lunes(prev_sunday_shifts):
 
 
 def test_continuidad_cruza_la_frontera_de_semana():
-    """REGRESIÓN (revisión de esta sesión): el bucle del término B empieza en
+    """REGRESIÓN (revisión de código): el bucle del término B empieza en
     d=1, así que comparaba 0-1, 1-2 … 5-6 pero NUNCA el domingo de la semana
     anterior con el lunes de esta. Medido sobre la plantilla real antes del
     arreglo: 100% de continuidad dentro de la semana frente a 42% en el cruce.
@@ -496,7 +495,7 @@ def test_el_cruce_de_semana_es_gratis_si_el_domingo_anterior_fue_libre():
 
 
 def test_racha_de_dias_trabajados_no_cruza_de_6_entre_semanas():
-    """REGRESIÓN (revisión de esta sesión): el patrón de 2 libres es POR
+    """REGRESIÓN (revisión de código): el patrón de 2 libres es POR
     SEMANA, así que librar Lun+Mar una semana y Sáb+Dom la siguiente encadena
     10 días trabajados sin romper ninguna regla dura. Medido sobre la
     plantilla real en 4 semanas encadenadas: Maira 9 días seguidos, Carmen 8.
@@ -552,7 +551,7 @@ def test_racha_de_trabajo_es_blanda_no_vuelve_infactible():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_mas_peticiones_que_el_patron_no_deja_los_libres_sin_tope():
-    """REGRESIÓN (revisión de esta sesión): con MÁS peticiones concedidas que
+    """REGRESIÓN (revisión de código): con MÁS peticiones concedidas que
     DIAS_LIBRES_SEGUIDOS_POR_SEMANA, la restricción #7 hacía `continue` sin
     imponer ninguna cota, así que el solver podía dar Libre también al resto
     de la semana — el mismo fallo silencioso ("7 libres / 0 días

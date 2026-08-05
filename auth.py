@@ -2,10 +2,10 @@
 auth.py — Sistema de autenticación y autorización para Hotel Manager.
 
 Roles:
-  admin     — Acceso total. Puede gestionar usuarios, plantilla, horarios y datos.
+  admin — Acceso total. Puede gestionar usuarios, plantilla, horarios y datos.
   encargado — Puede generar horarios, ver y gestionar peticiones/vacaciones/festivos.
               No puede gestionar usuarios ni cambiar configuración crítica.
-  empleado  — Solo puede ver su propio horario y enviar peticiones de libre.
+  empleado — Solo puede ver su propio horario y enviar peticiones de libre.
 
 Seguridad:
   - Contraseñas hasheadas con PBKDF2-SHA256 (werkzeug)

@@ -83,7 +83,7 @@ def _cfg_recepcion(**overrides) -> DeptConfig:
 def _staff_mozos(forced_por_nombre=None):
     forced_por_nombre = forced_por_nombre or {}
     staff = [{"name": "NightFixed", "role": "night_fixed"}]
-    # N5/N6 (NUEVO, esta sesión — regla de rotación de cobertura nocturna):
+    # N5/N6 (regla de rotación de cobertura nocturna):
     # con el Domingo del sustituto ahora forzado Libre de forma DURA (ver
     # docstring del módulo, sección actualizada), N1 acumula más días
     # forzados que antes (Fri+Sat de cobertura + Domingo + su propio
@@ -208,7 +208,7 @@ def test_encadenamiento_produce_tres_dias_libres_consecutivos():
 # ─── Estrés: Domingo es regla dura → NUNCA cede, ni bajo presión de cobertura ─
 
 def test_no_cede_domingo_es_regla_dura_incluso_si_rompe_cobertura_minima():
-    """NOTA (esta sesión — regla de negocio confirmada por el usuario): el
+    """NOTA (regla de negocio confirmada por el usuario): el
     Domingo del sustituto que cubre Viernes+Sábado ya NO es una preferencia
     blanda (término F) que pueda ceder bajo presión de cobertura — es una
     restricción DURA (ver restricción #7, caso especial). Este test antes
@@ -238,7 +238,7 @@ def test_no_cede_domingo_es_regla_dura_incluso_si_rompe_cobertura_minima():
 # ─── No afecta a quien no es el sustituto ───────────────────────────────────
 
 def test_no_afecta_a_quien_no_es_el_sustituto():
-    """NOTA (esta sesión — regla dura): forzar que N2 (NO es el sustituto)
+    """NOTA (regla dura): forzar que N2 (NO es el sustituto)
     trabaje el Domingo no afecta en nada la regla del sustituto (N1 sigue
     forzado a librar el domingo, sin cambio de objetivo). Forzar que N1
     (el sustituto real) trabaje el domingo ahora contradice directamente la
@@ -333,7 +333,7 @@ def test_solapamiento_racha_5_noches_y_sustituto_misma_persona_misma_semana():
          (Viernes+Sábado) esta semana -> por sí solo forzaría "Lunes"+
          "Martes" la semana siguiente, sin condición.
 
-    NOTA (esta sesión — hallazgo de producción, restricción dura NUEVA de
+    NOTA (hallazgo de producción, restricción dura NUEVA de
     patrón de libres, motor_cpsat.DIAS_LIBRES_SEGUIDOS_POR_SEMANA): la
     versión original de este test dejaba que la necesidad de Objetivo
     cubrir Martes-Sábado emergiera SOLO de la presión de cobertura mínima
@@ -392,7 +392,7 @@ def test_solapamiento_racha_5_noches_y_sustituto_misma_persona_misma_semana():
     for d in range(1, 6):  # Martes-Sábado: Objetivo cubre Noche (único elegible)
         model.Add(x["Objetivo", d, "Noche"] == 1)
 
-    # NOTA (esta sesión — regla de racha mínima de 2, MIN_NOCHES_RACHA):
+    # NOTA (regla de racha mínima de 2, MIN_NOCHES_RACHA):
     # NocheFijo trabaja Noche por turno fijo Lunes y Domingo (Martes-Jueves
     # forzado libre por vacación, Viernes+Sábado por night_fixed_days_off).
     # Un empalme VACÍO ({} -> [False]*5 para todos) es IRREAL para un
@@ -468,7 +468,7 @@ def test_solapamiento_racha_5_noches_y_sustituto_misma_persona_misma_semana():
 # ─── Gating: con par consecutivo disponible, gana la continuidad ───────────
 
 def test_domingo_no_exige_par_consecutivo_aunque_haya_uno_disponible():
-    """NOTA (esta sesión — regla de negocio confirmada por el usuario): el
+    """NOTA (regla de negocio confirmada por el usuario): el
     mozo que cubre Viernes+Sábado libra SIEMPRE el Domingo (regla dura,
     restricción #7 caso especial) y el día libre restante puede colocarse
     donde haga falta, SIN exigir que forme un par consecutivo — ni siquiera

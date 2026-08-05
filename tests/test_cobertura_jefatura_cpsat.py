@@ -381,7 +381,7 @@ def test_jefe_inexistente_opcion_b_penaliza_exactamente_2x_peso_extra_en_finde()
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_cubrir_dias_libres_fijos_activo_devuelve_el_finde_del_jefe_aparte():
-    """(actualizado esta sesión) Los días libres FIJOS del jefe ya no se
+    """(actualizado) Los días libres FIJOS del jefe ya no se
     mezclan con las ausencias reales: _dias_cobertura_ausencia los devuelve
     en un conjunto APARTE, para que el término G pueda cobrarlos al peso
     menor PESO_COBERTURA_DIAS_LIBRES_FIJOS en vez de al de una ausencia
@@ -423,7 +423,7 @@ def test_cubrir_dias_libres_fijos_activo_penaliza_exactamente_al_forzar_libre():
     que el cálculo de entrada (dias_fijos == {5, 6}, ver test anterior) es
     correcto.
 
-    (actualizado esta sesión) Antes esperaba PESO_COBERTURA_AUSENCIA: los
+    (actualizado) Antes esperaba PESO_COBERTURA_AUSENCIA: los
     días libres fijos del cubierto pasaron a cobrarse al peso menor, para
     que el subjefe pueda seguir librando algún fin de semana."""
     from ortools.sat.python import cp_model
@@ -651,7 +651,7 @@ def test_complementario_cede_si_es_la_unica_forma_de_cubrir_minimo():
     from ortools.sat.python import cp_model
 
     cfg = copy.deepcopy(RECEPCION_CONFIG)
-    # _plantilla_holgada (NUEVO, esta sesión — hallazgo de producción): con
+    # _plantilla_holgada (hallazgo de producción): con
     # la restricción dura nueva de patrón de libres (motor_cpsat.
     # DIAS_LIBRES_SEGUIDOS_POR_SEMANA), _plantilla() (8 personas) no deja
     # margen para que cada "normal"/subjefe/adjunto también encaje su
@@ -670,7 +670,7 @@ def test_complementario_cede_si_es_la_unica_forma_de_cubrir_minimo():
                 model.Add(x[name, dia_estres, "Mañana"] == 0)
 
     # ── 1. Coste del escenario de estrés — vía DELTA contra el mismo staff
-    # SIN el bloqueo de estrés (NUEVO, esta sesión: con _plantilla_holgada,
+    # SIN el bloqueo de estrés (NUEVO: con _plantilla_holgada,
     # ya no se puede aislar un delta EXACTO de solo H — "Extra" también
     # necesita reacomodar su propio patrón de 2 libres consecutivos
     # (restricción dura nueva) ante el bloqueo del Martes, lo que añade
@@ -738,7 +738,7 @@ def test_complementario_no_interfiere_en_dias_de_cobertura_de_ausencia():
 def test_complementario_sin_subjefe_no_activa_termino():
     from modelo_recepcion import RECEPCION_CONFIG
     cfg = copy.deepcopy(RECEPCION_CONFIG)
-    # +1 "normal" extra (NUEVO, esta sesión — hallazgo de producción, ver
+    # +1 "normal" extra (hallazgo de producción, ver
     # motor_cpsat.DIAS_LIBRES_SEGUIDOS_POR_SEMANA): quitar a Laura deja
     # solo 6 personas no fijas, sin margen para que cada una cumpla
     # también su propio patrón de 2 libres consecutivos — INFEASIBLE
@@ -754,7 +754,7 @@ def test_complementario_sin_subjefe_no_activa_termino():
 def test_complementario_sin_jefe_no_activa_termino():
     from modelo_recepcion import RECEPCION_CONFIG
     cfg = copy.deepcopy(RECEPCION_CONFIG)
-    # +1 "normal" extra (NUEVO, esta sesión — mismo motivo que arriba).
+    # +1 "normal" extra (mismo motivo que arriba).
     staff = [p for p in _plantilla() if p["name"] != "Juan"]  # sin jefe
     staff.append({"name": "Extra", "role": "normal", "preferences": []})
 
