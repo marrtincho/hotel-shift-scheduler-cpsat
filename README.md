@@ -73,12 +73,15 @@ app.py                   Servidor Flask, API REST (~58 endpoints)
 ├── cupos.py             Cupos mensuales de peticiones por empleado
 ├── estadisticas.py      Métricas de reparto e histórico
 ├── auth.py              Autenticación, roles y permisos, log de actividad
-└── static/index.html    Frontend (HTML/CSS/JS sin framework)
+└── static/              Frontend, sin framework ni build step
+    ├── index.html       Marcado + sprite de iconos (Lucide, incrustado)
+    ├── app.css          Hoja de estilo: tokens, utilidades y componentes
+    └── app.js           Lógica de la interfaz (se carga con defer)
 
 REGLAS.md                Reglas de negocio del motor — fuente única de verdad
 docs/                    Informe histórico de validación del motor
 deploy/                  Podman Quadlet + Cloudflare Tunnel + backups
-tests/                   297 tests (pytest)
+tests/                   303 tests (pytest)
 ```
 
 Quién cubre cada noche **no lo decide el solver**: lo resuelve `cobertura_nocturna.py`
