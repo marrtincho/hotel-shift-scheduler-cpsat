@@ -7,6 +7,10 @@ y resuelve la semana completa con **CP-SAT** (Google OR-Tools).
 
 > Proyecto en producción real: los horarios que genera se usan actualmente en el hotel.
 
+> **Nota:** este repositorio sustituye a la versión heurística anterior
+> (`HorariosRecepcion`, archivado), reemplazando el motor de generación por uno
+> basado en programación por restricciones (CP-SAT).
+
 ---
 
 ## El problema
