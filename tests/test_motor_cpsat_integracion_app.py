@@ -229,10 +229,12 @@ def test_estado_cpsat_persiste_y_se_recupera_entre_semanas_encadenadas(
 
     assert len(llamadas) == 3
 
-    # El fichero ya solo persiste estado_rotacion -- ver nota de la
-    # docstring arriba (Opción B del diagnóstico de).
+    # El fichero persiste estado_rotacion (el vigente) y "semanas" (el estado
+    # inicial/final de cada semana generada, lo que hace que REgenerar una
+    # semana no vuelva a avanzar la ronda -- ver app._estado_rotacion_base_
+    # semana y tests/test_rotacion_noches_regeneracion.py).
     for estado in estados_en_disco:
-        assert set(estado.keys()) == {"estado_rotacion"}
+        assert set(estado.keys()) == {"estado_rotacion", "semanas"}
 
     # Semana 1: no había fichero de estado previo -> arranca de la semilla
     # inicial (_estado_rotacion_inicial_cpsat), no de un estado_rotacion vacío.

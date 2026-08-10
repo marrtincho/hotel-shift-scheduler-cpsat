@@ -718,10 +718,83 @@ def _cargar_estado_cpsat(dept_id: str) -> dict:
         return {}
 
 
-def _guardar_estado_cpsat(dept_id: str, estado_rotacion: dict) -> None:
+# Cuántas semanas de estado de la ronda se conservan en
+# cpsat_estado_{dept}.json (~2 años). Lo viejo se poda: solo hace falta para
+# poder REgenerar una semana, y nadie regenera un horario de hace dos años.
+MAX_SEMANAS_ESTADO_ROTACION = 120
+
+
+def _guardar_estado_cpsat(dept_id: str, estado_rotacion: dict,
+                          week_start: date = None,
+                          estado_inicial: dict = None) -> None:
+    """Persiste el estado de la ronda de noches.
+
+    Con `week_start` (generación semanal) se registra ADEMÁS el par
+    inicial/final de esa semana en "semanas", que es lo que permite regenerar
+    la misma semana sin que la ronda avance otra vez -- ver
+    _estado_rotacion_base_semana. Sin `week_start` (edición manual del orden
+    desde /api/rotacion-noches) solo se actualiza el estado vigente.
+    """
+    disco = _cargar_estado_cpsat(dept_id)
+    semanas = dict(disco.get("semanas") or {})
+
+    if week_start is None:
+        vigente = estado_rotacion
+    else:
+        semanas[_semana_str(week_start)] = {
+            "inicial": estado_inicial,
+            "final": estado_rotacion,
+        }
+        for clave in sorted(semanas)[:-MAX_SEMANAS_ESTADO_ROTACION]:
+            del semanas[clave]
+        # El estado vigente es el de la semana MÁS RECIENTE registrada:
+        # regenerar una semana antigua no debe rebobinar el puntero que ve la
+        # pantalla de la ronda ni el que heredará la próxima semana nueva.
+        vigente = semanas[max(semanas)]["final"]
+
     guardar_json_atomico(_ruta_estado_cpsat(dept_id), {
-        "estado_rotacion": estado_rotacion,
+        "estado_rotacion": vigente,
+        "semanas": semanas,
     })
+
+
+def _estado_rotacion_base_semana(dept_id: str, week_start: date,
+                                 staff_list: list, cfg) -> dict:
+    """Estado de la ronda con el que debe generarse `week_start`.
+
+    Regenerar una semana ya generada tiene que dar el mismo resultado: la
+    ronda avanza una vez por SEMANA, no una vez por clic en "Generar". Por eso
+    se guarda el estado con el que se generó cada semana ("inicial") y se
+    reutiliza al regenerarla. Antes se encadenaba siempre el último estado
+    guardado, así que cada regeneración de la misma semana volvía a avanzar
+    `siguiente_turno` y a sumar noches en `historico_balance`: la ronda seguía
+    corriendo sola aunque el horario fuese el mismo.
+
+    Prioridad: 1) el inicial ya registrado para esa semana; 2) el final de la
+    semana anterior; 3) el último estado guardado, o la semilla si no hay nada.
+
+    `orden` y `usar_orden_fijo` se toman siempre del estado VIGENTE, no del
+    snapshot: son configuración que el admin cambia desde /api/rotacion-noches
+    y debe aplicarse en la próxima generación. Lo que rebobina al regenerar
+    son los contadores (`siguiente_turno`, `deudas`, `historico_balance`...).
+    """
+    disco = _cargar_estado_cpsat(dept_id)
+    semanas = disco.get("semanas") or {}
+    vigente = disco.get("estado_rotacion") or _estado_rotacion_inicial_cpsat(staff_list, cfg)
+
+    base = (semanas.get(_semana_str(week_start)) or {}).get("inicial")
+    if base is None:
+        clave_previa = _semana_str(week_start - timedelta(weeks=1))
+        base = (semanas.get(clave_previa) or {}).get("final")
+    if base is None:
+        base = vigente
+
+    base = dict(base)
+    if vigente.get("orden"):
+        base["orden"] = list(vigente["orden"])
+    base["usar_orden_fijo"] = vigente.get(
+        "usar_orden_fijo", base.get("usar_orden_fijo", True))
+    return base
 
 
 def _empleados_elegibles_noches(staff_list: list, cfg) -> list:
@@ -852,7 +925,10 @@ def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: s
 
     estado_rotacion (orden fijo de cobertura y deudas -- una cola de turnos,
     no un hecho observable en el schedule) sigue persistiéndose en
-    cpsat_estado_{dept}.json, igual que antes. noches_ultimos_5_dias y
+    cpsat_estado_{dept}.json, ahora por semana: se guarda el estado con el que
+    se generó cada semana, de modo que REgenerarla parte del mismo sitio y da
+    el mismo resultado en vez de hacer avanzar la ronda otra vez (ver
+    _estado_rotacion_base_semana). noches_ultimos_5_dias y
     forced_days_off_extra YA NO se leen de ahí -- se derivan siempre del
     historial real en cada llamada (ver _derivar_estado_racha_cpsat_desde_
     historial), para que una edición manual de turno se refleje sin
@@ -860,9 +936,7 @@ def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: s
     """
     from motor_cpsat import generar_semana_cpsat_con_cobertura_nocturna
 
-    estado_previo = _cargar_estado_cpsat(dept_id)
-    estado_rotacion = estado_previo.get("estado_rotacion") \
-        or _estado_rotacion_inicial_cpsat(staff_list, cfg)
+    estado_rotacion = _estado_rotacion_base_semana(dept_id, week_start, staff_list, cfg)
 
     noches_ultimos_5_dias, forced_extra, dias_trabajados_previos = (
         _derivar_estado_racha_cpsat_desde_historial(dept_id, week_start, cfg)
@@ -874,6 +948,8 @@ def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: s
             existentes = person.get("forced_days_off", [])
             person["forced_days_off"] = list(dict.fromkeys(existentes + dias))
 
+    estado_inicial = copy.deepcopy(estado_rotacion)
+
     resultado = generar_semana_cpsat_con_cobertura_nocturna(
         staff_list=staff_list,
         week_start=week_start,
@@ -884,7 +960,8 @@ def _generar_con_motor_cpsat(staff_list: list, week_start: date, cfg, dept_id: s
         prev_sunday_shifts=prev_sunday_shifts,
     )
 
-    _guardar_estado_cpsat(dept_id, resultado["estado_rotacion"])
+    _guardar_estado_cpsat(dept_id, resultado["estado_rotacion"],
+                          week_start=week_start, estado_inicial=estado_inicial)
 
     return resultado["schedule"], staff_list, week_start, {}, {}, []
 

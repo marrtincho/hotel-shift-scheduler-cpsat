@@ -477,7 +477,7 @@ borrar la restricción.
 ### 5.1 Qué se PERSISTE en disco
 | Qué | Dónde | Escrito por |
 |---|---|---|
-| `estado_rotacion` (cola de turnos de cobertura nocturna) | `data/cpsat_estado_{dept}.json` | `app._generar_con_motor_cpsat` (`guardar_json_atomico`) |
+| `estado_rotacion` (cola de turnos de cobertura nocturna) + `semanas` (estado inicial/final de cada semana generada) | `data/cpsat_estado_{dept}.json` | `app._guardar_estado_cpsat` (`guardar_json_atomico`) |
 | Horario de cada semana | `data/historial*.json` | `herramientas.registrar_semana` |
 | Plantilla, roles, vacaciones, peticiones, festivos, cupos | `data/*.json` | `herramientas.py` |
 
@@ -493,6 +493,20 @@ Contenido de `estado_rotacion` (`cobertura_nocturna.py:20-62`):
   arrastra la semana nueva.
 
 Los tres últimos los mantiene **`motor_cpsat`**, no `cobertura_nocturna`.
+
+**La ronda avanza una vez por SEMANA, no una vez por clic en "Generar".** El fichero
+guarda además `semanas: {"YYYY-MM-DD": {"inicial", "final"}}`: el estado con el que se
+generó cada semana y el que quedó al terminarla. Al generar `week_start` se parte, por
+este orden, de (1) el `inicial` ya registrado para esa semana, (2) el `final` de la
+semana anterior, (3) el `estado_rotacion` vigente o la semilla
+(`app._estado_rotacion_base_semana`). Así **regenerar la misma semana da el mismo
+resultado**: si esta semana les toca a dos compañeros concretos, siguen siendo ellos por
+muchas veces que se pulse Generar. Antes solo existía un `estado_rotacion` "el último",
+y cada regeneración volvía a avanzar `siguiente_turno` y a sumar `historico_balance`, así
+que la ronda corría sola. Excepción deliberada: `orden` y `usar_orden_fijo` se toman
+siempre del estado vigente —son configuración del admin (`PUT /api/rotacion-noches`) y
+deben aplicarse en la próxima generación—; lo que rebobina son los contadores. Se
+conservan las últimas `MAX_SEMANAS_ESTADO_ROTACION` (120) semanas.
 
 ### 5.2 Qué se DERIVA del historial real en cada generación
 `app._derivar_estado_racha_cpsat_desde_historial` recalcula **en cada llamada**, desde
