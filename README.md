@@ -9,6 +9,8 @@ y resuelve la semana completa con **CP-SAT** (Google OR-Tools).
 > (`HorariosRecepcion`, archivado), reemplazando el motor de generación por uno
 > basado en programación por restricciones (CP-SAT).
 
+![Horario semanal generado](docs/assets/horario-semanal.png)
+
 ---
 
 ## El problema
@@ -57,6 +59,21 @@ El mismo input produce siempre el mismo horario: el solver corre mono-hilo y las
 restricciones se añaden en orden estable. No es un detalle menor — sin ello, ante un
 empate de valor óptimo, regenerar una semana devolvía un horario distinto y el
 equipo perdía la confianza en la herramienta.
+
+---
+
+## Interfaz
+
+Además del horario semanal, la app incluye estadísticas de reparto a largo
+plazo (para vigilar la equidad entre empleados) y gestión de peticiones de
+días libres con prioridad automática por historial.
+
+<table>
+<tr>
+<td><img src="docs/assets/estadisticas.png" alt="Estadísticas de reparto"></td>
+<td><img src="docs/assets/peticiones.png" alt="Gestión de peticiones"></td>
+</tr>
+</table>
 
 ---
 
