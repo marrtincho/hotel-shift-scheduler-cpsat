@@ -2251,7 +2251,7 @@ def generar_semana_cpsat_con_cobertura_nocturna(
                 )
                 bloque = {
                     "nombre": nombre,
-                    "noches_totales": longitud_bloque_respaldo(staff_list, nombre, d),
+                    "noches_totales": longitud_bloque_respaldo(staff_list, cfg, nombre, d),
                     "noches_cubiertas": 0,
                 }
             else:

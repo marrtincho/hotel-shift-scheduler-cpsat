@@ -87,6 +87,15 @@ revés, para evitar un ciclo de imports.
    elegibilidad vuelve a comprobarse contra cfg.night_fixed_days_off (el
    bug original), no contra el día real, y puede devolver a alguien que
    ese día tiene una vacación/petición concedida.
+4. Presencia parcial (§1.8 de REGLAS.md): si cfg.presencia_roles incluye
+   el rol de algún candidato, la elegibilidad exige además que TODOS los
+   días a cubrir formen parte de su presencia y que el tramo de presencia
+   disponible garantice al menos MIN_NOCHES_TRAMO_PRESENCIA(2) noches
+   seguidas; un día fuera de presencia corta el bloque del titular en
+   curso igual que una vacación (persona_bloqueada_dia) y trunca las
+   longitudes de bloque que no cabrían antes del primer día fuera
+   (longitud_bloque_respaldo). Sin presencia_roles (dict vacío — el caso
+   de cualquier departamento que no usa la categoría) todo esto es inerte.
 """
 
 from modelo_base import DAYS
@@ -103,6 +112,31 @@ from modelo_base import DAYS
 # sincronizadas si alguna cambia.
 BLOQUE_RESPALDO_MIN = 4
 BLOQUE_RESPALDO_MAX = 5
+
+# ─── Presencia parcial de la categoría (§1.8 de REGLAS.md) ──────────────
+# Un rol con días de presencia (cfg.presencia_roles: {rol: {días 0-6}}) solo
+# cuenta en los días que está físicamente en el hotel — el resto queda
+# "Fuera" y no computa para nada (ni libres, ni cobertura, ni equidad). Aquí
+# eso significa: solo elegible para cubrir noches cuyos días sean todos de
+# su presencia, y solo si el tramo de presencia disponible garantiza un
+# bloque de al menos MIN_NOCHES_TRAMO_PRESENCIA(2) noches seguidas.
+# MIN_NOCHES_TRAMO_PRESENCIA duplica a propósito el valor de
+# motor_cpsat.MIN_NOCHES_RACHA (este módulo no importa motor_cpsat.py, mismo
+# motivo que BLOQUE_RESPALDO_MAX arriba) — deben mantenerse sincronizadas si
+# alguna cambia. Sin presencia_roles (dict vacío) todo esto es inerte.
+MIN_NOCHES_TRAMO_PRESENCIA = 2
+
+
+def _tramo_presencia_consecutiva(presencia: set, dia_inicio: int) -> int:
+    """Nº de días de presencia consecutivos a partir de dia_inicio (0=Lunes,
+    6=Domingo), contando el patrón semanal cíclico: la presencia es fija por
+    categoría, así que el Domingo precede al Lunes de la semana SIGUIENTE
+    (p.ej. {5,6} → desde el Sábado el tramo mide 2; no se corta en el borde
+    de la semana) y solo se corta donde el patrón deja de tener presencia."""
+    k = 1
+    while (dia_inicio + k) % 7 in presencia:
+        k += 1
+    return k
 
 
 def _persona_ausente_toda_la_semana(persona: dict) -> bool:
@@ -148,7 +182,15 @@ def persona_bloqueada_dia(staff_list: list, cfg, nombre: str, dia_idx: int) -> b
     día, si el titular del bloque de Noche EN CURSO sigue siendo elegible
     hoy (vacación/petición concedida a mitad de bloque) — si no lo es, el
     bloque se corta ahí (regla de negocio confirmada) y arranca uno nuevo
-    con otra persona."""
+    con otra persona. Presencia parcial (§1.8): un día fuera del contrato
+    (dia_idx no está en la presencia del rol) bloquea igual que una
+    vacación — el titular no está en el hotel ese día, así que su bloque
+    se interrumpe al llegar a él."""
+    persona = next((p for p in staff_list if p["name"] == nombre), None)
+    if persona is not None:
+        presencia = cfg.presencia_roles.get(persona.get("role"))
+        if presencia is not None and dia_idx not in presencia:
+            return True
     return nombre in _bloqueados_por_peticion_o_vacacion(staff_list, cfg, {dia_idx})
 
 
@@ -162,15 +204,35 @@ def _elegibles(staff_list: list, cfg, dias_cubrir: set = None,
     de noches (bloqueados_por_racha — ver docstring de
     seleccionar_candidato_cobertura_nocturna, parámetro NUEVO Fase 5,
     verificación del mismo patrón de bug que dias_cubrir pero para la
-    restricción de racha de 5 noches, no para vacaciones/peticiones)."""
+    restricción de racha de 5 noches, no para vacaciones/peticiones), y —
+    presencia parcial (§1.8) — con TODOS los días de `dias_cubrir` dentro
+    de su presencia y un tramo de presencia consecutiva de al menos
+    MIN_NOCHES_TRAMO_PRESENCIA(2) noches desde el primero (no se elige a
+    nadie para un día en que está fuera del hotel, ni se arranca un bloque
+    que su contrato dejaría en una noche suelta)."""
     bloqueados = _bloqueados_por_peticion_o_vacacion(staff_list, cfg, dias_cubrir)
     bloqueados_racha = set(bloqueados_por_racha or ())
+    dias_efectivos = (set(dias_cubrir) if dias_cubrir is not None
+                      else set(cfg.night_fixed_days_off))
+
+    def _elegible_por_presencia(p) -> bool:
+        presencia = cfg.presencia_roles.get(p.get("role"))
+        if presencia is None:
+            return True
+        if not dias_efectivos:
+            return True
+        if not dias_efectivos <= presencia:
+            return False
+        return (_tramo_presencia_consecutiva(presencia, min(dias_efectivos))
+                >= MIN_NOCHES_TRAMO_PRESENCIA)
+
     return [
         p for p in staff_list
         if p.get("role") not in cfg.no_night_roles
         and p.get("role") != "night_fixed"
         and p["name"] not in bloqueados
         and p["name"] not in bloqueados_racha
+        and _elegible_por_presencia(p)
     ]
 
 
@@ -261,7 +323,7 @@ def registrar_noche_bloque(estado_rotacion: dict, nombre: str) -> dict:
     return nuevo_estado
 
 
-def longitud_bloque_respaldo(staff_list: list, nombre: str, dia_inicio: int) -> int:
+def longitud_bloque_respaldo(staff_list: list, cfg, nombre: str, dia_inicio: int) -> int:
     """Decide cuántas noches seguidas (BLOQUE_RESPALDO_MIN(4)-BLOQUE_
     RESPALDO_MAX(5)) cubre `nombre` a partir de `dia_inicio` (NUEVO, esta
     sesión — bloques de cobertura en modo respaldo).
@@ -282,16 +344,39 @@ def longitud_bloque_respaldo(staff_list: list, nombre: str, dia_inicio: int) -> 
     Solo mira DENTRO de la semana visible (los 7 días de `staff_list` tal
     como llega a esta llamada) — no hay forma de ver vacaciones de semanas
     futuras desde aquí, límite ya existente en el resto de la arquitectura
-    (cada semana se genera con su propio staff_list)."""
+    (cada semana se genera con su propio staff_list).
+
+    Presencia parcial (§1.8): si el rol del titular tiene cfg.presencia_roles,
+    el primer día fuera de su contrato también trunca el bloque, con el
+    mismo criterio (recorte explícito solo dentro del rango 4-5; fuera de él
+    el bloque se interrumpe vía persona_bloqueada_dia, ya con ≥2 noches
+    garantizadas porque _elegibles no deja arrancar bloques sin tramo).
+    Este tramo SÍ se conoce más allá de la semana visible: el patrón de
+    presencia es fijo por categoría y se repite cada semana, así que se
+    calcula cíclicamente (_tramo_presencia_consecutiva)."""
     persona = next((p for p in staff_list if p["name"] == nombre), None)
     forced = set(persona.get("forced_days_off", [])) if persona else set()
     dias_bloqueados = sorted(
         DAYS.index(d) for d in forced if d in DAYS and DAYS.index(d) > dia_inicio
     )
-    if not dias_bloqueados:
+    cabe_forzados = dias_bloqueados[0] - dia_inicio if dias_bloqueados else None
+
+    # Presencia parcial (§1.8): un día fuera del contrato trunca el bloque
+    # igual que una vacación (el titular no está en el hotel ese día). A
+    # diferencia de vacaciones/peticiones, el patrón de presencia es fijo
+    # por categoría y se repite cada semana, así que el primer día fuera se
+    # calcula cíclicamente (puede caer más allá de la semana visible — aquí
+    # sí se conoce de antemano).
+    cabe_presencia = None
+    if persona is not None:
+        presencia = cfg.presencia_roles.get(persona.get("role"))
+        if presencia is not None:
+            cabe_presencia = _tramo_presencia_consecutiva(presencia, dia_inicio)
+
+    candidatos = [c for c in (cabe_forzados, cabe_presencia) if c is not None]
+    if not candidatos:
         return BLOQUE_RESPALDO_MAX
-    primer_bloqueo = dias_bloqueados[0]
-    cabe = primer_bloqueo - dia_inicio
+    cabe = min(candidatos)
     if BLOQUE_RESPALDO_MIN <= cabe < BLOQUE_RESPALDO_MAX:
         return cabe
     return BLOQUE_RESPALDO_MAX
@@ -368,6 +453,11 @@ def seleccionar_candidato_cobertura_nocturna(staff_list: list, cfg, estado_rotac
         el llamador DEBE pasar `dias_cubrir={d}` con el día concreto que
         esa llamada está decidiendo — omitirlo reintroduce el bug
         original (bloqueo comprobado contra el día equivocado).
+
+    Ese mismo conjunto de días (o cfg.night_fixed_days_off si es None) es
+    lo que _elegibles comprueba contra la presencia parcial del rol
+    (§1.8): quien tenga alguno de esos días fuera de su contrato no es
+    elegible para esta cobertura.
 
     bloqueados_por_racha: nombres que NO deben proponerse para el día que
     decide esta llamada porque están en su descanso obligatorio de 2 días

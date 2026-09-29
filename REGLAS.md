@@ -152,9 +152,15 @@ equidad de findes y del registro de festivos trabajados. **El motor heurístico*
 `Fuera` los días fuera al inicio, excluye estos roles de la rotación de pares de
 libres (`normal_people_all`, Pasadas A/B y red de reasignación) y nunca escribe
 `Libre` en un día de presencia no concedido; una concesión sobre un día fuera **no**
-lo convierte en `Libre` (sigue `Fuera`, mismo criterio que el modelo). Invariantes
-cubiertos en `tests/test_presencia_cpsat.py` (CP-SAT) y
-`tests/test_presencia_heuristico.py` (heurístico).
+lo convierte en `Libre` (sigue `Fuera`, mismo criterio que el modelo). **La
+cobertura nocturna** (§1.9) también respeta la presencia cuando el contrato tiene
+las noches habilitadas (desmarcando `sin_noches`): el rol solo es elegible para
+cubrir noches cuyos días caigan todos dentro de su presencia y que garanticen al
+menos 2 noches seguidas (`cobertura_nocturna._elegibles`), y el bloque de un
+titular se interrumpe al llegar a un día fuera (`persona_bloqueada_dia`), igual
+que con una vacación. Invariantes cubiertos en `tests/test_presencia_cpsat.py`
+(CP-SAT), `tests/test_presencia_heuristico.py` (heurístico) y
+`tests/test_presencia_noches.py` (cobertura nocturna).
 
 ### 1.9 Cobertura nocturna fijada externamente
 **Regla:** quién hace Noche cada día **no lo decide el solver**. Lo decide
@@ -208,7 +214,11 @@ bloques y a cuántas veces se selecciona por semana, **ya no al criterio de sele
   **La plantilla real de Recepción no tiene `night_fixed`, así que el modo respaldo
   está SIEMPRE activo en producción.**
 **Excepciones:** un bloque se corta a mitad si su titular queda bloqueado ese día por
-vacación/petición (`persona_bloqueada_dia`) o por descanso post-racha.
+vacación/petición (`persona_bloqueada_dia`), por descanso post-racha, o por ser un día
+fuera de la presencia de su rol ([§1.8](#18-patrón-de-días-libres-semanales-2-consecutivos)):
+con presencia (y las noches habilitadas), el titular solo puede arrancar bloques cuyo
+tramo de presencia garantice ≥2 noches seguidas, y la longitud del bloque se recorta
+al tramo de presencia disponible cuando cae en el rango 4–5 (`longitud_bloque_respaldo`).
 
 **Bloque obsoleto:** al reanudar `bloque_actual` de la semana anterior se comprueba que
 esa persona tuviera Noche el domingo pasado (`noches_ultimos_5_dias[nombre][-1]`); si
