@@ -69,7 +69,7 @@ def _libres_por_dia(schedule: dict) -> list:
             for d in range(len(DAYS))]
 
 def _elige_pair_equilibrado(candidatos: list, pair_usage: dict, schedule: dict,
-                            min_libres_dia: int, preferido: tuple = None) -> tuple:
+                            min_libres_dia, preferido: tuple = None) -> tuple:
     """Elige un par de días libres consecutivos entre `candidatos`.
 
     Prioriza cubrir primero los días que todavía no alcanzan
@@ -79,14 +79,21 @@ def _elige_pair_equilibrado(candidatos: list, pair_usage: dict, schedule: dict,
     reparto de pares a largo plazo) solo desempata entre los pares que
     cubren igual de bien el déficit del día.
 
+    `min_libres_dia`: entero (mismo mínimo todos los días) o lista de 7
+    enteros, uno por día — assign_days_off pasa la lista cuando hay roles
+    con presencia parcial: en sus días fuera hay menos gente ocupando plaza
+    y baja el mínimo de libres necesario ese día.
+
     `preferido`: si se indica y está entre los candidatos, se respeta tal
     cual (p.ej. Pasada A siempre prioriza el finde (5,6) por diseño).
     """
     if preferido is not None and preferido in candidatos:
         return preferido
+    mins = (list(min_libres_dia) if isinstance(min_libres_dia, (list, tuple))
+            else [min_libres_dia] * len(DAYS))
     libres_dia = _libres_por_dia(schedule)
     def _deficit(pair):
-        return sum(1 for d in pair if libres_dia[d] < min_libres_dia)
+        return sum(1 for d in pair if libres_dia[d] < mins[d])
     max_deficit = max(_deficit(p) for p in candidatos)
     mejores     = [p for p in candidatos if _deficit(p) == max_deficit]
     min_uso     = min(pair_usage[p] for p in mejores)
@@ -114,7 +121,10 @@ def _turno_referencia(name, day_idx, schedule, prev_last_shifts=None):
     hubo_libre = False
     for i in range(day_idx - 1, -1, -1):
         t = schedule[name][i]
-        if t == "Libre":
+        if t in ("Libre", FUERA):
+            # "Fuera" (presencia parcial) es una ausencia del hotel igual que
+            # "Libre": al volver se prefiere rotar de turno, y jamás puede
+            # devolverse como "último turno trabajado".
             hubo_libre = True
             continue
         if t and t != "SIN_ASIGNAR":
@@ -663,6 +673,22 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
     schedule   = {p["name"]: ["" for _ in DAYS] for p in staff_list}
     pair_usage = {pair: 0 for pair in pairs}
 
+    # ── Presencia parcial: días fuera fijados a "Fuera" ─────────────────────
+    # Persona cuyo rol tiene dias_presencia (ver REGLAS.md §1.8): los días
+    # fuera de contrato quedan en FUERA desde ya y ninguna pasada posterior
+    # los toca — estos roles no entran en normal_people (ni Pasadas A/B ni
+    # red de reasignación). Sus días de presencia no se marcan aquí: el
+    # contrato "trabaja siempre" se cumple porque assign_shifts solo escribe
+    # turnos de trabajo sobre celdas vacías y nunca asigna "Libre". Sin
+    # presencia_roles esto no marca nada (comportamiento idéntico al de antes).
+    for person in staff_list:
+        dias_presencia = cfg.presencia_roles.get(person["role"])
+        if dias_presencia is None:
+            continue
+        for d in range(len(DAYS)):
+            if d not in dias_presencia:
+                schedule[person["name"]][d] = FUERA
+
     # Mínimo de personas que deben librar cada día cuando la plantilla supera
     # la capacidad máxima diaria (p.ej. 10 personas con capacidad_max_dia=8
     # → obligatoriamente libran ≥2 cada día). Sin este mínimo, el reparto por
@@ -673,7 +699,19 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
     # que Martes/Miércoles/Jueves pertenecen a dos — y esas personas de más
     # acaban sin turno legal asignable (SIN_ASIGNAR). Ver BUG 1.
     capacidad_max_dia = sum(cfg.max_coverage.get(s, 0) for s in cfg.max_coverage)
-    min_libres_dia    = max(0, len(staff_list) - capacidad_max_dia)
+    # Por día (no un único valor global): con presencia parcial, en los días
+    # fuera de contrato hay menos gente ocupando plaza, así que el mínimo de
+    # libres baja ese día. Sin presencia_roles, presentes == len(staff_list)
+    # los 7 días y cada posición vale max(0, n - cap) — exactamente el valor
+    # único de antes (ver _elige_pair_equilibrado, que acepta ambas formas).
+    min_libres_dia    = [
+        max(0, sum(
+            1 for p in staff_list
+            if (p["role"] not in cfg.presencia_roles
+                or d in cfg.presencia_roles[p["role"]])
+        ) - capacidad_max_dia)
+        for d in range(len(DAYS))
+    ]
 
     # ── Roles con días fijos ────────────────────────────────────────────────
     for role, days in cfg.fixed_days_off.items():
@@ -705,10 +743,18 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
     for person in staff_list:
         forced_indices = [DAYS.index(d) for d in person.get("forced_days_off", []) if d in DAYS]
         extra_indices  = [DAYS.index(d) for d in person.get("extra_days_off", [])  if d in DAYS]
+        libres_aqui    = []
         for idx in forced_indices + extra_indices:
+            # Un día fuera de presencia se queda en FUERA aunque coincida con
+            # una concesión: ese día no está contratado, así que la vacación/
+            # petición no convierte la celda en "Libre" (mismo criterio que el
+            # motor CP-SAT, donde la celda está fijada a FUERA pase lo que pase).
+            if schedule[person["name"]][idx] == FUERA:
+                continue
             schedule[person["name"]][idx] = "Libre"
-        if forced_indices or extra_indices:
-            person["days_off"] = sorted(set(person.get("days_off", [])) | set(forced_indices) | set(extra_indices))
+            libres_aqui.append(idx)
+        if libres_aqui:
+            person["days_off"] = sorted(set(person.get("days_off", [])) | set(libres_aqui))
 
     # ── Personas sin turno fijo ─────────────────────────────────────────────
     fixed_roles = set(cfg.fixed_days_off.keys()) | {"night_fixed"}
@@ -730,7 +776,13 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
     # jefe). Excluirlos del balanceo no debe reducir el cuerpo disponible que
     # cuenta K — por eso K se calcula sobre normal_people_all, no sobre
     # normal_people; solo la Pasada A (reparto por ratio) usa el subconjunto.
-    normal_people_all  = [p for p in no_fixed if _is_normal_rotation(p)]
+    # Presencia parcial: estos roles quedan fuera del pool de rotación —
+    # trabajan todos sus días de presencia y no generan slots de libres, así
+    # que no participan ni en K ni en las Pasadas A/B (una persona con
+    # presencia JAMÁS recibe un par de libres; solo una concesión la libra).
+    normal_people_all  = [p for p in no_fixed
+                          if p["role"] not in cfg.presencia_roles
+                          and _is_normal_rotation(p)]
     normal_people      = [p for p in normal_people_all
                           if p["role"] not in cfg.roles_excluidos_equidad]
     equidad_excluida   = [p for p in normal_people_all
@@ -781,6 +833,11 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
     # ── Bucle principal: forzados, compensaciones y cobertura nocturna ────────
     for person in staff_list:
         if person["role"] in fixed_roles:
+            continue
+        if person["role"] in cfg.presencia_roles:
+            # Presencia parcial: no hay pares de libres que dar — sus días
+            # fuera ya son FUERA y los de presencia son de trabajo
+            # garantizado (solo una concesión los libra, ya marcada arriba).
             continue
         if _is_normal_rotation(person):
             continue  # se procesan en las dos pasadas siguientes
@@ -910,18 +967,18 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
     # nocturno o Pasada B, nunca el finde ya repartido por equidad en Pasada
     # A) a un par que cubra ese día, siempre que no deje otro día por debajo
     # del mínimo. Ver BUG 1.
-    if min_libres_dia > 0:
+    if max(min_libres_dia) > 0:
         ajustables = [p for p in staff_list if p.get("_reasignable")]
         _dbg = os.environ.get("DEBUG_REPARACION") == "1"
         for _ in range(7):
             libres_dia   = _libres_por_dia(schedule)
-            deficitarios = [d for d in range(7) if libres_dia[d] < min_libres_dia]
+            deficitarios = [d for d in range(7) if libres_dia[d] < min_libres_dia[d]]
             if not deficitarios:
                 break
             dia = deficitarios[0]
             if _dbg:
                 print(f"\n[reparacion] Día deficitario: {DAYS[dia]} (libran {libres_dia[dia]}, "
-                      f"mínimo {min_libres_dia}). Ajustables: {[p['name'] for p in ajustables]}")
+                      f"mínimo {min_libres_dia[dia]}). Ajustables: {[p['name'] for p in ajustables]}")
             reparado = False
             for person in ajustables:
                 actuales = person.get("days_off")
@@ -955,11 +1012,11 @@ def assign_days_off(staff_list: list, night_cover: dict, cfg: DeptConfig) -> dic
                     key=lambda p: pair_usage[p])
                 for nuevo in opciones:
                     dias_libera = [d for d in actuales if d not in nuevo]
-                    if any(libres_dia[d] - 1 < min_libres_dia for d in dias_libera):
+                    if any(libres_dia[d] - 1 < min_libres_dia[d] for d in dias_libera):
                         if _dbg:
                             etiqueta = f"{DAYS[nuevo[0]]}+{DAYS[nuevo[1]]}"
                             dias_rotos = [DAYS[d] for d in dias_libera
-                                          if libres_dia[d] - 1 < min_libres_dia]
+                                          if libres_dia[d] - 1 < min_libres_dia[d]]
                             print(f"    -> {person['name']} a {etiqueta}: RECHAZADO — dejaría "
                                   f"{dias_rotos} por debajo del mínimo al abandonar {actuales}")
                         continue
@@ -1026,17 +1083,21 @@ def _morning_coverage_ok(shift, day_idx, person_name, schedule, staff_list, cfg)
     if min_man == 0:
         return True
     next_day = day_idx + 1
-    # Elegibles para Mañana el día siguiente: trabajan ese día Y no acaban hoy en Tarde/Noche
+    # Elegibles para Mañana el día siguiente: están en el hotel ese día Y no
+    # acaban hoy en Tarde/Noche. "Fuera" (presencia parcial) no está en el
+    # hotel: ni cuenta como elegible ni, si trabaja el día siguiente, se le
+    # puede restar (nunca estuvo sumada).
     eligible = sum(
         1 for p in staff_list
-        if schedule[p["name"]][next_day] != "Libre"
+        if schedule[p["name"]][next_day] not in ("Libre", FUERA)
         and schedule[p["name"]][day_idx] not in ("Tarde", "Noche")
     )
     # Si la persona trabaja el día siguiente, estaba contada en eligible y hay
     # que restarla (pasará a Tarde/Noche → ya no podrá hacer Mañana).
-    # Si libra el día siguiente, NO estaba contada y no se resta nada: asignarle
-    # Tarde/Noche hoy no cambia en absoluto la cobertura de Mañana del día siguiente.
-    if schedule[person_name][next_day] != "Libre":
+    # Si libra —o está Fuera— el día siguiente, NO estaba contada y no se
+    # resta nada: asignarle Tarde/Noche hoy no cambia la cobertura de Mañana
+    # del día siguiente.
+    if schedule[person_name][next_day] not in ("Libre", FUERA):
         eligible -= 1
     return eligible >= min_man
 
@@ -1052,10 +1113,11 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
     violaciones: list[str] = []
     schedule = copy.deepcopy(days_off_schedule)
 
-    # Pass 1: fixed roles
+    # Pass 1: fixed roles. Los días "Fuera" (presencia parcial) no se tocan:
+    # no son de contrato y ninguna regla de turnos aplica sobre ellos.
     for day_idx in range(len(DAYS)):
         for person in staff_list:
-            if schedule[person["name"]][day_idx] == "Libre":
+            if schedule[person["name"]][day_idx] in ("Libre", FUERA):
                 continue
             if person["role"] == "night_fixed":
                 schedule[person["name"]][day_idx] = "Noche"
@@ -1090,7 +1152,8 @@ def assign_shifts(staff_list: list, days_off_schedule: dict,
             schedule[person["name"]][day_idx] = turno_cobertura
             coverage_pass1[turno_cobertura] = coverage_pass1.get(turno_cobertura, 0) + 1
 
-    # Pass 2: day by day
+    # Pass 2: day by day. Solo entran celdas vacías ("") — ni "Libre" ni
+    # "Fuera" pasan por aquí.
     for day_idx in range(len(DAYS)):
         available = [p for p in staff_list if schedule[p["name"]][day_idx] == ""]
         random.shuffle(available)
@@ -1314,7 +1377,10 @@ def _contar_penalizaciones(schedule, staff_list, prev_last_shifts=None):
         for t in schedule[p["name"]]:
             if t in ("", "SIN_ASIGNAR", "Noche"):
                 continue
-            if t == "Libre":
+            if t in ("Libre", FUERA):
+                # Fuera = ausencia (presencia parcial): al volver cuenta
+                # como "volvió de librar" (repetir turno penaliza) y no
+                # rompe tirada por sí mismo.
                 tras_libre = True
                 continue
             if ult is not None:

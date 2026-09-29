@@ -147,8 +147,14 @@ contrato "trabaja siempre" confirmado con el usuario: **solo una vacación/petic
 concedida (`forced_libre`) puede librar un día de presencia**; el solver no puede
 elegir `Libre` ahí (`model.Add(x[name, d, "Libre"] == 0)`). Configuración en
 `data/roles.json` (`herramientas.py`, MÓDULO 6); excluida estructuralmente de la
-equidad de findes y del registro de festivos trabajados. Invariantes cubiertos en
-`tests/test_presencia_cpsat.py`.
+equidad de findes y del registro de festivos trabajados. **El motor heurístico**
+(`modelo_base.assign_days_off` / `assign_shifts`) aplica el mismo contrato: fija
+`Fuera` los días fuera al inicio, excluye estos roles de la rotación de pares de
+libres (`normal_people_all`, Pasadas A/B y red de reasignación) y nunca escribe
+`Libre` en un día de presencia no concedido; una concesión sobre un día fuera **no**
+lo convierte en `Libre` (sigue `Fuera`, mismo criterio que el modelo). Invariantes
+cubiertos en `tests/test_presencia_cpsat.py` (CP-SAT) y
+`tests/test_presencia_heuristico.py` (heurístico).
 
 ### 1.9 Cobertura nocturna fijada externamente
 **Regla:** quién hace Noche cada día **no lo decide el solver**. Lo decide
