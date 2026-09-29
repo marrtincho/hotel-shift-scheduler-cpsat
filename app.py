@@ -881,7 +881,10 @@ def _derivar_estado_racha_cpsat_desde_historial(dept_id: str, week_start: date, 
         # endpoint de edición tenga que recalcular nada.
         racha_trabajo = 0
         for d in range(6, -1, -1):
-            if turnos[d] in ("Libre", "", "SIN_ASIGNAR"):
+            if turnos[d] in ("Libre", "Fuera", "", "SIN_ASIGNAR"):
+                # "Fuera" (presencia parcial) rompe la racha de días
+                # trabajados igual que un Libre: ese día no estuvo en el
+                # hotel, así que no cuenta para el término M del motor.
                 break
             racha_trabajo += 1
         if racha_trabajo:

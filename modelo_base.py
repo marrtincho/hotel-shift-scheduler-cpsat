@@ -287,7 +287,15 @@ def validar_viabilidad(staff_activo: list, cfg: DeptConfig,
     ]
     n = len(personas_activas)
 
-    dias_trabajo      = n * 5
+    # Presencia parcial (dias_presencia): cada persona aporta a la semana
+    # exactamente sus días de presencia, no 5 — "solo contabilizamos los
+    # días que sí se encuentra físicamente en el hotel". Sin roles con
+    # presencia, presencia_roles está vacío y esto es exactamente n * 5.
+    dias_trabajo = sum(
+        len(cfg.presencia_roles[p.get("role")])
+        if p.get("role") in cfg.presencia_roles else 5
+        for p in personas_activas
+    )
     necesidad_min_dia = sum(cfg.min_coverage.get(s, 0) for s in cfg.min_coverage)
     capacidad_max_dia = sum(cfg.max_coverage.get(s, 0) for s in cfg.max_coverage)
     necesidad_semana  = necesidad_min_dia * 7
@@ -325,11 +333,26 @@ def validar_viabilidad(staff_activo: list, cfg: DeptConfig,
     # pero si NADIE la tiene (todos los roles activos tienen días fijos, p.ej.
     # night_fixed/jefe) esa exigencia diaria es irrealizable pese a que el
     # total semanal cuadre, porque los días libres fijos no se pueden mover.
-    min_libres_dia = 0 if capacidad_ilimitada else max(0, n - capacidad_max_dia)
+    #
+    # Presencia parcial: la exigencia se calcula sobre el día más cargado
+    # de la semana — en sus días fuera esa gente no ocupa plaza, así que
+    # usar n sobreestimaría los libres obligatorios. Sin roles con
+    # presencia, max_presentes == n (comportamiento idéntico al de antes).
+    if cfg.presencia_roles:
+        max_presentes = max(
+            sum(1 for p in personas_activas
+                if (p.get("role") not in cfg.presencia_roles
+                    or d in cfg.presencia_roles[p.get("role")]))
+            for d in range(7)
+        )
+    else:
+        max_presentes = n
+    min_libres_dia = 0 if capacidad_ilimitada else max(0, max_presentes - capacidad_max_dia)
     if min_libres_dia > 0:
         roles_sin_rotacion = set(cfg.fixed_days_off.keys()) | {"night_fixed"}
         personas_flexibles = [p for p in personas_activas
-                              if p.get("role") not in roles_sin_rotacion]
+                              if p.get("role") not in roles_sin_rotacion
+                              and p.get("role") not in cfg.presencia_roles]
         if not personas_flexibles:
             return False, (
                 f"La plantilla obliga a que libren al menos {min_libres_dia} persona(s) "

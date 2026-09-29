@@ -17,6 +17,12 @@ Turnos: `Mañana, Tarde, Noche, Partido, Libre` (`modelo_base.SHIFTS`).
 Horas reales (`data/horarios_turnos.json`): Mañana 07–15, Tarde 15–23,
 Noche 23–07, Partido 10–18.
 
+Estado adicional: `Fuera` (`modelo_base.FUERA`, **deliberadamente NO está en `SHIFTS`**)
+— aparece solo en horarios que tienen categorías con presencia parcial
+(`dias_presencia`, ver [§1.8](#18-patrón-de-días-libres-semanales-2-consecutivos)) y marca
+los días en que esa persona no está contratada. No computa en nada: ni cobertura, ni
+equidad, ni libres, ni festivos trabajados.
+
 ---
 
 ## 1. Restricciones DURAS
@@ -28,7 +34,10 @@ se puede satisfacer, el modelo devuelve INFEASIBLE y la generación falla con
 ### 1.1 Un turno por persona y día
 **Regla:** cada persona tiene exactamente un estado cada día, incluido `Libre`.
 **Código:** `_construir_modelo` → `model.AddExactlyOne(x[name, d, s] for s in SHIFTS)`.
-**Parámetros:** ninguno. **Excepciones:** ninguna.
+**Parámetros:** ninguno.
+**Excepciones:** los días fuera de presencia de una categoría con `dias_presencia`
+(ver [§1.8](#18-patrón-de-días-libres-semanales-2-consecutivos)): ahí no hay variables de
+turno — la única opción es `Fuera`, fijada al construir el modelo.
 
 ### 1.2 Cobertura mínima por turno y día
 **Regla:** cada turno necesita un número mínimo de personas cada día. Es lo que
@@ -105,7 +114,8 @@ Todos parcheados desde `data/roles.json` por `app._get_dept_config`.
 **Código:** `_construir_modelo`, restricción #7 (`motor_cpsat.py` ~línea 852 en adelante).
 **Parámetros:** `DIAS_LIBRES_SEGUIDOS_POR_SEMANA = 2`.
 **Roles excluidos** (ya tienen su propia garantía dura, no se apila otra):
-`role == "night_fixed"`, `cfg.fixed_days_off.get(role)`, `cfg.fixed_roles.get(role)`.
+`role == "night_fixed"`, `cfg.fixed_days_off.get(role)`, `cfg.fixed_roles.get(role)`,
+`role in cfg.presencia_roles` (ver la excepción de presencia parcial más abajo).
 Hoy en Recepción eso es solo `jefe` y `night_fixed`; aplica a `normal`,
 `subjefe` y `adjunto_recepcion`.
 
@@ -128,6 +138,17 @@ Los días de **petición** SÍ consumen el patrón. El código separa ambos con
 `dias_peticion = (forced_libre - dias_vacaciones_idx) - dias_bloqueados_persona`.
 ⚠️ Es la parte del motor donde más fácil es asumir algo falso: que una petición se
 apila aparte de los 2 libres, como sí hacen las vacaciones. No es así.
+
+**Excepción deliberada — presencia parcial (`dias_presencia` → `cfg.presencia_roles`):**
+una categoría con días de presencia (p.ej. refuerzo de finde `[5, 6]`, cobertura de
+3 días sueltos) tiene **trabajo garantizado** en esos días y queda `Fuera` el resto
+de la semana. No recibe el patrón de 2 libres — puede acabar la semana con 0. Es el
+contrato "trabaja siempre" confirmado con el usuario: **solo una vacación/petición
+concedida (`forced_libre`) puede librar un día de presencia**; el solver no puede
+elegir `Libre` ahí (`model.Add(x[name, d, "Libre"] == 0)`). Configuración en
+`data/roles.json` (`herramientas.py`, MÓDULO 6); excluida estructuralmente de la
+equidad de findes y del registro de festivos trabajados. Invariantes cubiertos en
+`tests/test_presencia_cpsat.py`.
 
 ### 1.9 Cobertura nocturna fijada externamente
 **Regla:** quién hace Noche cada día **no lo decide el solver**. Lo decide

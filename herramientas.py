@@ -557,7 +557,9 @@ def registrar_festivos_semana(week_start: date, schedule: dict, staff_list: list
         trabajando = {}
         for person in staff_list:
             turno = schedule.get(person["name"], ["Libre"]*7)[dia_idx]
-            if turno != "Libre":
+            if turno not in ("Libre", "Fuera"):
+                # Quien estaba "Fuera" (presencia parcial) no pisa el hotel
+                # ese día — no se registra como festivo trabajado.
                 trabajando[person["name"]] = turno
 
         # No sobrescribir si ya existe (la primera vez que se genera es canónica)

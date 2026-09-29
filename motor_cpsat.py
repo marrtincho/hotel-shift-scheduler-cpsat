@@ -71,8 +71,8 @@ from datetime import date
 from ortools.sat.python import cp_model
 
 from modelo_base import (
-    DAYS, SHIFTS, NO_MORNING_AFTER, _get_weekend_ratios, _get_shift_counts,
-    get_consecutive_day_pairs,
+    DAYS, SHIFTS, FUERA, NO_MORNING_AFTER, _get_weekend_ratios,
+    _get_shift_counts, get_consecutive_day_pairs,
 )
 
 # Turnos de "día" — los únicos relevantes para continuidad (B) y desequilibrio
@@ -359,6 +359,17 @@ def _inicio_bloque_vacaciones(person: dict):
     return inicio
 
 
+def _v(x: dict, name: str, d: int, s: str):
+    """Valor de la variable x[name, d, s] — o el entero 0 si esa celda no
+    existe en el modelo. Solo faltan celdas para personas con presencia
+    parcial (dias_presencia en su rol): esos días no tienen variables de
+    turno, solo la variable FUERA (ver _construir_modelo). Para plantillas
+    sin presencia_roles, x.get(...) SIEMPRE encuentra la variable y esto
+    devuelve exactamente lo mismo que x[name, d, s] — el modelo construido
+    es idéntico al de antes de este helper (requisito de no-regresión)."""
+    return x.get((name, d, s), 0)
+
+
 def _construir_modelo(staff_list: list, week_start: date, cfg,
                        prev_sunday_shifts: dict = None,
                        nombre_sustituto_cobertura: str = None,
@@ -407,9 +418,22 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     by_name = {p["name"]: p for p in staff_list}
 
     # x[name, day, shift] = 1 si `name` tiene `shift` en el día `day`.
+    #
+    # Presencia parcial (dias_presencia, ver docstring del módulo): una
+    # persona cuyo rol tiene presencia NO tiene variables de turno en sus
+    # días fuera — su único valor posible ese día es FUERA, fijado a 1.
+    # Los días de presencia (y todas las personas sin presencia, el caso de
+    # siempre) se construyen EXACTAMENTE como antes: ninguna celda extra,
+    # ninguna variable extra — modelo idéntico al anterior a este cambio
+    # para cualquier plantilla sin presencia.
     x = {}
     for name in names:
+        dias_presencia = cfg.presencia_roles.get(by_name[name].get("role"))
         for d in range(7):
+            if dias_presencia is not None and d not in dias_presencia:
+                x[name, d, FUERA] = model.NewBoolVar(f"x_{name}_{d}_{FUERA}")
+                model.Add(x[name, d, FUERA] == 1)
+                continue
             for s in SHIFTS:
                 x[name, d, s] = model.NewBoolVar(f"x_{name}_{d}_{s}")
 
@@ -419,9 +443,12 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     # restricción para el porqué.
     objetivo_terms = []
 
-    # 1. Un turno por persona/día.
+    # 1. Un turno por persona/día (los días fuera de presencia quedan ya
+    # fijados a FUERA arriba — no hay elección que restringir ahí).
     for name in names:
         for d in range(7):
+            if (name, d, FUERA) in x:
+                continue
             model.AddExactlyOne(x[name, d, s] for s in SHIFTS)
 
     # 2. Cobertura mínima (DURA, sin cambios) / máxima (BLANDA SOLO en
@@ -463,7 +490,7 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         mn = cfg.min_coverage.get(s, 0)
         mx = cfg.max_coverage.get(s, len(names))
         for d in range(7):
-            total = sum(x[name, d, s] for name in names)
+            total = sum(_v(x, name, d, s) for name in names)
             total_por[s, d] = total
             model.Add(total >= mn)
             if s in TURNOS_MAX_COBERTURA_BLANDA:
@@ -531,7 +558,7 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         role = by_name[name].get("role")
         if role in cfg.no_night_roles:
             for d in range(7):
-                model.Add(x[name, d, "Noche"] == 0)
+                model.Add(_v(x, name, d, "Noche") == 0)
 
     # 3. No-Mañana-tras-Tarde/Noche, MÁS (regla de
     # rotación de cobertura nocturna) tras Noche solo puede seguir Noche o
@@ -545,16 +572,17 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
             if d == 0:
                 prev_shift = prev_sunday_shifts.get(name)
                 if prev_shift in NO_MORNING_AFTER:
-                    model.Add(x[name, 0, "Mañana"] == 0)
+                    model.Add(_v(x, name, 0, "Mañana") == 0)
                 if prev_shift == "Noche":
-                    model.Add(x[name, 0, "Tarde"] == 0)
-                    model.Add(x[name, 0, "Partido"] == 0)
+                    model.Add(_v(x, name, 0, "Tarde") == 0)
+                    model.Add(_v(x, name, 0, "Partido") == 0)
             else:
                 model.Add(
-                    x[name, d, "Mañana"] + x[name, d - 1, "Tarde"] + x[name, d - 1, "Noche"] <= 1
+                    _v(x, name, d, "Mañana") + _v(x, name, d - 1, "Tarde")
+                    + _v(x, name, d - 1, "Noche") <= 1
                 )
-                model.Add(x[name, d, "Tarde"] + x[name, d - 1, "Noche"] <= 1)
-                model.Add(x[name, d, "Partido"] + x[name, d - 1, "Noche"] <= 1)
+                model.Add(_v(x, name, d, "Tarde") + _v(x, name, d - 1, "Noche") <= 1)
+                model.Add(_v(x, name, d, "Partido") + _v(x, name, d - 1, "Noche") <= 1)
 
     # 6. Vacaciones / peticiones concedidas → Libre forzado.
     forced_libre = {name: set() for name in names}
@@ -580,7 +608,24 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
 
     for name in names:
         for d in forced_libre[name]:
+            if (name, d, "Libre") not in x:
+                continue  # vacación sobre un día ya fuera de presencia: no-op
             model.Add(x[name, d, "Libre"] == 1)
+
+    # 6b. Presencia parcial: en un día de presencia que no está forzado
+    # Libre por vacación/petición (forced_libre, arriba), el solver NO
+    # puede elegir Libre — contrato "trabaja siempre" (ver docstring del
+    # módulo). Combinado con #1 (un turno por día sobre SHIFTS, donde
+    # Libre es uno más) esto deja a la persona con un turno de trabajo ese
+    # día, obligatoriamente.
+    for name in names:
+        dias_presencia = cfg.presencia_roles.get(by_name[name].get("role"))
+        if dias_presencia is None:
+            continue
+        for d in dias_presencia:
+            if d in forced_libre[name]:
+                continue
+            model.Add(x[name, d, "Libre"] == 0)
 
     # 4. Roles con turno fijo: ese turno todos los días que trabajan (los
     # días forzados a Libre por #5/#6 ya quedaron fijados arriba y no se
@@ -593,6 +638,8 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         for d in range(7):
             if d in forced_libre[name]:
                 continue
+            if (name, d, turno_fijo) not in x:
+                continue  # día fuera de presencia: no hay variables de turno
             model.Add(x[name, d, turno_fijo] == 1)
 
     # night_fixed: mismo patrón que #4, turno fijo "Noche" (los días de
@@ -634,7 +681,13 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     # quedan.
     for name in names:
         role = by_name[name].get("role")
-        if role == "night_fixed" or cfg.fixed_days_off.get(role) or cfg.fixed_roles.get(role):
+        if (role == "night_fixed" or cfg.fixed_days_off.get(role)
+                or cfg.fixed_roles.get(role) or role in cfg.presencia_roles):
+            # Presencia parcial: la excepción deliberada a esta restricción
+            # (ver docstring del módulo) — el patrón de 2 libres no aplica a
+            # quien no está contratado toda la semana; sus días fuera ya
+            # quedan fijados a FUERA arriba y los de presencia no pueden
+            # ser Libre (bloque 6b).
             continue
 
         dias_bloqueados_persona = dias_bloqueados_externos.get(name, set())
@@ -779,9 +832,9 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     weekend_libre = {}
     for name in names:
         v = model.NewBoolVar(f"weekend_libre_{name}")
-        model.Add(v <= x[name, 5, "Libre"])
-        model.Add(v <= x[name, 6, "Libre"])
-        model.Add(v >= x[name, 5, "Libre"] + x[name, 6, "Libre"] - 1)
+        model.Add(v <= _v(x, name, 5, "Libre"))
+        model.Add(v <= _v(x, name, 6, "Libre"))
+        model.Add(v >= _v(x, name, 5, "Libre") + _v(x, name, 6, "Libre") - 1)
         weekend_libre[name] = v
 
     # A. Equidad de findes — solo personas cuyo rol NO está en
@@ -800,6 +853,12 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     # el mecanismo de equidad relativa que este término pretende ser.
     def _entra_en_equidad(nombre: str) -> bool:
         rol = by_name[nombre].get("role")
+        if rol in cfg.presencia_roles:
+            # Presencia parcial: exclusión ESTRUCTURAL, además del flag
+            # excluir_de_equidad forzado a True en herramientas.py — el
+            # ratio de findes de quien no trabaja toda la semana no mide
+            # equidad (sus días fuera ni siquiera son "Libre").
+            return False
         if rol in cfg.roles_excluidos_equidad:
             return False
         # Finde libre garantizado por restricción dura: su ratio no mide
@@ -848,7 +907,7 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     for name in names:
         for d in range(7):
             wv = model.NewBoolVar(f"work_{name}_{d}")
-            model.Add(wv == sum(x[name, d, s] for s in DAY_SHIFTS))
+            model.Add(wv == sum(_v(x, name, d, s) for s in DAY_SHIFTS))
             work_var[name, d] = wv
 
     for name in names:
@@ -861,9 +920,9 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
             keep_terms = []
             for s in DAY_SHIFTS:
                 keep = model.NewBoolVar(f"keep_{name}_{d}_{s}")
-                model.Add(keep <= x[name, d - 1, s])
-                model.Add(keep <= x[name, d, s])
-                model.Add(keep >= x[name, d - 1, s] + x[name, d, s] - 1)
+                model.Add(keep <= _v(x, name, d - 1, s))
+                model.Add(keep <= _v(x, name, d, s))
+                model.Add(keep >= _v(x, name, d - 1, s) + _v(x, name, d, s) - 1)
                 keep_terms.append(keep)
 
             break_var = model.NewBoolVar(f"break_{name}_{d}")
@@ -895,7 +954,7 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         if prev_shift not in DAY_SHIFTS:
             continue
         break_cruce = model.NewBoolVar(f"break_cruce_semana_{name}")
-        model.Add(break_cruce == work_var[name, 0] - x[name, 0, prev_shift])
+        model.Add(break_cruce == work_var[name, 0] - _v(x, name, 0, prev_shift))
         objetivo_terms.append(PESO_ROTURAS_CONTINUIDAD * break_cruce)
 
     # M. Días trabajados seguidos cruzando semanas (NUEVO —
@@ -936,11 +995,11 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
             c = counts.get(s, 0)
             if c:
                 for d in range(7):
-                    objetivo_terms.append(PESO_DESEQUILIBRIO_HISTORICO * c * x[name, d, s])
+                    objetivo_terms.append(PESO_DESEQUILIBRIO_HISTORICO * c * _v(x, name, d, s))
 
     # D. Uso de "Partido".
     objetivo_terms.append(
-        PESO_USO_PARTIDO * sum(x[name, d, "Partido"] for name in names for d in range(7))
+        PESO_USO_PARTIDO * sum(_v(x, name, d, "Partido") for name in names for d in range(7))
     )
 
     # F. Preferencia de Domingo suelto para el sustituto de cobertura
@@ -954,7 +1013,12 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     # puede competir con B (continuidad) ni con nada, gane o pierda, porque
     # sencillamente no está en la suma.
     if cfg.prefer_next_week_for_cover and nombre_sustituto_cobertura in names:
-        if not _tiene_par_consecutivo_disponible(cfg, forced_libre[nombre_sustituto_cobertura]):
+        # Presencia parcial: si el Domingo de esa persona cae fuera de
+        # presencia no existe su variable Libre — el término ni se añade
+        # (no hay preferencia que expresar sobre un día que ya no trabaja).
+        if ((nombre_sustituto_cobertura, 6, "Libre") in x
+                and not _tiene_par_consecutivo_disponible(
+                    cfg, forced_libre[nombre_sustituto_cobertura])):
             objetivo_terms.append(
                 PESO_DOMINGO_SUSTITUTO * (1 - x[nombre_sustituto_cobertura, 6, "Libre"])
             )
@@ -982,16 +1046,16 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
 
         for name in cubridores:
             for d in dias_ausencia:
-                objetivo_terms.append(PESO_COBERTURA_AUSENCIA * (1 - x[name, d, turno_cobertura]))
+                objetivo_terms.append(PESO_COBERTURA_AUSENCIA * (1 - _v(x, name, d, turno_cobertura)))
             # Días libres FIJOS del cubierto: mismo mecanismo, peso menor
             # (ver _dias_cobertura_ausencia y la constante).
             for d in dias_libres_fijos:
                 objetivo_terms.append(
-                    PESO_COBERTURA_DIAS_LIBRES_FIJOS * (1 - x[name, d, turno_cobertura])
+                    PESO_COBERTURA_DIAS_LIBRES_FIJOS * (1 - _v(x, name, d, turno_cobertura))
                 )
             if cobertura_total_semana:
                 for d in (5, 6):
-                    objetivo_terms.append(PESO_COBERTURA_AUSENCIA * x[name, d, "Libre"])
+                    objetivo_terms.append(PESO_COBERTURA_AUSENCIA * _v(x, name, d, "Libre"))
 
     # H. Turno complementario jefe/subjefe: en los días que ambos trabajan,
     # penaliza (blando) que coincidan en el mismo turno no-Libre. Solo se
@@ -1007,9 +1071,9 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
                 if s == "Libre":
                     continue
                 both_s = model.NewBoolVar(f"complementario_{s}_{d}")
-                model.Add(both_s <= x[jefe_name, d, s])
-                model.Add(both_s <= x[subjefe_name, d, s])
-                model.Add(both_s >= x[jefe_name, d, s] + x[subjefe_name, d, s] - 1)
+                model.Add(both_s <= _v(x, jefe_name, d, s))
+                model.Add(both_s <= _v(x, subjefe_name, d, s))
+                model.Add(both_s >= _v(x, jefe_name, d, s) + _v(x, subjefe_name, d, s) - 1)
                 coincidencias.append(both_s)
             objetivo_terms.append(PESO_COMPLEMENTARIO_JEFATURA * sum(coincidencias))
 
@@ -1028,7 +1092,7 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
     for turno in TURNOS_DIURNOS_SIN_PARTIDO:
         min_turno = cfg.min_coverage.get(turno, 0)
         for d in range(7):
-            cobertura_real = sum(x[name, d, turno] for name in names)
+            cobertura_real = sum(_v(x, name, d, turno) for name in names)
             objetivo_terms.append(PESO_SOBRECOBERTURA_DIURNA * (cobertura_real - min_turno))
 
     # J. Libre(s) debido(s) antes de que empiecen las vacaciones (NUEVO,
@@ -1046,7 +1110,7 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         # modelo, no un dato precalculado: depende de qué resuelva el
         # solver para esos días (Libre o no).
         dias_previos = list(range(inicio))
-        cuenta_trabajados = len(dias_previos) - sum(x[name, d, "Libre"] for d in dias_previos)
+        cuenta_trabajados = len(dias_previos) - sum(_v(x, name, d, "Libre") for d in dias_previos)
 
         # step1 <-> cuenta>=2 (activa el 1er libre debido).
         # step2 <-> cuenta>=5 (activa el 2º libre debido, ADEMÁS del 1º).
@@ -1071,16 +1135,16 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
         pos1 = inicio - 1
         falta1 = model.NewBoolVar(f"vac_falta1_{name}")
         model.Add(falta1 <= step1)
-        model.Add(falta1 <= 1 - x[name, pos1, "Libre"])
-        model.Add(falta1 >= step1 + (1 - x[name, pos1, "Libre"]) - 1)
+        model.Add(falta1 <= 1 - _v(x, name, pos1, "Libre"))
+        model.Add(falta1 >= step1 + (1 - _v(x, name, pos1, "Libre")) - 1)
         objetivo_terms.append(PESO_LIBRE_DEBIDO_VACACIONES * falta1)
 
         if inicio >= 2:
             pos2 = inicio - 2
             falta2 = model.NewBoolVar(f"vac_falta2_{name}")
             model.Add(falta2 <= step2)
-            model.Add(falta2 <= 1 - x[name, pos2, "Libre"])
-            model.Add(falta2 >= step2 + (1 - x[name, pos2, "Libre"]) - 1)
+            model.Add(falta2 <= 1 - _v(x, name, pos2, "Libre"))
+            model.Add(falta2 >= step2 + (1 - _v(x, name, pos2, "Libre")) - 1)
             objetivo_terms.append(PESO_LIBRE_DEBIDO_VACACIONES * falta2)
 
     model.Minimize(sum(objetivo_terms))
@@ -1153,11 +1217,18 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
 
     x = {}
     for name in names:
+        dias_presencia = cfg.presencia_roles.get(by_name[name].get("role"))
         for d in range(7):
+            if dias_presencia is not None and d not in dias_presencia:
+                x[name, d, FUERA] = model.NewBoolVar(f"dx_{name}_{d}_{FUERA}")
+                model.Add(x[name, d, FUERA] == 1)
+                continue
             for s in SHIFTS:
                 x[name, d, s] = model.NewBoolVar(f"dx_{name}_{d}_{s}")
     for name in names:
         for d in range(7):
+            if (name, d, FUERA) in x:
+                continue
             model.AddExactlyOne(x[name, d, s] for s in SHIFTS)
 
     asunciones = {}
@@ -1180,7 +1251,7 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
         mn = cfg.min_coverage.get(s, 0)
         mx = cfg.max_coverage.get(s, len(names))
         for d in range(7):
-            total = sum(x[name, d, s] for name in names)
+            total = sum(_v(x, name, d, s) for name in names)
             if s not in TURNOS_MAX_COBERTURA_BLANDA:
                 model.Add(total <= mx)
             if mn > 0:
@@ -1194,7 +1265,7 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
         role = by_name[name].get("role")
         if role in cfg.no_night_roles:
             for d in range(7):
-                model.Add(x[name, d, "Noche"] == 0)
+                model.Add(_v(x, name, d, "Noche") == 0)
 
     # No-Mañana-tras-Tarde/Noche, MÁS tras Noche solo Noche o Libre (NUEVO,
     # — ver la restricción #3 de _construir_modelo): siempre
@@ -1204,10 +1275,11 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
     for name in names:
         for d in range(1, 7):
             model.Add(
-                x[name, d, "Mañana"] + x[name, d - 1, "Tarde"] + x[name, d - 1, "Noche"] <= 1
+                _v(x, name, d, "Mañana") + _v(x, name, d - 1, "Tarde")
+                + _v(x, name, d - 1, "Noche") <= 1
             )
-            model.Add(x[name, d, "Tarde"] + x[name, d - 1, "Noche"] <= 1)
-            model.Add(x[name, d, "Partido"] + x[name, d - 1, "Noche"] <= 1)
+            model.Add(_v(x, name, d, "Tarde") + _v(x, name, d - 1, "Noche") <= 1)
+            model.Add(_v(x, name, d, "Partido") + _v(x, name, d - 1, "Noche") <= 1)
 
     # Vacaciones/peticiones — agrupadas por persona en tramos contiguos,
     # gateadas por asunción (un bloque multi-día = un solo motivo).
@@ -1229,10 +1301,29 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
 
     for name in names:
         for bloque in _agrupar_en_tramos(sorted(forced_libre[name])):
+            dias_con_libre = [d for d in bloque if (name, d, "Libre") in x]
+            if not dias_con_libre:
+                # Bloque entero sobre días fuera de presencia: no hay nada
+                # que gatear — no se crea la asunción (crearla sin
+                # restricciones daría un falso positivo en el núcleo).
+                continue
             a = model.NewBoolVar(f"asum_libre_{name}_{bloque[0]}_{bloque[-1]}")
-            for d in bloque:
+            for d in dias_con_libre:
                 model.Add(x[name, d, "Libre"] == 1).OnlyEnforceIf(a)
             asunciones[a] = _describir_bloque_libre(name, bloque)
+
+    # Presencia parcial (6b de _construir_modelo): Libre imposible en los
+    # días de presencia no forzados — el diagnóstico reproduce el mismo
+    # cierre estructural para no señalar como cedible algo que el contrato
+    # "trabaja siempre" no permite.
+    for name in names:
+        dias_presencia = cfg.presencia_roles.get(by_name[name].get("role"))
+        if dias_presencia is None:
+            continue
+        for d in dias_presencia:
+            if d in forced_libre[name]:
+                continue
+            model.Add(x[name, d, "Libre"] == 0)
 
     # Turno fijo de rol (incluye night_fixed): política estructural, se
     # aplica siempre en los días que no forman parte de ningún bloque
@@ -1248,6 +1339,8 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
         for d in range(7):
             if d in forced_libre[name]:
                 continue
+            if (name, d, turno_fijo) not in x:
+                continue  # día fuera de presencia: no hay variables de turno
             model.Add(x[name, d, turno_fijo] == 1)
 
     for name in names:
@@ -1270,7 +1363,8 @@ def _construir_modelo_diagnostico(staff_list: list, cfg) -> tuple:
     # conteo" vs "la consecutividad".
     for name in names:
         role = by_name[name].get("role")
-        if role == "night_fixed" or cfg.fixed_days_off.get(role) or cfg.fixed_roles.get(role):
+        if (role == "night_fixed" or cfg.fixed_days_off.get(role)
+                or cfg.fixed_roles.get(role) or role in cfg.presencia_roles):
             continue
 
         dias_no_forzados = [d for d in range(7) if d not in forced_libre[name]]
@@ -1615,8 +1709,8 @@ def _resolver_y_extraer(model: cp_model.CpModel, x: dict, names: list,
     schedule = {name: ["" for _ in range(7)] for name in names}
     for name in names:
         for d in range(7):
-            for s in SHIFTS:
-                if solver.Value(x[name, d, s]) == 1:
+            for s in SHIFTS + [FUERA]:
+                if (name, d, s) in x and solver.Value(x[name, d, s]) == 1:
                     schedule[name][d] = s
                     break
 
@@ -1805,8 +1899,8 @@ def _resolver_y_extraer_con_extra(model: cp_model.CpModel, x: dict, names: list,
     schedule = {name: ["" for _ in range(7)] for name in names}
     for name in names:
         for d in range(7):
-            for s in SHIFTS:
-                if solver.Value(x[name, d, s]) == 1:
+            for s in SHIFTS + [FUERA]:
+                if (name, d, s) in x and solver.Value(x[name, d, s]) == 1:
                     schedule[name][d] = s
                     break
 
@@ -1892,7 +1986,7 @@ def agregar_restriccion_racha_noches(model: cp_model.CpModel, x: dict, names: li
         postweek_vars[name] = (post1, post2)
 
         secuencia = [int(bool(v)) for v in empalme]        # índices 0..4
-        secuencia += [x[name, d, "Noche"] for d in range(7)]  # índices 5..11
+        secuencia += [_v(x, name, d, "Noche") for d in range(7)]  # índices 5..11
         secuencia += [post1, post2]                          # índices 12,13
 
         # 1. Ventana deslizante: máximo 5 en cualquier tramo de 6 consecutivos
@@ -1930,7 +2024,9 @@ def agregar_restriccion_racha_noches(model: cp_model.CpModel, x: dict, names: li
                     # son variables puramente informativas sin ninguna otra
                     # restricción que las ate, y necesitan la igualdad
                     # exacta para no quedar en 1 sin motivo real).
-                    model.Add(x[name, d, "Libre"] == 1).OnlyEnforceIf(racha5)
+                    model.Add(
+                        _v(x, name, d, "Libre") + _v(x, name, d, FUERA) == 1
+                    ).OnlyEnforceIf(racha5)
                 elif idx_descanso == 12:
                     activadores_post1.append(racha5)
                 elif idx_descanso == 13:
@@ -1957,13 +2053,15 @@ def agregar_restriccion_racha_noches(model: cp_model.CpModel, x: dict, names: li
         # especial.
         for d in range(0, 6):
             idx = d + 5
+            if (name, d, "Noche") not in x:
+                continue  # día fuera de presencia: nada que encadenar
             model.Add(secuencia[idx - 1] + secuencia[idx + 1] >= 1).OnlyEnforceIf(x[name, d, "Noche"])
 
         # Día 6 (Domingo, índice 11): regla conservadora — no arrancar un
         # bloque nuevo aislado ese día, salvo continuidad ya garantizada
         # externamente.
         if name not in personas_bloque_continua:
-            model.Add(x[name, 6, "Noche"] <= x[name, 5, "Noche"])
+            model.Add(_v(x, name, 6, "Noche") <= _v(x, name, 5, "Noche"))
 
     return postweek_vars
 
@@ -2200,6 +2298,12 @@ def generar_semana_cpsat_con_cobertura_nocturna(
     )
 
     for d, nombre in cobertura_externa.items():
+        if (nombre, d, "Noche") not in x:
+            # Presencia parcial: no existe la variable Noche en un día
+            # fuera — la elegibilidad fina por presencia llega en el paso 4;
+            # aquí se evita fijar una celda inexistente y la celda queda
+            # como FUERA (fijada al construir el modelo).
+            continue
         model.Add(x[nombre, d, "Noche"] == 1)
 
     # night_fixed queda siempre exento de la regla conservadora de Domingo
