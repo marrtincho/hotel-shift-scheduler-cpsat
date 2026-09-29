@@ -45,6 +45,7 @@
   --partido:#FFD9A0;--partido-t:#7A4800;
   --libre:#F5C6C6;--libre-t:#8B1A1A;
   --vacaciones:#C7D2FE;--vacaciones-t:#3730A3;
+  --fuera:#ECEAE4;--fuera-t:#5F5C55;
   --festivo:#E8D5F8;--festivo-t:#5A1A8A;
   --conflicto:#F97316;
 
@@ -394,6 +395,7 @@ nav{padding:10px 0;flex:1}
 .sc.Partido{background:var(--partido);color:var(--partido-t)}
 .sc.Libre{background:var(--libre);color:var(--libre-t)}
 .sc.Vacaciones{background:var(--vacaciones);color:var(--vacaciones-t)}
+.sc.Fuera{background:var(--fuera);color:var(--fuera-t)}
 .sc.SIN_ASIGNAR{background:transparent;color:var(--text-3);border:1px dashed var(--border-strong)}
 .sc.fest{box-shadow:0 0 0 2px var(--festivo-t)}
 .sc.celda-conflicto{outline:2.5px solid var(--conflicto);outline-offset:1px}
@@ -410,6 +412,7 @@ nav{padding:10px 0;flex:1}
 .badge.Partido,.badge.partido{background:var(--partido);color:var(--partido-t)}
 .badge.libre{background:var(--libre);color:var(--libre-t)}
 .badge.vacaciones{background:var(--vacaciones);color:var(--vacaciones-t)}
+.badge.fuera{background:var(--fuera);color:var(--fuera-t)}
 .badge.info{background:#EEF2FF;color:#3730A3}
 .badge.ok{background:#F0FDF4;color:#166534}
 .badge.neutro{background:var(--bg);color:var(--text-2)}

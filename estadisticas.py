@@ -142,7 +142,12 @@ def _calcular_equidad(dept_id: str, resultado: dict) -> dict:
     """
     staff     = cargar_plantilla(dept_id)
     roles_cfg = cargar_roles(dept_id)
-    excluidos = {rid for rid, r in roles_cfg.items() if r.get("excluir_de_equidad")}
+    # Excluidos del balanceo: por flag (roles que no juegan la equidad) y
+    # estructuralmente por presencia parcial (§1.8 de REGLAS.md): un contrato
+    # de presencia no participa del reparto de findes aunque el flag llegue
+    # sin marcar (roles.json editado a mano o anterior a esta regla).
+    excluidos = {rid for rid, r in roles_cfg.items()
+                 if r.get("excluir_de_equidad") or r.get("dias_presencia")}
 
     staff_forzado = [{**p, "role": "normal"} for p in staff]
     ratios_todos  = _get_weekend_ratios(dept_id, staff_forzado)

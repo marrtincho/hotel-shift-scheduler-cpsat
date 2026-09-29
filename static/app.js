@@ -238,7 +238,9 @@ const DASH_TEXT  = {Mañana:'var(--mañana-t)',Tarde:'var(--tarde-t)',Noche:'var
 const DASH_DIA_CORTO = {Lunes:'L',Martes:'M',Miércoles:'X',Jueves:'J',Viernes:'V',Sábado:'S',Domingo:'D'};
 // "Libre" y "Vacaciones" son ambos días sin trabajar de cara al dashboard;
 // "Vacaciones" es solo la etiqueta de presentación para un "Libre" por vacaciones.
-const DASH_LIBRE_LIKE = new Set(['Libre','Vacaciones']);
+// "Fuera" (contrato de presencia parcial, REGLAS.md §1.8) también: es un día
+// fuera del hotel, sin turno ni horario que mostrar.
+const DASH_LIBRE_LIKE = new Set(['Libre','Vacaciones','Fuera']);
 
 function dashHorarioTxt(tramos){
   if(!tramos || !tramos.length) return '';
@@ -323,7 +325,10 @@ function renderDashSemana(){
     const sinTurno = !dia.turno;
     const horarioLine = (!sinTurno && !DASH_LIBRE_LIKE.has(dia.turno))
       ? `<div class="dash-day-horario">${dashHorarioTxt(dia.horario)}</div>` : '';
-    const cortoTurno = dia.turno==='Libre' ? 'Lib' : (dia.turno==='Vacaciones' ? 'Vac' : dia.turno.substring(0,3));
+    const cortoTurno = dia.turno==='Libre' ? 'Lib'
+      : dia.turno==='Vacaciones' ? 'Vac'
+      : dia.turno==='Fuera' ? 'Fuera'
+      : dia.turno.substring(0,3);
     return `<div class="dash-day${dia.hoy?' hoy':''}" data-idx="${i}">
       <div class="dash-day-lbl">${corto}${dia.es_regreso?' ↩':''}</div>
       <span class="sc ${sinTurno?'SIN_ASIGNAR':dia.turno} dash-day-sc">${sinTurno?'?':cortoTurno}</span>
@@ -764,14 +769,23 @@ function renderSchedule(data){
       const iso = isoDate(dates[i]);
       const fest = festDates.has(iso) && s!=='Libre' && s!=='Vacaciones';
       const conflicto = celdasConflicto.has(`${p.name}|${i}`);
-      const cls = `sc ${s}${fest?' fest':''}${conflicto?' celda-conflicto':''}${editable?' editable':''}`;
-      html += editable
+      // "Fuera" no se edita a mano: es el estado de un día fuera del contrato
+      // de presencia parcial (lo decide el rol, REGLAS.md §1.8), el editor no
+      // lo ofrece como turno y el backend lo rechazaría igualmente.
+      const editableCelda = editable && s !== 'Fuera';
+      const cls = `sc ${s}${fest?' fest':''}${conflicto?' celda-conflicto':''}${editableCelda?' editable':''}`;
+      html += editableCelda
         ? `<td><span class="${cls}" data-name="${p.name}" data-day="${i}" data-value="${s}" onclick="abrirEditorTurno(this)">${s}</span></td>`
         : `<td><span class="${cls}">${s}</span></td>`;
     });
     tr.innerHTML = html;
     tbody.appendChild(tr);
   });
+
+  // La etiqueta "Fuera" de la leyenda solo tiene sentido cuando hay algún
+  // contrato de presencia parcial en la semana: sin él, no se muestra.
+  document.getElementById('leyenda-fuera').classList.toggle('hidden',
+    !(data.staff||[]).some(p => (data.schedule[p.name]||[]).includes('Fuera')));
 
   const stats = document.getElementById('horario-stats');
   const total = (data.staff||[]).length;

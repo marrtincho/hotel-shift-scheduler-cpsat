@@ -62,6 +62,28 @@ equipo perdía la confianza en la herramienta.
 
 ---
 
+## Presencia parcial («Fuera»)
+
+Una categoría de empleado puede declarar **días de presencia** (1–6 días por
+semana) para modelar contratos que no encajan en la semana completa. El caso
+típico es un **refuerzo de fin de semana** —alguien que solo trabaja Sábado y
+Domingo— o la cobertura de unos días sueltos de mucha carga:
+
+- En sus días de presencia trabaja **siempre**, con las reglas normales de
+turnos, cobertura y descanso (solo una vacación o petición concedida puede
+librarlos).
+- Los demás días queda en el estado **«Fuera»**: no está físicamente en el
+hotel y no computa en nada — ni el mínimo de 2 libres semanales, ni equidad,
+ni cobertura, ni festivos trabajados. Es la excepción deliberada al cálculo
+semanal: solo se contabilizan los días presentes.
+
+El reparto de findes y la rotación nocturna lo excluyen por defecto (las
+noches son desmarcables si el contrato concreto las requiere), y en la
+parrilla los días fuera se muestran en gris sin edición manual: los decide
+el contrato, no el encargado. Reglas completas en `REGLAS.md` §1.8.
+
+---
+
 ## Interfaz
 
 Además del horario semanal, la app incluye estadísticas de reparto a largo
@@ -100,7 +122,7 @@ app.py                   Servidor Flask, API REST (~58 endpoints)
 REGLAS.md                Reglas de negocio del motor — fuente única de verdad
 docs/                    Informe histórico de validación del motor
 deploy/                  Podman Quadlet + Cloudflare Tunnel + backups
-tests/                   303 tests (pytest)
+tests/                   349 tests (pytest)
 ```
 
 Quién cubre cada noche **no lo decide el solver**: lo resuelve `cobertura_nocturna.py`

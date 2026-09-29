@@ -1765,8 +1765,11 @@ def api_dashboard():
 
     # "Libre" y "Vacaciones" son ambos, de cara al dashboard, días sin
     # trabajar: "Vacaciones" es solo una etiqueta de presentación sobre el
-    # mismo "Libre" interno (ver etiquetar_celda).
-    LIBRE_LIKE = {"Libre", "Vacaciones"}
+    # mismo "Libre" interno (ver etiquetar_celda). "Fuera" (presencia
+    # parcial, §1.8 de REGLAS.md) es un día fuera del contrato —sin turno ni
+    # horario—, así que el "hoy" del dashboard y el "vuelves el…" lo tratan
+    # igual que un libre.
+    LIBRE_LIKE = {"Libre", "Vacaciones", "Fuera"}
 
     def semana_de(fecha):
         return historial.get(_semana_str(lunes_de(fecha.isoformat())))

@@ -1439,6 +1439,7 @@ SHIFT_COLORS = {
     "Partido":    "FFCC80",
     "Libre":      "EF9A9A",
     "Vacaciones": "CE93D8",
+    "Fuera":      "E0E0E0",
 }
 HEADER_COLOR = "1565C0"
 SUB_HEADER   = "1976D2"
