@@ -605,6 +605,15 @@ def registrar_festivos_semana(week_start: date, schedule: dict, staff_list: list
 #   independiente de cobertura_semana_completa: se pueden combinar.
 # - excluir_de_equidad: si es True, este rol no entra en el balanceo de
 #   fines de semana libres ni en el desempate por histórico de turnos.
+# - dias_presencia: lista de 1-6 índices de día (0-6) o [] (sin presencia
+#   parcial). Contrato especial de presencia parcial (p.ej. refuerzo de fin
+#   de semana [5,6], cobertura de 3 días sueltos): en esos días la persona
+#   trabaja SIEMPRE (solo una vacación/petición concedida puede librarlos) y
+#   el resto de días queda en el estado "Fuera" del horario, que no computa
+#   en nada (ni libres, ni equidad, ni cobertura, ni festivos trabajados).
+#   Con presencia activa: sin_noches por defecto True (desmarcable, solo es
+#   el default de creación) y excluir_de_equidad forzado a True. No se
+#   combina con dias_libres_fijos ni se admite en roles protegidos.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ROLES_DEFAULT = {
@@ -652,6 +661,7 @@ ROLES_DEFAULT = {
 TURNOS_VALIDOS_ROL = {"Mañana", "Tarde", "Noche", "Partido"}
 
 _DEFAULTS_ROL = {
+    "dias_presencia": [],
     "cubre_ausencia_de": None,
     "cobertura_semana_completa": False,
     "cubrir_dias_libres_fijos": False,
@@ -692,6 +702,28 @@ def _validar_dias(valor, campo: str) -> list[str]:
         return [f"{campo} debe contener índices de día 0-6"]
     return []
 
+def _validar_presencia(valor) -> list[str]:
+    """Valida dias_presencia: None/[] (sin presencia parcial) o lista de
+    1-6 índices de día (0-6) sin duplicados."""
+    if valor is None or valor == []:
+        return []
+    if not isinstance(valor, list):
+        return ["Los días de presencia deben ser una lista de días, o vacío"]
+    if not all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6
+               for d in valor):
+        return ["Los días de presencia deben contener índices de día 0-6"]
+    if len(valor) > 6:
+        return ["Los días de presencia admiten como máximo 6 días (nunca los 7)"]
+    if len(set(valor)) != len(valor):
+        return ["Los días de presencia no pueden repetir días"]
+    return []
+
+def _normalizar_presencia(valor) -> list:
+    """Normaliza dias_presencia a lista ordenada de índices (o [])."""
+    if not valor:
+        return []
+    return sorted(set(valor))
+
 def _tiene_ciclo_cobertura(rol_id: str, cubre_id: str, roles_todos: dict) -> bool:
     """True si, siguiendo la cadena cubre_ausencia_de a partir de cubre_id,
     se vuelve a llegar a rol_id (ciclo A cubre B, B cubre A, o cadenas más
@@ -722,6 +754,17 @@ def validar_rol(rol_id: str, datos: dict, dept_id: str = "recepcion",
         errores.append(f"Turno fijo inválido: {turno}")
 
     errores += _validar_dias(datos.get("dias_libres_fijos"), "Los días libres fijos")
+
+    # — Presencia parcial (contrato especial) —
+    errores += _validar_presencia(datos.get("dias_presencia"))
+    if datos.get("dias_presencia"):
+        if datos.get("dias_libres_fijos"):
+            errores.append(
+                "Una categoría con días de presencia no puede tener días libres fijos "
+                "(los días fuera de presencia ya son libres de facto)"
+            )
+        if not es_nuevo and cargar_roles(dept_id).get(rol_id, {}).get("protegido"):
+            errores.append("Los roles protegidos del sistema no admiten días de presencia")
 
     if rol_id == "night_fixed":
         fijos = datos.get("dias_libres_fijos")
@@ -772,20 +815,29 @@ def crear_rol(rol_id: str, datos: dict, dept_id: str = "recepcion") -> tuple[boo
     if not label:
         return False, "El nombre de la categoría es obligatorio"
     roles = cargar_roles(dept_id)
+    dias_presencia = _normalizar_presencia(datos.get("dias_presencia"))
+    # Con presencia parcial, sin_noches solo se PREMARCA por defecto (el admin
+    # puede desmarcarlo si el contrato concreto requiere cubrir noches); si
+    # viene un valor explícito, se respeta. excluir_de_equidad sí queda
+    # forzado: un refuerzo de 2 días no puede entrar en el balanceo de findes.
+    sin_noches = datos.get("sin_noches")
+    if sin_noches is None:
+        sin_noches = bool(dias_presencia)
     roles[rol_id] = {
         "label": label,
         "icon":  (datos.get("icon") or "").strip(),
         "turno_fijo":            datos.get("turno_fijo"),
         "dias_libres_fijos":     datos.get("dias_libres_fijos"),
         "dias_libres_sustituto": datos.get("dias_libres_sustituto"),
-        "sin_noches": bool(datos.get("sin_noches", False)),
+        "dias_presencia":        dias_presencia,
+        "sin_noches": bool(sin_noches),
         "unico":      bool(datos.get("unico", False)),
         "protegido":  False,
         "borrable":   True,
         "cubre_ausencia_de":          datos.get("cubre_ausencia_de"),
         "cobertura_semana_completa":  bool(datos.get("cobertura_semana_completa", False)),
         "cubrir_dias_libres_fijos":   bool(datos.get("cubrir_dias_libres_fijos", False)),
-        "excluir_de_equidad":         bool(datos.get("excluir_de_equidad", False)),
+        "excluir_de_equidad":         True if dias_presencia else bool(datos.get("excluir_de_equidad", False)),
     }
     guardar_roles(roles, dept_id)
     return True, "Categoría creada"
@@ -806,12 +858,17 @@ def editar_rol(rol_id: str, datos: dict, dept_id: str = "recepcion") -> tuple[bo
     # normal: rol genérico por defecto — no tiene sentido fijarle turno/días/unicidad.
     if rol_id == "normal":
         datos = {k: v for k, v in datos.items()
-                 if k not in ("turno_fijo", "dias_libres_fijos", "unico")}
+                 if k not in ("turno_fijo", "dias_libres_fijos", "unico", "dias_presencia")}
 
     candidato = {**actual, **datos}
     errores = validar_rol(rol_id, candidato, dept_id, es_nuevo=False)
     if errores:
         return False, errores[0]
+
+    # Coherencia de presencia parcial (mismo contrato que crear_rol): con
+    # días de presencia, la categoría queda excluida de la equidad.
+    if candidato.get("dias_presencia"):
+        datos["excluir_de_equidad"] = True
 
     for campo in ("label", "icon", "turno_fijo", "dias_libres_fijos",
                   "dias_libres_sustituto", "sin_noches", "unico",
@@ -819,6 +876,8 @@ def editar_rol(rol_id: str, datos: dict, dept_id: str = "recepcion") -> tuple[bo
                   "cubrir_dias_libres_fijos", "excluir_de_equidad"):
         if campo in datos:
             actual[campo] = datos[campo]
+    if "dias_presencia" in datos:
+        actual["dias_presencia"] = _normalizar_presencia(datos["dias_presencia"])
     roles[rol_id] = actual
     guardar_roles(roles, dept_id)
     return True, "Categoría actualizada"

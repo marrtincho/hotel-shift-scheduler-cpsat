@@ -965,6 +965,7 @@ async function loadCategorias(){
         <div class="emp-row-sub">
           ${c.turno_fijo ? 'Turno fijo: '+c.turno_fijo : 'Rota normalmente'}
           ${c.dias_libres_fijos ? ' · Libra: '+c.dias_libres_fijos.map(d=>DAYS[d].substring(0,3)).join('+') : ''}
+          ${(c.dias_presencia&&c.dias_presencia.length) ? ' · Presencia: '+c.dias_presencia.map(d=>DAYS[d].substring(0,3)).join('+') : ''}
           ${c.sin_noches ? ' · Sin noches' : ''}
           ${c.unico ? ' · Única persona' : ''}
           ${c.cubre_ausencia_de ? ' · Cubre a: '+(r.data[c.cubre_ausencia_de]?.label||c.cubre_ausencia_de)+(c.cobertura_semana_completa?' (semana completa)':'') : ''}
@@ -1008,6 +1009,8 @@ function _resetCatModal(){
   const turnoSel = document.getElementById('m-cat-turno');
   turnoSel.value = ''; turnoSel.disabled = false;
   document.querySelectorAll('#m-cat-dias .pill').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('#m-cat-presencia .pill').forEach(p=>p.classList.remove('on'));
+  document.getElementById('m-cat-presencia').classList.remove('disabled');
   document.getElementById('m-cat-sustituto-wrap').classList.add('hidden');
   document.getElementById('m-cat-sin-noches').checked = false;
   document.getElementById('m-cat-unico').checked = false;
@@ -1042,6 +1045,9 @@ function openEditCat(id){
   document.querySelectorAll('#m-cat-dias .pill').forEach(p=>{
     p.classList.toggle('on', (c.dias_libres_fijos||[]).includes(Number(p.dataset.v)));
   });
+  document.querySelectorAll('#m-cat-presencia .pill').forEach(p=>{
+    p.classList.toggle('on', (c.dias_presencia||[]).includes(Number(p.dataset.v)));
+  });
   document.getElementById('m-cat-sin-noches').checked = !!c.sin_noches;
   document.getElementById('m-cat-unico').checked = !!c.unico;
   document.getElementById('m-cat-cubre-rol').value = c.cubre_ausencia_de || '';
@@ -1049,6 +1055,7 @@ function openEditCat(id){
   document.getElementById('m-cat-libres-fijos').checked = !!c.cubrir_dias_libres_fijos;
   document.getElementById('m-cat-excluir-equidad').checked = !!c.excluir_de_equidad;
   _actualizarCoberturaTotalWrap();
+  _actualizarPresenciaUI();
 
   if(id === 'night_fixed'){
     document.getElementById('m-cat-turno').disabled = true;
@@ -1056,6 +1063,8 @@ function openEditCat(id){
     _actualizarSustitutoInfo();
   }
   if(c.protegido){
+    // Los roles protegidos no admiten presencia parcial (ver validar_rol).
+    document.getElementById('m-cat-presencia').classList.add('disabled');
     document.getElementById('m-cat-protegido-alert').classList.remove('hidden');
   }
   if(c.borrable && c.en_uso === 0){
@@ -1099,6 +1108,29 @@ document.querySelectorAll('#m-cat-dias .pill').forEach(p=>{
   };
 });
 
+document.querySelectorAll('#m-cat-presencia .pill').forEach(p=>{
+  p.onclick = ()=>{
+    const antes = !!_diasPills('m-cat-presencia');
+    p.classList.toggle('on');
+    const despues = !!_diasPills('m-cat-presencia');
+    // Al activar presencia por primera vez se premarca "sin noches" — es
+    // solo el default de creación (desmarcable si el contrato requiere
+    // cubrir noches; ver crear_rol en herramientas.py).
+    if(!antes && despues) document.getElementById('m-cat-sin-noches').checked = true;
+    _actualizarPresenciaUI();
+  };
+});
+
+// Con días de presencia la categoría queda EXCLUIDA del balanceo de equidad
+// (herramientas.crear_rol/editar_rol lo fuerzan por backend); sin presencia,
+// el admin vuelve a decidirlo con el checkbox.
+function _actualizarPresenciaUI(){
+  const tiene = !!_diasPills('m-cat-presencia');
+  const chkEq = document.getElementById('m-cat-excluir-equidad');
+  if(tiene){ chkEq.checked = true; chkEq.disabled = true; }
+  else { chkEq.disabled = false; }
+}
+
 function _diasPills(containerId){
   const pills = [...document.querySelectorAll(`#${containerId} .pill.on`)];
   if(pills.length === 0) return null;
@@ -1108,6 +1140,9 @@ function _diasPills(containerId){
 document.getElementById('btn-save-cat').onclick = async ()=>{
   const nDias = document.querySelectorAll('#m-cat-dias .pill.on').length;
   if(nDias !== 0 && nDias !== 2){ toast('Elige 0 o exactamente 2 días libres fijos','err'); return; }
+
+  const diasPresencia = _diasPills('m-cat-presencia');
+  if(diasPresencia && nDias){ toast('Una categoría con días de presencia no puede tener días libres fijos','err'); return; }
 
   const diasFijos = _diasPills('m-cat-dias');
   if(editCatId === 'night_fixed'){
@@ -1126,6 +1161,7 @@ document.getElementById('btn-save-cat').onclick = async ()=>{
     icon: document.getElementById('m-cat-icon').value.trim(),
     turno_fijo: document.getElementById('m-cat-turno').value || null,
     dias_libres_fijos: diasFijos,
+    dias_presencia: diasPresencia || [],
     sin_noches: document.getElementById('m-cat-sin-noches').checked,
     unico: document.getElementById('m-cat-unico').checked,
     cubre_ausencia_de: document.getElementById('m-cat-cubre-rol').value || null,

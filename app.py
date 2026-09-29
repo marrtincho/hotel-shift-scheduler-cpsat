@@ -670,6 +670,15 @@ def _get_dept_config(dept_id: str):
         rid for rid, r in roles.items() if r.get("excluir_de_equidad")
     }
 
+    # — Parche de presencia parcial (contratos especiales) —
+    # Los días de presencia son de trabajo garantizado y el resto queda en el
+    # estado FUERA (ver modelo_base.FUERA y REGLAS.md). Solo se parchean los
+    # roles que la declaran; un roles.json sin el campo no cambia nada.
+    cfg.presencia_roles = {
+        rid: set(r["dias_presencia"]) for rid, r in roles.items()
+        if r.get("dias_presencia")
+    }
+
     # — Parche de cobertura por temporada —
     coverage = cargar_coverage_activa(dept_id)
     cfg.min_coverage = coverage["min_coverage"]

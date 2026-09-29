@@ -19,6 +19,14 @@ DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Doming
 SHIFTS = ["Mañana", "Tarde", "Noche", "Partido", "Libre"]
 NO_MORNING_AFTER = {"Noche", "Tarde"}
 
+# Estado de celda especial de los contratos con presencia parcial (ver
+# REGLAS.md y herramientas.dias_presencia): la persona NO está físicamente en
+# el hotel ese día — no cuenta ni como libre ni como trabajo. Deliberadamente
+# NO se añade a SHIFTS: el código legado de turnos (editores, estadísticas,
+# exportación) no debe tratarlo como un turno más; las partes que deben
+# reconocerlo lo importan por nombre.
+FUERA = "Fuera"
+
 @dataclass
 class DeptConfig:
     """Todas las reglas de un departamento."""
@@ -40,6 +48,11 @@ class DeptConfig:
     cobertura_roles: dict = field(default_factory=dict)
     # roles excluidos del balanceo de equidad (findes libres e histórico de turnos).
     roles_excluidos_equidad: set = field(default_factory=set)
+    # role → set de índices de día (0-6) de presencia parcial, desde
+    # roles.json (herramientas.dias_presencia). Los días de presencia son de
+    # trabajo garantizado; los días fuera quedan en el estado FUERA y no
+    # computan en libres, equidad, cobertura ni estadísticas.
+    presencia_roles: dict = field(default_factory=dict)
 
 
 # ─── UTILIDADES ─────────────────────────────────────────────────────────────
