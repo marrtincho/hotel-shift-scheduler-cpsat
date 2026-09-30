@@ -130,7 +130,7 @@ function toast(msg, type='ok'){
   t.className = `toast ${type}`;
   // El mensaje va por textContent (puede venir del servidor); el icono se
   // añade aparte para no tener que escapar nada.
-  t.innerHTML = ic(type==='ok' ? 'check-simple' : 'x', 'ic-16');
+  t.innerHTML = ic(type==='ok' ? 'check-simple' : (type==='warn' ? 'warn' : 'x'), 'ic-16');
   t.appendChild(document.createTextNode(' ' + msg));
   document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),300)},3000);
@@ -384,14 +384,18 @@ function renderDashPeticiones(){
       texto:'Cuando pidas un día libre aparecerá aquí, con su estado.'});
     return;
   }
-  lista.innerHTML = p.activas.map(a=>`
+  lista.innerHTML = p.activas.map(a=>{
+    const pref = (a.preferencia && a.dias.length===1)
+      ? ` · Par: ${a.preferencia==='antes'?'día anterior':'día siguiente'}` : '';
+    return `
     <div class="row-sep-top row between">
       <div>
         <div class="t-sm w-500">${a.semana} — ${a.dias.join(', ')}</div>
-        <div class="t-xs muted">${a.origen==='empleado'?'Solicitada por ti':'Gestionada por el encargado'}${a.motivo?' · '+escapeHtml(a.motivo):''}</div>
+        <div class="t-xs muted">${a.origen==='empleado'?'Solicitada por ti':'Gestionada por el encargado'}${pref}${a.motivo?' · '+escapeHtml(a.motivo):''}</div>
       </div>
       <button class="btn sm" onclick="cancelarPeticionDash('${a.semana}')">Cancelar</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function cancelarPeticionDash(semana){
@@ -1565,7 +1569,10 @@ function _petItemHtml(nombre, entrada, semana, idx, total, showReorder){
   const la     = Array.isArray(entrada) ? [] : (entrada.la||[]);
   const motivo = Array.isArray(entrada) ? '' : (entrada.motivo||'');
   const origen = Array.isArray(entrada) ? 'jefe' : (entrada.origen||'jefe');
+  const pref   = Array.isArray(entrada) ? null : (entrada.preferencia||null);
   const diasStr   = dias.length ? `Libre: <strong>${dias.join(', ')}</strong>` : '';
+  const prefStr   = (pref && dias.length===1)
+    ? `&nbsp;· Par preferido: <strong>${pref==='antes'?'día anterior':'día siguiente'}</strong>` : '';
   const laStr     = la.length   ? `&nbsp;· LA extra: <strong>${la.join(', ')}</strong>` : '';
   const motivoStr = motivo ? `<div class="pet-motivo">${escapeHtml(motivo)}</div>` : '';
   const origenBadge = origen === 'jefe'
@@ -1584,7 +1591,7 @@ function _petItemHtml(nombre, entrada, semana, idx, total, showReorder){
     <div class="avatar av-30">${initials(nombre)}</div>
     <div class="flex-1">
       <div class="emp-row-name row gap-6">${nombre}${origenBadge}</div>
-      <div class="t-sm muted mt-2">${diasStr}${laStr}</div>
+      <div class="t-sm muted mt-2">${diasStr}${prefStr}${laStr}</div>
       ${motivoStr}
     </div>
     ${reorderHtml}
@@ -1694,27 +1701,113 @@ async function resetPetOrder(){
 }
 
 let petModalReady = false;
+
+// Preferencia del par (día consecutivo): solo tiene sentido con UNA fecha.
+// El anti-carrera evita que una respuesta lenta de la prevalidación pise el
+// resultado de una validación más reciente (el usuario cambió la fecha).
+let _petValidarSeq = 0;
+
+function _petPrefSeleccionada(){
+  const on = document.querySelector('#m-pet-pref .pill.on');
+  return on ? on.dataset.v : 'indiferente';
+}
+
+function _petSetPref(valor){
+  document.querySelectorAll('#m-pet-pref .pill').forEach(p=>{
+    p.classList.toggle('on', p.dataset.v === valor);
+  });
+}
+
+// Con Lunes, "día anterior" cae en la semana anterior; con Domingo, "día
+// siguiente" cae en la siguiente: en esos casos la opción no existe y la
+// pill se deshabilita (si estaba elegida, se vuelve a indiferente).
+function _petActualizarPillsDia(){
+  const fecha = document.getElementById('m-pet-fecha').value;
+  let dow = null;
+  if(fecha){
+    const d = new Date(fecha + 'T00:00:00');
+    if(!isNaN(d.getTime())) dow = d.getDay();   // 0=domingo, 1=lunes
+  }
+  document.querySelectorAll('#m-pet-pref .pill').forEach(p=>{
+    const v = p.dataset.v;
+    const fuera = (dow===1 && v==='antes') || (dow===0 && v==='despues');
+    p.classList.toggle('disabled', fuera);
+    if(fuera && p.classList.contains('on')) _petSetPref('indiferente');
+  });
+}
+
+// Prevalidación en vivo: informa de bloqueos (imposible) y de riesgos
+// (cobertura justa, probable denegación) mientras se rellena el formulario,
+// para poder planear con antelación. No guarda nada.
+async function _petValidarFecha(){
+  const avisoEl = document.getElementById('m-pet-aviso');
+  const btnSave = document.getElementById('btn-save-pet');
+  const nombre  = document.getElementById('m-pet-emp').value;
+  const fecha   = document.getElementById('m-pet-fecha').value;
+  if(!fecha || !nombre){
+    avisoEl.innerHTML = '';
+    avisoEl.classList.add('hidden');
+    btnSave.disabled = false;
+    return;
+  }
+  const seq = ++_petValidarSeq;
+  const r = await api('GET', `/peticiones/prevalidar?nombre=${encodeURIComponent(nombre)}&fecha=${fecha}&dept=${currentDept}`);
+  if(seq !== _petValidarSeq) return;   // llegó tarde: hay una validación más nueva
+  if(!r.ok){
+    avisoEl.innerHTML = `<div class="alert err">${ic('error','ic-16')}<span>${escapeHtml(r.error || 'No se pudo comprobar la petición.')}</span></div>`;
+    avisoEl.classList.remove('hidden');
+    btnSave.disabled = true;
+    return;
+  }
+  const bloqueos = r.data?.bloqueos || [];
+  const avisos   = r.data?.avisos   || [];
+  const partes = [];
+  bloqueos.forEach(b=>partes.push(`<div class="alert err">${ic('error','ic-16')}<span>${escapeHtml(b)}</span></div>`));
+  avisos.forEach(a=>partes.push(`<div class="alert warn">${ic('warn','ic-16')}<span>${escapeHtml(a)}</span></div>`));
+  if(!partes.length) partes.push(`<div class="alert ok">${ic('check','ic-16')}<span>Sin bloqueos: esta fecha no compromete la cobertura del equipo.</span></div>`);
+  avisoEl.innerHTML = partes.join('');
+  avisoEl.classList.remove('hidden');
+  btnSave.disabled = bloqueos.length > 0;
+}
+
 function initPetModal(){
   if(petModalReady) return;
   petModalReady = true;
-  document.querySelectorAll('#m-pet-dias .pill').forEach(p=>p.onclick=()=>p.classList.toggle('on'));
+  document.querySelectorAll('#m-pet-pref .pill').forEach(p=>p.onclick=()=>{
+    if(p.classList.contains('disabled')) return;
+    _petSetPref(p.dataset.v);
+  });
+  document.getElementById('m-pet-fecha').onchange = ()=>{
+    _petActualizarPillsDia();
+    _petValidarFecha();
+  };
+  document.getElementById('m-pet-emp').onchange = _petValidarFecha;
   document.getElementById('btn-save-pet').onclick = async ()=>{
     const nombre = document.getElementById('m-pet-emp').value;
-    const semana = document.getElementById('m-pet-week').value;
-    const dias = [...document.querySelectorAll('#m-pet-dias .pill.on')].map(p=>p.dataset.v);
+    const fecha  = document.getElementById('m-pet-fecha').value;
+    const pref   = _petPrefSeleccionada();
     const motivo = document.getElementById('m-pet-motivo').value.trim();
     const esOrigenJefe = currentUser?.rol !== 'empleado';
     const justificacion = document.getElementById('m-pet-justif').value.trim();
-    if(!semana){ toast('Selecciona una semana','err'); return; }
-    if(!dias.length){ toast('Selecciona al menos un día','err'); return; }
+    if(!fecha){ toast('Selecciona la fecha que quieres pedir','err'); return; }
     if(esOrigenJefe && justificacion.length < 5){
       toast('La justificación es obligatoria (mínimo 5 caracteres) al crear una petición en nombre de otro empleado','err');
       return;
     }
-    const r = await api('POST','/peticiones',{nombre, semana, dias, motivo: motivo||null, justificacion, dept: currentDept});
-    if(!r.ok){ toast(r.error,'err'); return; }
+    const body = {nombre, fecha, motivo: motivo||null, justificacion, dept: currentDept};
+    if(pref === 'antes' || pref === 'despues') body.preferencia = pref;
+    const r = await api('POST','/peticiones',body);
+    if(!r.ok){
+      // Pudo cambiar algo desde la prevalidación: además del error, se
+      // vuelve a comprobar la fecha para reflejar el estado real.
+      toast(r.error,'err');
+      _petValidarFecha();
+      return;
+    }
     closeModal('modal-pet');
-    toast('Petición guardada');
+    const avisos = r.avisos || [];
+    if(avisos.length) toast(`Petición guardada — ${avisos[0]}`, 'warn');
+    else toast('Petición guardada');
     loadPeticiones();
     if(document.getElementById('sec-dashboard').classList.contains('active')) cargarDashboard();
   };
@@ -1739,8 +1832,13 @@ document.getElementById('btn-add-pet').onclick = async ()=>{
   // Justificación obligatoria solo cuando la petición no es propia (origen "jefe").
   document.getElementById('m-pet-justif-row').classList.toggle('hidden', isEmpleado);
   document.getElementById('m-pet-justif').value = '';
-  document.getElementById('m-pet-week').value = isoDate(getMonday(petWeekOffset));
-  document.querySelectorAll('#m-pet-dias .pill').forEach(p=>p.classList.remove('on'));
+  document.getElementById('m-pet-fecha').value = '';
+  _petSetPref('indiferente');
+  _petActualizarPillsDia();
+  const avisoEl = document.getElementById('m-pet-aviso');
+  avisoEl.innerHTML = '';
+  avisoEl.classList.add('hidden');
+  document.getElementById('btn-save-pet').disabled = false;
   document.getElementById('m-pet-motivo').value = '';
   document.getElementById('modal-pet').classList.remove('hidden');
 };

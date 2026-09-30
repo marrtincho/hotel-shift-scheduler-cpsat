@@ -223,6 +223,19 @@ MAX_DIAS_TRABAJADOS_SEGUIDOS = 6  # tope preferido de días trabajados seguidos
 # romper ninguna regla dura. 6 deja margen para que el cruce de semana no
 # obligue a recolocar los libres de todo el mundo, y corta las rachas de 8-10.
 
+PESO_PREFERENCIA_PAR       = 100000  # término N (pedido explícito del usuario):
+# lado preferido del día consecutivo que completa el par de libres cuando la
+# petición es de UN solo día ("antes"/"despues", campo person[
+# "preferencia_par"] puesto por herramientas.aplicar_peticiones_con_prioridad).
+# Penaliza el lado NO pedido SOLO cuando ambos lados están libres-ables, así
+# que nunca convierte una semana en INFEASIBLE: si honrar el lado pedido no
+# tiene solución (cobertura, continuidad, descansos...), el solver cae en el
+# otro lado pagando este peso. 100000 está muy por encima de K(5000)/L(20000)
+# a propósito: los demás pesos regulan preferencias GENERALES del hotel, y
+# este es una petición EXPLÍCITA de una persona que solo debe ceder cuando
+# atenderla exactamente no sea posible. Sin preferencia (None) no se añade
+# ningún término: el modelo queda idéntico al de antes.
+
 DIAS_LIBRES_SEGUIDOS_POR_SEMANA = 2  # restricción DURA (
 # hallazgo de producción, ver docstring del módulo): exactamente este
 # número de días "Libre" por semana — CONSECUTIVOS salvo la excepción de
@@ -788,6 +801,19 @@ def _construir_modelo(staff_list: list, week_start: date, cfg,
                         model.Add(x[name, d, "Libre"] == 1).OnlyEnforceIf(ind)
                         indicadores_par.append(ind)
                     model.AddExactlyOne(indicadores_par)
+                    # Preferencia suave del lado pedido al crear la petición
+                    # por fecha ("antes"/"despues"): con AMBOS lados
+                    # disponibles, penalizar el no pedido hace que el solver
+                    # solo caiga en él si el lado preferido no tiene solución
+                    # — nunca por conveniencia del resto de términos (peso muy
+                    # superior a todos: ver PESO_PREFERENCIA_PAR). Con un solo
+                    # candidato, AddExactlyOne ya lo fuerza y no hay elección.
+                    pref = person.get("preferencia_par")
+                    if pref in ("antes", "despues") and len(candidatos_par) == 2:
+                        no_pref = p + 1 if pref == "antes" else p - 1
+                        for d, ind in zip(candidatos_par, indicadores_par):
+                            if d == no_pref:
+                                objetivo_terms.append(PESO_PREFERENCIA_PAR * ind)
             model.Add(sum(x[name, d, "Libre"] for d in dias_no_forzados) == faltan)
             continue
 

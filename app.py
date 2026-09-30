@@ -56,6 +56,7 @@ from cupos import (
     CUPO_MENSUAL_DEFAULT, cupo_total, cupo_usado, cupo_extra,
     cargar_cupos_extra, guardar_cupos_extra, validar_valor_cupo_extra,
     semana_generada, validar_nueva_peticion, peticiones_activas_de,
+    analizar_peticion, dias_acumulados,
 )
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
@@ -1504,6 +1505,7 @@ def api_get_peticiones():
             "motivo": entrada.get("motivo") or None,
             "origen": entrada.get("origen", "jefe"),
             "creada_en": entrada.get("creada_en"),
+            "preferencia": entrada.get("preferencia"),
         }
     if u and u.get("rol") == "empleado":
         vinculado = u.get("vinculado")
@@ -1520,13 +1522,11 @@ def api_add_peticion():
     if not tiene_permiso("editar_peticiones") and not tiene_permiso("editar_peticiones_propias"):
         return err("Sin permisos", 403)
     body    = request.json or {}
-    fecha   = body.get("semana")
     nombre  = body.get("nombre","").strip()
-    dias    = body.get("dias",[])
     dept_id = body.get("dept","recepcion")
     motivo  = (body.get("motivo") or "").strip() or None
     justificacion = (body.get("justificacion") or "").strip()
-    if not fecha or not nombre or not dias:
+    if not nombre:
         return err("Faltan datos")
     if es_propia:
         vinculado = u.get("vinculado")
@@ -1541,11 +1541,39 @@ def api_add_peticion():
         error_justificacion = _validar_justificacion(justificacion)
         if error_justificacion:
             return err(error_justificacion)
-    semana      = lunes_de(fecha)
+
+    fecha_iso = (body.get("fecha") or "").strip()
+    if fecha_iso:
+        # Formato por FECHA (el que usa el modal): se pide un día concreto y,
+        # opcionalmente, el lado preferido del día consecutivo que forma el par
+        # de libres ("antes"/"despues"; indiferente = sin preferencia).
+        # Repetir una petición sobre la misma semana ACUMULA días en vez de
+        # reemplazar: cada fecha consume cupo (ver cupos.validar_nueva_peticion).
+        try:
+            fecha_d = date.fromisoformat(fecha_iso)
+        except (TypeError, ValueError):
+            return err("Fecha inválida (formato esperado: AAAA-MM-DD)")
+        semana      = lunes_de(fecha_iso)
+        dias        = dias_acumulados(nombre, semana, [DIAS_SEMANA[fecha_d.weekday()]], dept_id)
+        preferencia = body.get("preferencia")
+        if preferencia not in ("antes", "despues"):
+            preferencia = None
+    else:
+        # Formato legacy (semana + lista de días): REEMPLAZA la entrada de esa
+        # semana. Se mantiene por compatibilidad (API pública y tests).
+        fecha_semana = (body.get("semana") or "").strip()
+        dias         = body.get("dias", [])
+        if not fecha_semana or not dias:
+            return err("Faltan datos")
+        semana      = lunes_de(fecha_semana)
+        preferencia = None
+
     rol_usuario = "empleado" if es_propia else u["rol"]
-    ok_cupo, msg_cupo = validar_nueva_peticion(nombre, semana, dias, rol_usuario, dept_id)
-    if not ok_cupo:
-        return err(msg_cupo)
+    cfg      = _get_dept_config(dept_id)
+    analisis = analizar_peticion(nombre, semana, dias, dept_id, cfg, rol_usuario)
+    if analisis["bloqueos"]:
+        return err(" ".join(analisis["bloqueos"]))
+
     pet    = cargar_peticiones(dept_id)
     key    = _semana_str(semana)
     if key not in pet:
@@ -1554,6 +1582,13 @@ def api_add_peticion():
     if isinstance(existing, list):
         existing = {"dias": existing, "la": []}
     existing["dias"] = dias
+    # La preferencia del lado del par solo tiene sentido con UNA única fecha
+    # esa semana: con dos o más el patrón ya queda cubierto por ambas (sin
+    # exigir consecutividad) y el lado elegido no significa nada.
+    if preferencia and len(dias) == 1:
+        existing["preferencia"] = preferencia
+    else:
+        existing.pop("preferencia", None)
     if motivo is not None:
         existing["motivo"] = motivo
     elif "motivo" in existing:
@@ -1571,7 +1606,37 @@ def api_add_peticion():
             empleado_afectado=nombre, semana=key, valor_nuevo=", ".join(dias),
             justificacion=justificacion,
         )
-    return ok(message="Petición guardada")
+    return ok(message="Petición guardada", avisos=analisis["avisos"])
+
+@app.route("/api/peticiones/prevalidar", methods=["GET"])
+@login_requerido
+def api_prevalidar_peticion():
+    """Pre-analiza (sin guardar) una petición por FECHA: bloqueos que impiden
+    crearla y avisos de riesgo calculados con la política real de generación
+    (misma simulación que cupos.analizar_peticion). La usa el modal para
+    informar al empleado MIENTRAS elige la fecha, antes de guardar nada."""
+    u = usuario_actual()
+    es_propia = tiene_permiso("editar_peticiones_propias") and not tiene_permiso("editar_peticiones")
+    if not tiene_permiso("editar_peticiones") and not tiene_permiso("editar_peticiones_propias"):
+        return err("Sin permisos", 403)
+    nombre  = (request.args.get("nombre") or "").strip()
+    fecha   = (request.args.get("fecha") or "").strip()
+    dept_id = request.args.get("dept", "recepcion")
+    if not nombre or not fecha:
+        return err("Faltan datos")
+    if es_propia:
+        vinculado = u.get("vinculado")
+        if not vinculado or nombre != vinculado:
+            return err("Solo puedes consultar tus propias peticiones", 403)
+    try:
+        fecha_d = date.fromisoformat(fecha)
+    except (TypeError, ValueError):
+        return err("Fecha inválida (formato esperado: AAAA-MM-DD)")
+    semana    = lunes_de(fecha)
+    dias      = dias_acumulados(nombre, semana, [DIAS_SEMANA[fecha_d.weekday()]], dept_id)
+    rol_usuario = "empleado" if es_propia else u["rol"]
+    cfg       = _get_dept_config(dept_id)
+    return ok(analizar_peticion(nombre, semana, dias, dept_id, cfg, rol_usuario))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # API — PETICIONES (cancelar / modificar individual)
@@ -1633,6 +1698,10 @@ def api_modificar_peticion(semana, nombre):
             if dia not in DIAS_SEMANA:
                 return err(f"Día inválido: {dia}")
         entrada["dias"] = dias_nuevos
+        # La preferencia del par solo vive con una única fecha: si la edición
+        # manual deja más de un día, deja de tener sentido.
+        if len(dias_nuevos) != 1:
+            entrada.pop("preferencia", None)
     if "motivo" in body:
         motivo = (body.get("motivo") or "").strip() or None
         if motivo is not None:

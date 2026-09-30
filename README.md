@@ -90,6 +90,16 @@ Además del horario semanal, la app incluye estadísticas de reparto a largo
 plazo (para vigilar la equidad entre empleados) y gestión de peticiones de
 días libres con prioridad automática por historial.
 
+Las peticiones se piden por **fecha concreta** (la semana se deriva sola), con
+una preferencia opcional del **día consecutivo del par** de libres
+(antes / después / indiferente) que el motor respeta siempre que sea posible
+sin romper nada (ver `REGLAS.md` §2.14). Al elegir la fecha, el formulario
+**prevalida** la petición en el momento: bloquea las imposibles (vacaciones,
+descanso fijo de la categoría, semana ya publicada, día fuera de contrato) y
+avisa de los riesgos calculables (la política real de cobertura la denegaría,
+o el día quedaría justo en el mínimo), para planificar con antelación.
+Repetir fechas de la misma semana acumula días — cada uno consume cupo del mes.
+
 <table>
 <tr>
 <td><img src="docs/assets/estadisticas.png" alt="Estadísticas de reparto"></td>
@@ -102,7 +112,7 @@ días libres con prioridad automática por historial.
 ## Arquitectura
 
 ```
-app.py                   Servidor Flask, API REST (~58 endpoints)
+app.py                   Servidor Flask, API REST (~59 endpoints)
 ├── motor_cpsat.py       Motor de horarios (CP-SAT): restricciones, objetivo,
 │                        orquestación semanal y diagnóstico de infactibilidad
 ├── cobertura_nocturna.py  Decide QUIÉN cubre cada noche (orden fijo cíclico)
@@ -111,7 +121,8 @@ app.py                   Servidor Flask, API REST (~58 endpoints)
 ├── modelo_recepcion.py  Configuración por departamento (DeptConfig)
 ├── modelo_mozos.py
 ├── herramientas.py      Persistencia JSON, plantilla, vacaciones, peticiones
-├── cupos.py             Cupos mensuales de peticiones por empleado
+├── cupos.py             Cupos mensuales de peticiones por empleado y
+│                        prevalidación de viabilidad (bloqueos y avisos)
 ├── estadisticas.py      Métricas de reparto e histórico
 ├── auth.py              Autenticación, roles y permisos, log de actividad
 └── static/              Frontend, sin framework ni build step
@@ -122,7 +133,7 @@ app.py                   Servidor Flask, API REST (~58 endpoints)
 REGLAS.md                Reglas de negocio del motor — fuente única de verdad
 docs/                    Informe histórico de validación del motor
 deploy/                  Podman Quadlet + Cloudflare Tunnel + backups
-tests/                   349 tests (pytest)
+tests/                   369 tests (pytest)
 ```
 
 Quién cubre cada noche **no lo decide el solver**: lo resuelve `cobertura_nocturna.py`

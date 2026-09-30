@@ -869,17 +869,14 @@
   <div class="modal">
     <div class="modal-hd"><span>Nueva petición de libre</span><button class="btn ghost btn-icon" onclick="closeModal(\'modal-pet\')" aria-label="Cerrar"><svg class="ic ic-18"><use href="#i-x"></use></svg></button></div>
     <div class="fr" id="m-pet-emp-row"><label>Empleado</label><select id="m-pet-emp"></select></div>
-    <div class="fr"><label>Semana (lunes)</label><input id="m-pet-week" type="date"></div>
-    <div class="fr"><label>Días solicitados</label>
-      <div class="pill-sel" id="m-pet-dias">
-        <div class="pill" data-v="Lunes">Lunes</div>
-        <div class="pill" data-v="Martes">Martes</div>
-        <div class="pill" data-v="Miércoles">Miércoles</div>
-        <div class="pill" data-v="Jueves">Jueves</div>
-        <div class="pill" data-v="Viernes">Viernes</div>
-        <div class="pill" data-v="Sábado">Sábado</div>
-        <div class="pill" data-v="Domingo">Domingo</div>
+    <div class="fr"><label>Fecha solicitada</label><input id="m-pet-fecha" type="date"></div>
+    <div class="fr"><label>Día consecutivo del par</label>
+      <div class="pill-sel" id="m-pet-pref">
+        <div class="pill" data-v="antes">Día anterior</div>
+        <div class="pill on" data-v="indiferente">Indiferente</div>
+        <div class="pill" data-v="despues">Día siguiente</div>
       </div>
+      <div class="t-sm muted mt-2">El segundo día libre del par se colocará junto al día solicitado. Si eliges un lado y no hay hueco, el sistema usará el otro.</div>
     </div>
     <div class="fr"><label>Motivo <span class="w-400 muted">(opcional)</span></label>
       <textarea id="m-pet-motivo" rows="2" class="txtarea" placeholder="Ej: cita médica, asunto personal…"></textarea>
@@ -888,6 +885,7 @@
       <label>Justificación <span class="w-400 muted">(obligatoria: la ves tú y el admin, no queda pública)</span></label>
       <input id="m-pet-justif" type="text" maxlength="200" placeholder="Motivo de esta petición creada en nombre del empleado (mín. 5 caracteres)">
     </div>
+    <div id="m-pet-aviso" class="hidden"></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal('modal-pet')">Cancelar</button>
       <button class="btn pri" id="btn-save-pet">Guardar petición</button>

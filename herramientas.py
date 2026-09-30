@@ -265,16 +265,24 @@ def contar_peticiones_concedidas(dept_id: str = "recepcion") -> dict:
 
 def aplicar_peticiones_con_prioridad(staff_list: list, week_start: date,
                                      dept_id: str = "recepcion",
-                                     min_workers_dia: int = 5) -> tuple:
+                                     min_workers_dia: int = 5,
+                                     peticiones_semana: dict | None = None) -> tuple:
     """
     Aplica peticiones de libre respetando prioridad histórica.
     Si conceder una petición deja el día con menos de min_workers_dia disponibles,
     se deniega priorizando a quienes más peticiones ya llevan concedidas.
     Soporta los formatos de petición antiguo (lista) y nuevo (dict con 'dias' y 'la').
     Devuelve (staff_modificado, peticiones_denegadas).
+
+    `peticiones_semana` permite evaluar una semana alternativa (clon con
+    cambios aún sin guardar) sin tocar disco — lo usa cupos.analizar_peticion
+    para la prevalidación, replicando EXACTAMENTE esta misma política.
     """
     import copy
-    peticiones  = obtener_peticiones_semana(week_start, dept_id)
+    if peticiones_semana is None:
+        peticiones = obtener_peticiones_semana(week_start, dept_id)
+    else:
+        peticiones = peticiones_semana
     concedidas  = contar_peticiones_concedidas(dept_id)
     staff_copia = copy.deepcopy(staff_list)
 
@@ -339,6 +347,33 @@ def aplicar_peticiones_con_prioridad(staff_list: list, week_start: date,
             if p["name"] == nombre:
                 existentes_la = p.get("extra_days_off", [])
                 p["extra_days_off"] = list(dict.fromkeys(existentes_la + dias_la))
+                break
+
+    # Preferencia del lado del día consecutivo del par de libres
+    # ("antes"/"despues", elegida al crear la petición por fecha): se propaga
+    # a la persona para que el motor CP-SAT la trate como preferencia BLANDA
+    # (ver motor_cpsat, rama del par de la restricción #7). Solo aplica cuando
+    # se concedió UNA única fecha esa semana: con dos o más el patrón ya queda
+    # cubierto por ambas (sin exigir consecutividad) y el lado no significa
+    # nada — el POST limpia la preferencia en ese caso, y aquí se comprueba de
+    # nuevo por si la entrada viniera editada a mano.
+    for nombre, entrada in peticiones.items():
+        if not isinstance(entrada, dict):
+            continue
+        if entrada.get("estado", "activa") != "activa":
+            continue
+        pref = entrada.get("preferencia")
+        if pref not in ("antes", "despues"):
+            continue
+        dias = [d for d in entrada.get("dias", []) if d in DIAS_SEMANA]
+        if len(dias) != 1:
+            continue
+        dia = dias[0]
+        if any(den["nombre"] == nombre and den["dia"] == dia for den in denegadas):
+            continue
+        for p in staff_copia:
+            if p["name"] == nombre:
+                p["preferencia_par"] = pref
                 break
 
     return staff_copia, denegadas

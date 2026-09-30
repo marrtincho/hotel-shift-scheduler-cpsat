@@ -19,6 +19,9 @@ import herramientas
 from herramientas import (
     cargar_peticiones, cargar_historial, _cargar_json, guardar_json_atomico,
     DIAS_SEMANA, _semana_str,
+    cargar_plantilla, cargar_roles,
+    aplicar_vacaciones, aplicar_peticiones_con_prioridad,
+    vacaciones_activas_en_semana,
 )
 
 CUPO_MENSUAL_DEFAULT = 2
@@ -126,6 +129,7 @@ def peticiones_activas_de(nombre: str, dept_id: str = "recepcion") -> list[dict]
             "origen":    entrada.get("origen", "jefe"),
             "creada_en": entrada.get("creada_en"),
             "motivo":    entrada.get("motivo"),
+            "preferencia": entrada.get("preferencia"),
         })
     return activas
 
@@ -175,3 +179,107 @@ def validar_nueva_peticion(nombre: str, semana: date, dias_pedidos: list,
                 f"Necesitarías {faltan} petición(es) extra ese mes."
             )
     return True, ""
+
+
+# ─── PREVALIDACIÓN DE UNA PETICIÓN (ANTES DE GUARDAR) ─────────────────────────
+
+def dias_acumulados(nombre: str, semana: date, dias_nuevos: list,
+                    dept_id: str = "recepcion") -> list:
+    """
+    Días finales de la petición de 'nombre' en 'semana' si se AÑADEN los días
+    nuevos a los ya pedidos (el POST por fecha acumula; ver api_add_peticion).
+    Devuelve los días únicos ordenados de Lunes a Domingo.
+    """
+    entrada = cargar_peticiones(dept_id).get(_semana_str(semana), {}).get(nombre)
+    previos: list = []
+    if isinstance(entrada, dict) and entrada.get("estado", "activa") == "activa":
+        previos = entrada.get("dias", [])
+    elif isinstance(entrada, list):
+        previos = entrada
+    todos = list(dict.fromkeys(previos + list(dias_nuevos)))
+    return sorted((d for d in todos if d in DIAS_SEMANA), key=DIAS_SEMANA.index)
+
+
+def analizar_peticion(nombre: str, semana: date, dias_finales: list, dept_id: str,
+                      cfg, rol_usuario: str = "empleado") -> dict:
+    """
+    Pre-análisis de una petición ANTES de existir, replicando la política real
+    de aprobación (aplicar_peticiones_con_prioridad sobre un clon en memoria de
+    la semana — sin tocar disco). Devuelve {"bloqueos": [...], "avisos": [...]}:
+
+    - bloqueos: impiden crearla (día ya libre por vacaciones o por el descanso
+      estructural de su categoría, día sin presencia según contrato, cupo
+      agotado, semana ya publicada...).
+    - avisos: riesgo calculado sin certeza — con las peticiones actuales la
+      política de cobertura denegaría ese día al generar, o quedaría justo en
+      el mínimo de cobertura.
+    """
+    bloqueos: list = []
+    avisos: list  = []
+
+    ok_valida, msg_valida = validar_nueva_peticion(
+        nombre, semana, dias_finales, rol_usuario, dept_id)
+    if not ok_valida:
+        bloqueos.append(msg_valida)
+
+    persona = next((p for p in cargar_plantilla(dept_id) if p["name"] == nombre), None)
+    if persona is None:
+        bloqueos.append(f"«{nombre}» no está en la plantilla de este departamento.")
+        return {"bloqueos": bloqueos, "avisos": avisos}
+
+    rol       = persona.get("role")
+    label_rol = (cargar_roles(dept_id).get(rol) or {}).get("label", rol)
+    if rol == "night_fixed":
+        libres_fijos = set(cfg.night_fixed_days_off)
+    else:
+        libres_fijos = set(cfg.fixed_days_off.get(rol, []))
+    presencia = getattr(cfg, "presencia_roles", {}).get(rol)
+    vac_dias  = set(vacaciones_activas_en_semana(semana, dept_id).get(nombre, []))
+    for dia in dias_finales:
+        if dia not in DIAS_SEMANA:
+            continue  # ya lo reporta validar_nueva_peticion
+        idx = DIAS_SEMANA.index(dia)
+        if dia in vac_dias:
+            bloqueos.append(f"«{nombre}» ya está de vacaciones el {dia}.")
+        elif idx in libres_fijos:
+            bloqueos.append(f"El {dia} ya es día libre fijo de la categoría «{label_rol}».")
+        elif presencia is not None and idx not in presencia:
+            bloqueos.append(
+                f"El {dia} no es un día de presencia de «{label_rol}»: queda "
+                f"fuera de contrato, no hace falta solicitar libre.")
+
+    # Simulación de la aprobación real: el mismo pipeline que api_generar
+    # (vacaciones → peticiones con prioridad) sobre la semana candidata.
+    semana_key   = _semana_str(semana)
+    semana_dict  = dict(cargar_peticiones(dept_id).get(semana_key, {}))
+    entrada_prev = semana_dict.get(nombre)
+    candidata    = dict(entrada_prev) if isinstance(entrada_prev, dict) else (
+        {"dias": list(entrada_prev), "la": []} if isinstance(entrada_prev, list) else {})
+    candidata["dias"]   = list(dias_finales)
+    candidata["estado"] = "activa"
+    semana_dict[nombre] = candidata
+
+    staff_sim = aplicar_vacaciones(cargar_plantilla(dept_id), semana, dept_id)
+    min_w     = sum(cfg.min_coverage.values())
+    staff_res, denegadas = aplicar_peticiones_con_prioridad(
+        staff_sim, semana, dept_id, min_w, peticiones_semana=semana_dict)
+
+    denegados = {d["dia"] for d in denegadas if d["nombre"] == nombre}
+    for dia in dias_finales:
+        if dia in denegados:
+            avisos.append(
+                f"Es probable que el {dia} no se conceda: con las peticiones "
+                f"actuales, concederlo dejaría el día por debajo del mínimo de "
+                f"cobertura ({min_w} personas).")
+    concedidos = [d for d in dias_finales if d in DIAS_SEMANA and d not in denegados]
+    justos = [
+        dia for dia in concedidos
+        if len([p for p in staff_res
+                if dia not in p.get("forced_days_off", [])]) <= min_w
+    ]
+    if justos:
+        avisos.append(
+            f"Cobertura justa el {', '.join(justos)}: quedaría en el mínimo del "
+            f"día. Si surgiera otra ausencia o petición, esta podría no mantenerse.")
+
+    return {"bloqueos": bloqueos, "avisos": avisos}

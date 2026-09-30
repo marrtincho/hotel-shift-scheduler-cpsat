@@ -125,7 +125,7 @@ y es la parte del motor donde más fácil es asumir algo falso:
 | Situación | Qué exige el código |
 |---|---|
 | Caso normal (sin peticiones ni bloqueos) | Exactamente 2 Libres entre los días no forzados, y consecutivos si existe algún par consecutivo disponible; si no existe ninguno, 2 sueltos. |
-| **1 petición concedida** | La petición **cuenta como uno de los 2**. El otro debe ser un día **adyacente** a la petición si hay alguno disponible. Total exigido en días no forzados: 1. |
+| **1 petición concedida** | La petición **cuenta como uno de los 2**. El otro debe ser un día **adyacente** a la petición si hay alguno disponible. Total exigido en días no forzados: 1. Si la petición trae **preferencia de lado** (`antes`/`despues`, [§2.14](#214-n--preferencia-del-par-de-libres-petición-por-fecha)), el solver prefiere ese lado cuando ambos son posibles. |
 | **2 peticiones concedidas** | Ambas cuentan como los 2. **No** se exige que sean consecutivas entre sí. Total exigido en días no forzados: 0 (los demás días se trabajan). |
 | **3 o más peticiones** | El patrón ya está cubierto de sobra; el código solo impide libres ADICIONALES (`sum(Libre en el resto) == 0`). |
 | Bloqueo externo de Noche que acaba el Sábado | El Domingo queda forzado `Libre` y **cuenta como uno de los 2**; el otro se coloca donde sea, sin exigir consecutividad. |
@@ -257,6 +257,7 @@ todas las restricciones duras. Orden de prioridad **por peso real**, de mayor a 
 
 | | Término | Peso | Qué prefiere |
 |---|---|---|---|
+| **N** | `PESO_PREFERENCIA_PAR` | **100000** | Respetar el lado pedido del par de libres (petición por fecha, [§2.14](#214-n--preferencia-del-par-de-libres-petición-por-fecha)) |
 | **L** | `PESO_ORDEN_EXCESO` | **20000** | No exceder un máximo mientras el otro turno tenga sitio |
 | **K** | `PESO_EXCESO_COBERTURA` | **5000** | No superar el máximo de Mañana/Tarde |
 | **G** | `PESO_COBERTURA_AUSENCIA` | **1000** | Que el cubridor ocupe el turno del ausente |
@@ -421,6 +422,30 @@ a *INFEASIBLE y semana entera sin generar* — exactamente el fallo que el térm
 existe para evitar. Anclado por
 `tests/test_revision_reglas.py::test_el_exceso_respeta_el_orden_ambos_al_maximo_antes_de_exceder`
 y `::test_orden_del_exceso_es_preferencia_dominante_no_restriccion_dura`.
+
+### 2.14 N — Preferencia del par de libres (petición por fecha)
+**Regla de negocio:** quien crea una petición por fecha puede indicar de qué lado
+quiere el **día consecutivo** que completa el par de libres ([§1.8](#18-patrón-de-días-libres-semanales-2-consecutivos)):
+`antes`, `despues`, o indiferente (sin preferencia). El sistema intenta respetarlo,
+pero **nunca** a costa de la semana: si el lado pedido no tiene solución, el solver
+usa el otro lado. Una preferencia jamás puede volver la semana INFEASIBLE.
+**Código:** `_construir_modelo`, rama del par de la restricción #7, justo tras el
+`AddExactlyOne` de `indicadores_par`. El dato llega en `person["preferencia_par"]`,
+que lo pone `herramientas.aplicar_peticiones_con_prioridad` solo cuando la petición
+tiene **exactamente 1 día concedido** (con 2+ el par ya no existe como elección) y
+una preferencia real `antes`/`despues`.
+**Peso:** `PESO_PREFERENCIA_PAR = 100000` — 5× L(20000) y por encima de todo el
+resto de términos: con **ambos lados** del par disponibles, penalizar el no pedido
+hace que el solver solo caiga en él si el lado pedido está estructuralmente
+bloqueado, nunca por conveniencia del resto del objetivo. Con un solo candidato no
+se añade término (el `AddExactlyOne` ya lo fuerza) y **sin preferencia el modelo es
+idéntico al anterior**: indiferente = ningún término nuevo.
+(Vista de UI: el modal deshabilita «día anterior» los lunes y «día siguiente» los
+domingos, donde el lado no existe dentro de la semana; el backend ignora valores
+desconocidos.)
+Anclado por `tests/test_peticiones_fecha_preferencia.py` (sección 7: honra «antes»,
+honra «despues», indiferente = comportamiento previo, y cede al otro lado cuando el
+pedido no tiene solución).
 
 ---
 
